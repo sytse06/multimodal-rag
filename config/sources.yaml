@@ -1,6 +1,6 @@
 youtube:
   - url: https://www.youtube.com/watch?v=KHo5xEaPyAI
-    title: "HydroSym Tutorials: 4 minutes Quickstart"
+    name: "HydroSym Tutorials: 4 minutes Quickstart"
 
 knowledge_bases:
   # Add your 3 knowledge base root URLs here
