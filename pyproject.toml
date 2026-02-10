@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "firecrawl-py>=1.0.0",
     "pyyaml>=6.0.0",
+    "langchain-weaviate>=0.0.6",
 ]
 
 [build-system]
