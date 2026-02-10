@@ -206,11 +206,23 @@ knowledge_bases:
 
 ### Phase 1: MVP (v1)
 
-- Ingestion pipeline: YouTube transcripts + web crawling → Weaviate
-- Query pipeline: semantic search → LLM synthesis with citations
-- Gradio chat interface with citation rendering
-- Source configuration via YAML
-- Local deployment with Docker (Weaviate)
+**Epic 1: Ingestion Pipeline** (completed)
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| CORE-001 | Data models | Pydantic models for chunks, sources, config, query results |
+| CORE-002 | YouTube ingest | Transcript fetching + timestamp-preserving chunking |
+| CORE-003 | Web ingest | Firecrawl crawling + header-based markdown chunking |
+| CORE-004 | Weaviate store | Collection management, OpenRouter embedding, vector storage + search |
+| CORE-005 | Ingest CLI | Orchestrator reading sources.yaml, runnable via `make ingest` |
+
+**Epic 2: Query Pipeline + Gradio UI**
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| QUERY-001 | Retrieval chain | LangChain chain: embed question → Weaviate top-k search → format context |
+| QUERY-002 | Cited answer generation | Prompt template + LLM call producing CitedAnswer with structured citations |
+| QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, model selector, clear button |
 
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
