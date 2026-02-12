@@ -113,6 +113,24 @@ Retrieval-augmented generation chain with a chat interface for support staff.
 **Files:** `src/multimodal_rag/app.py`
 **Tests:** 5
 
+### QUERY-004 — LangChain Model Client (pending)
+
+**Branch:** `feature/QUERY-004-langchain-model-client`
+
+Replace direct `openai` SDK usage with LangChain's `BaseChatModel` and `Embeddings` interfaces. This removes the hard lock-in to OpenRouter and enables provider diversity.
+
+**Scope:**
+- Create a model client factory (`src/multimodal_rag/models/llm.py`) that returns LangChain model instances based on config
+- Support at minimum: OpenRouter (via `ChatOpenAI`), Ollama (via `ChatOllama` / `OllamaEmbeddings`)
+- New env vars: `LLM_PROVIDER` (openrouter|ollama), `EMBEDDING_PROVIDER` (openrouter|ollama), `OLLAMA_BASE_URL`
+- Refactor `store/embeddings.py` to use LangChain `Embeddings` interface instead of `openai.OpenAI`
+- Refactor `query/generator.py` to use LangChain `BaseChatModel` instead of `openai.OpenAI`
+- Refactor `store/weaviate.py` to accept a LangChain `Embeddings` instance instead of embedding internally
+- Update Gradio app model selector to work with LangChain model switching
+- Add `langchain-ollama` to dependencies
+
+**Why:** Never lock into a single provider. LangChain's abstraction lets you swap OpenRouter for Ollama (local, free, private) by changing an env var. Nomic embed models via Ollama are not on OpenRouter — this unblocks local embedding workflows.
+
 ---
 
 ## Summary
@@ -120,5 +138,5 @@ Retrieval-augmented generation chain with a chat interface for support staff.
 | Epic | Features | Total Tests |
 |------|----------|-------------|
 | 1 — Ingestion Pipeline | 5 | 55 |
-| 2 — Query + UI | 3 | 25 |
-| **Total** | **8** | **80** |
+| 2 — Query + UI | 4 | 80+ (after QUERY-004) |
+| **Total** | **9** | **80+** |

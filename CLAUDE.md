@@ -57,23 +57,23 @@ make git-status   # Show git overview
 ## Project Structure
 
 ```
-multimodal-rag/
-├── src/multimodal_rag/
-│   ├── __init__.py
-│   ├── __main__.py          # Entry point for python -m
-│   ├── app.py               # Gradio chat interface
-│   └── ingest.py            # Ingestion pipeline
-├── tests/
-│   └── test_placeholder.py
-├── config/
-│   ├── development.env      # Dev environment variables
-│   ├── .env.example         # Template (committed)
-│   └── sources.yaml         # YouTube URLs + knowledge base URLs
-├── compose.yaml             # Weaviate Docker service
-├── pyproject.toml
-├── Makefile
-├── PRD.md
-└── CLAUDE.md
+src/multimodal_rag/
+├── models/            # Pydantic models
+│   ├── config.py      #   AppSettings (BaseSettings, env-based)
+│   ├── sources.py     #   YouTubeSource, KnowledgeBaseSource, SourceConfig
+│   ├── chunks.py      #   TranscriptChunk, WebChunk, SupportChunk
+│   └── query.py       #   SearchResult, Citation, CitedAnswer
+├── ingest/            # Ingestion pipeline
+│   ├── youtube.py     #   Transcript fetching + chunking
+│   ├── web.py         #   Firecrawl crawling + markdown splitting
+│   └── __main__.py    #   CLI orchestrator (make ingest)
+├── store/             # Vector store layer
+│   ├── embeddings.py  #   OpenRouter embedding (batched)
+│   └── weaviate.py    #   Weaviate collection management + search
+├── query/             # Query pipeline
+│   ├── retriever.py   #   Embed query → Weaviate search → SearchResults
+│   └── generator.py   #   LLM cited answer generation
+└── app.py             # Gradio chat interface (make run)
 ```
 
 ## Code Quality Standards
@@ -85,9 +85,13 @@ multimodal-rag/
 
 ## Git Workflow
 
-- **Branch strategy:** main → develop → feature/*
+- **Branches:** `main` ← `develop` ← `feature/*`
+- **Code changes:** always on a feature branch off develop. Never commit code directly to develop or main.
+- **Docs-only changes:** commit directly on develop, then merge to main.
+- **Merge flow:** feature → develop (--no-ff) → main (--no-ff)
 - **Commit format:** `type(scope): description` (conventional commits)
 - **Types:** feat, fix, docs, style, refactor, test, chore
+- **Quality gate:** run `make quality` and `make test` before every commit. All tests must pass.
 
 ## Key Configuration
 
