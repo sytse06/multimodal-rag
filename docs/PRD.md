@@ -72,9 +72,9 @@ and receive an accurate answer with links to the source material.
 - Maintains conversation history within a session for follow-up questions
 
 *Technical considerations:*
-- Use LangChain `RetrievalQA` or equivalent chain
+- Use LangChain `BaseChatModel` and `Embeddings` interfaces for all model access — never call provider SDKs directly
+- LangChain model client factory: configure provider (OpenRouter, Ollama) via env vars, swap without code changes
 - Prompt template must instruct LLM to cite sources using retrieved chunk metadata
-- OpenRouter endpoint (OpenAI-compatible) with configurable model selection
 - Relevance score: cosine similarity from Weaviate, passed through to UI
 
 *Priority:* Must-have (v1)
@@ -141,10 +141,11 @@ knowledge_bases:
 |-------|-----------|-----------|
 | Language | Python >=3.12 | Standard, ecosystem support |
 | Package manager | uv | Project convention |
-| RAG framework | LangChain | Mature RAG tooling, OpenRouter compatible |
-| Embeddings | OpenRouter (default: openai/text-embedding-3-small) | Configurable model via OpenRouter API, swap without code changes |
+| RAG framework | LangChain | Mature RAG tooling, provider-agnostic model abstraction |
+| Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers (OpenRouter, Ollama, etc.) without code changes |
+| Embeddings | Configurable (default: OpenRouter openai/text-embedding-3-small, local: Ollama nomic-embed-text) | LangChain interface enables provider diversity |
 | Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
-| LLM gateway | OpenRouter (OpenAI-compatible) | Multi-provider flexibility |
+| LLM gateway | Configurable (default: OpenRouter, local: Ollama) | LangChain abstraction — never lock into a single provider |
 | Transcript extraction | youtube-transcript-api | Timestamped segments, no compute needed |
 | Web crawling | Firecrawl | Handles full-site crawling from root URL |
 | Data validation | Pydantic | Type-safe models, config via BaseSettings |
@@ -220,9 +221,10 @@ knowledge_bases:
 
 | Feature | Branch | Description |
 |---------|--------|-------------|
-| QUERY-001 | Retrieval chain | LangChain chain: embed question → Weaviate top-k search → format context |
+| QUERY-001 | Retrieval chain | Embed question → Weaviate top-k search → format context |
 | QUERY-002 | Cited answer generation | Prompt template + LLM call producing CitedAnswer with structured citations |
 | QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, model selector, clear button |
+| QUERY-004 | LangChain model client | Replace direct openai SDK with LangChain BaseChatModel/Embeddings, support OpenRouter + Ollama |
 
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
