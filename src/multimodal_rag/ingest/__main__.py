@@ -13,6 +13,7 @@ from multimodal_rag.ingest.web import fetch_web_chunks
 from multimodal_rag.ingest.youtube import fetch_transcript_chunks
 from multimodal_rag.models.chunks import SupportChunk
 from multimodal_rag.models.config import AppSettings
+from multimodal_rag.models.llm import create_embeddings
 from multimodal_rag.models.sources import SourceConfig
 from multimodal_rag.store.weaviate import WeaviateStore
 
@@ -66,11 +67,10 @@ def run() -> None:
 
     logger.info("Total chunks to ingest: %d", len(all_chunks))
 
+    embeddings = create_embeddings(settings)
     with WeaviateStore(
         weaviate_url=settings.weaviate_url,
-        openrouter_api_key=settings.openrouter_api_key,
-        openrouter_base_url=settings.openrouter_base_url,
-        embedding_model=settings.embedding_model,
+        embeddings=embeddings,
     ) as store:
         store.ensure_collection()
         added = store.add_chunks(all_chunks)

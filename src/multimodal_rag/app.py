@@ -3,9 +3,12 @@
 import logging
 
 import gradio as gr
+from langchain_core.language_models import BaseChatModel
+from pydantic import SecretStr
 
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.config import AppSettings
+from multimodal_rag.models.llm import create_embeddings
 from multimodal_rag.models.query import CitedAnswer
 from multimodal_rag.query.generator import generate_cited_answer
 from multimodal_rag.query.retriever import retrieve
@@ -13,19 +16,45 @@ from multimodal_rag.store.weaviate import WeaviateStore
 
 logger = logging.getLogger(__name__)
 
+OPENROUTER_MODELS = [
+    "openai/gpt-4o-mini",
+    "openai/gpt-4o",
+    "anthropic/claude-3.5-sonnet",
+    "google/gemini-pro-1.5",
+]
+
 
 def _format_citations_block(answer: CitedAnswer) -> str:
     """Append a citations summary block below the answer."""
-
     if not answer.citations:
         return answer.answer
 
     lines = [answer.answer, "", "---", "**Sources:**"]
     for c in answer.citations:
-        icon = "🎬" if c.source_type == SourceType.VIDEO else "📄"
+        icon = "\U0001f3ac" if c.source_type == SourceType.VIDEO else "\U0001f4c4"
         score_pct = round(c.relevance_score * 100)
         lines.append(f"- {icon} [{c.label}]({c.url}) ({score_pct}%)")
     return "\n".join(lines)
+
+
+def _make_llm(model_name: str, settings: AppSettings) -> BaseChatModel:
+    """Create a chat model for the given model name and provider."""
+    if settings.llm_provider == "ollama":
+        from langchain_ollama import ChatOllama
+
+        return ChatOllama(
+            model=model_name,
+            base_url=settings.ollama_base_url,
+            temperature=0.3,
+        )
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        model=model_name,
+        api_key=SecretStr(settings.openrouter_api_key),
+        base_url=settings.openrouter_base_url,
+        temperature=0.3,
+    )
 
 
 def main() -> None:
@@ -35,11 +64,10 @@ def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
+    embeddings = create_embeddings(settings)
     store = WeaviateStore(
         weaviate_url=settings.weaviate_url,
-        openrouter_api_key=settings.openrouter_api_key,
-        openrouter_base_url=settings.openrouter_base_url,
-        embedding_model=settings.embedding_model,
+        embeddings=embeddings,
     )
 
     def respond(
@@ -50,13 +78,12 @@ def main() -> None:
         if not message.strip():
             return "Please enter a question."
 
+        llm = _make_llm(model, settings)
         results = retrieve(message, store, top_k=settings.top_k)
         answer = generate_cited_answer(
             question=message,
             results=results,
-            api_key=settings.openrouter_api_key,
-            base_url=settings.openrouter_base_url,
-            model=model,
+            llm=llm,
         )
         return _format_citations_block(answer)
 
@@ -67,17 +94,20 @@ def main() -> None:
             " Answers include cited sources with clickable links."
         )
 
-        model_dropdown = gr.Dropdown(
-            choices=[
-                "openai/gpt-4o-mini",
-                "openai/gpt-4o",
-                "anthropic/claude-3.5-sonnet",
-                "google/gemini-pro-1.5",
-            ],
-            value=settings.llm_model,
-            label="Model",
-            interactive=True,
-        )
+        if settings.llm_provider == "openrouter":
+            model_dropdown = gr.Dropdown(
+                choices=OPENROUTER_MODELS,
+                value=settings.llm_model,
+                label="Model",
+                interactive=True,
+            )
+        else:
+            model_dropdown = gr.Dropdown(
+                choices=[settings.llm_model],
+                value=settings.llm_model,
+                label="Model (Ollama)",
+                interactive=False,
+            )
 
         chatbot = gr.Chatbot(label="Chat", height=500)
         msg = gr.Textbox(

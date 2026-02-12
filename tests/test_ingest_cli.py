@@ -8,7 +8,6 @@ from multimodal_rag.models.chunks import TranscriptChunk
 
 class TestLoadSources:
     def test_loads_sources_yaml(self, tmp_path: object) -> None:
-        # Uses the real config/sources.yaml in the project
         sources = load_sources()
         assert len(sources.youtube) >= 1
         assert sources.youtube[0].name is not None
@@ -16,6 +15,7 @@ class TestLoadSources:
 
 class TestRun:
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
+    @patch("multimodal_rag.ingest.__main__.create_embeddings")
     @patch("multimodal_rag.ingest.__main__.fetch_web_chunks")
     @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
@@ -26,6 +26,7 @@ class TestRun:
         mock_load: MagicMock,
         mock_yt: MagicMock,
         mock_web: MagicMock,
+        mock_create_emb: MagicMock,
         mock_store_cls: MagicMock,
     ) -> None:
         settings = MagicMock()
@@ -33,10 +34,8 @@ class TestRun:
         settings.chunk_size = 400
         settings.firecrawl_api_key = "fake"
         settings.weaviate_url = "http://localhost:8080"
-        settings.openrouter_api_key = "fake"
-        settings.openrouter_base_url = "http://test"
-        settings.embedding_model = "test-model"
         mock_settings_cls.return_value = settings
+        mock_create_emb.return_value = MagicMock()
 
         from multimodal_rag.models.sources import SourceConfig, YouTubeSource
 
@@ -70,11 +69,13 @@ class TestRun:
 
         run()
 
+        mock_create_emb.assert_called_once_with(settings)
         mock_yt.assert_called_once()
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_called_once()
 
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
+    @patch("multimodal_rag.ingest.__main__.create_embeddings")
     @patch("multimodal_rag.ingest.__main__.fetch_web_chunks")
     @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
@@ -85,6 +86,7 @@ class TestRun:
         mock_load: MagicMock,
         mock_yt: MagicMock,
         mock_web: MagicMock,
+        mock_create_emb: MagicMock,
         mock_store_cls: MagicMock,
     ) -> None:
         settings = MagicMock()

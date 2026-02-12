@@ -1,6 +1,6 @@
 """Tests for store module (embeddings + Weaviate store)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from multimodal_rag.models.chunks import (
     SourceType,
@@ -12,37 +12,27 @@ from multimodal_rag.store.embeddings import embed_texts
 
 
 class TestEmbedTexts:
-    @patch("multimodal_rag.store.embeddings.OpenAI")
-    def test_returns_embeddings(self, mock_openai_cls: MagicMock) -> None:
-        mock_client = MagicMock()
-        mock_openai_cls.return_value = mock_client
-        mock_item = MagicMock()
-        mock_item.embedding = [0.1, 0.2, 0.3]
-        mock_client.embeddings.create.return_value = MagicMock(data=[mock_item])
-
-        result = embed_texts(["hello"], api_key="fake", base_url="http://test")
+    def test_returns_embeddings(self) -> None:
+        mock_emb = MagicMock()
+        mock_emb.embed_documents.return_value = [[0.1, 0.2, 0.3]]
+        result = embed_texts(["hello"], embeddings=mock_emb)
         assert result == [[0.1, 0.2, 0.3]]
-        mock_openai_cls.assert_called_once_with(api_key="fake", base_url="http://test")
+        mock_emb.embed_documents.assert_called_once_with(["hello"])
 
-    @patch("multimodal_rag.store.embeddings.OpenAI")
-    def test_empty_list(self, mock_openai_cls: MagicMock) -> None:
-        result = embed_texts([], api_key="fake")
+    def test_empty_list(self) -> None:
+        mock_emb = MagicMock()
+        result = embed_texts([], embeddings=mock_emb)
         assert result == []
-        mock_openai_cls.assert_not_called()
+        mock_emb.embed_documents.assert_not_called()
 
-    @patch("multimodal_rag.store.embeddings.OpenAI")
-    def test_batching(self, mock_openai_cls: MagicMock) -> None:
-        mock_client = MagicMock()
-        mock_openai_cls.return_value = mock_client
-        mock_item = MagicMock()
-        mock_item.embedding = [0.1]
-        mock_client.embeddings.create.return_value = MagicMock(data=[mock_item])
-
+    def test_batching(self) -> None:
+        mock_emb = MagicMock()
+        mock_emb.embed_documents.return_value = [[0.1]]
         texts = [f"text_{i}" for i in range(150)]
-        result = embed_texts(texts, api_key="fake")
+        result = embed_texts(texts, embeddings=mock_emb)
         # 150 texts / 100 batch size = 2 calls
-        assert mock_client.embeddings.create.call_count == 2
-        assert len(result) == 2  # 1 per call (mock returns 1 per batch)
+        assert mock_emb.embed_documents.call_count == 2
+        assert len(result) == 2
 
 
 class TestSupportChunkConversion:

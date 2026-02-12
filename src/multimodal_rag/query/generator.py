@@ -1,8 +1,9 @@
-"""Cited answer generation via OpenRouter LLM."""
+"""Cited answer generation via LangChain chat model."""
 
 import logging
 
-from openai import OpenAI
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 
@@ -31,9 +32,7 @@ USER_TEMPLATE = """\
 def generate_cited_answer(
     question: str,
     results: list[SearchResult],
-    api_key: str,
-    base_url: str = "https://openrouter.ai/api/v1",
-    model: str = "openai/gpt-4o-mini",
+    llm: BaseChatModel,
 ) -> CitedAnswer:
     """Generate a cited answer from retrieved search results."""
     from multimodal_rag.query.retriever import format_context
@@ -47,17 +46,12 @@ def generate_cited_answer(
     context = format_context(results)
     user_message = USER_TEMPLATE.format(context=context, question=question)
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.3,
-    )
+    response = llm.invoke([
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=user_message),
+    ])
 
-    raw_answer = response.choices[0].message.content or ""
+    raw_answer = str(response.content) if response.content else ""
 
     citations = _build_citations(results)
     answer_with_links = _replace_refs_with_links(raw_answer, results)
