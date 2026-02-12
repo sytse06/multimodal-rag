@@ -17,10 +17,10 @@ from multimodal_rag.store.weaviate import WeaviateStore
 logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS = [
-    "openai/gpt-4o-mini",
-    "openai/gpt-4o",
-    "anthropic/claude-3.5-sonnet",
-    "google/gemini-pro-1.5",
+    "google/gemini-3-flash-preview",
+    "deepseek/deepseek-v3.2",
+    "mistralai/ministral-14b-2512",
+    "qwen/qwen3-32b",
 ]
 
 
