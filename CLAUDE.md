@@ -34,22 +34,22 @@ make git-status   # Show git overview
 │                                                 │
 │ YouTube URLs ──→ youtube-transcript-api          │
 │                  ──→ chunk (with timestamps)     │
-│                     ──→ embed (OpenRouter)       │
+│                     ──→ embed (LangChain)        │
 │                        ──→ Weaviate             │
 │                                                 │
 │ Web URLs ──→ Firecrawl (crawl child pages)      │
 │              ──→ chunk (with source URLs)        │
-│                 ──→ embed (OpenRouter)           │
+│                 ──→ embed (LangChain)            │
 │                    ──→ Weaviate                  │
 └─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────┐
 │ Query Pipeline (Gradio UI)                      │
 │                                                 │
-│ User question ──→ embed (OpenRouter)            │
+│ User question ──→ embed (LangChain)             │
 │                   ──→ Weaviate similarity search │
 │                      ──→ top-k chunks + metadata │
-│                         ──→ LLM (OpenRouter)    │
+│                         ──→ LLM (LangChain)     │
 │                            ──→ cited answer     │
 └─────────────────────────────────────────────────┘
 ```
@@ -58,8 +58,9 @@ make git-status   # Show git overview
 
 ```
 src/multimodal_rag/
-├── models/            # Pydantic models
+├── models/            # Pydantic models + factories
 │   ├── config.py      #   AppSettings (BaseSettings, env-based)
+│   ├── llm.py         #   LangChain model factories (chat + embeddings)
 │   ├── sources.py     #   YouTubeSource, KnowledgeBaseSource, SourceConfig
 │   ├── chunks.py      #   TranscriptChunk, WebChunk, SupportChunk
 │   └── query.py       #   SearchResult, Citation, CitedAnswer
@@ -99,8 +100,11 @@ All configurable via environment variables (`.env`):
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
+| `LLM_PROVIDER` | LLM backend (`openrouter` or `ollama`) | `openrouter` |
+| `EMBEDDING_PROVIDER` | Embedding backend (`openrouter` or `ollama`) | `openrouter` |
 | `OPENROUTER_API_KEY` | OpenRouter API access | — |
 | `OPENROUTER_BASE_URL` | OpenRouter endpoint | `https://openrouter.ai/api/v1` |
+| `OLLAMA_BASE_URL` | Ollama endpoint | `http://localhost:11434` |
 | `LLM_MODEL` | Chat model | `openai/gpt-4o-mini` |
 | `EMBEDDING_MODEL` | Embedding model | `openai/text-embedding-3-small` |
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |

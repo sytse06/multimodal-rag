@@ -1,10 +1,13 @@
 """Tests for cited answer generation."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+from langchain_core.messages import AIMessage
 
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.query import SearchResult
 from multimodal_rag.query.generator import (
+    SYSTEM_PROMPT,
     _build_citations,
     _replace_refs_with_links,
     generate_cited_answer,
@@ -79,55 +82,35 @@ class TestReplaceRefsWithLinks:
 
 class TestGenerateCitedAnswer:
     def test_empty_results_returns_fallback(self) -> None:
-        result = generate_cited_answer("test?", [], api_key="fake")
+        mock_llm = MagicMock()
+        result = generate_cited_answer("test?", [], llm=mock_llm)
         assert "couldn't find" in result.answer.lower()
         assert result.citations == []
+        mock_llm.invoke.assert_not_called()
 
-    @patch("multimodal_rag.query.generator.OpenAI")
-    def test_calls_llm_and_returns_answer(
-        self, mock_openai_cls: MagicMock
-    ) -> None:
-        mock_client = MagicMock()
-        mock_openai_cls.return_value = mock_client
-        mock_choice = MagicMock()
-        mock_choice.message.content = "Use [1] to get started."
-        mock_client.chat.completions.create.return_value = MagicMock(
-            choices=[mock_choice]
+    def test_calls_llm_and_returns_answer(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(
+            content="Use [1] to get started."
         )
 
         results = [_video_result()]
         answer = generate_cited_answer(
-            "How do I start?",
-            results,
-            api_key="fake",
-            base_url="http://test",
-            model="test-model",
+            "How do I start?", results, llm=mock_llm
         )
 
         assert "Quickstart @ 00:42" in answer.answer
         assert len(answer.citations) == 1
-        mock_client.chat.completions.create.assert_called_once()
-        call_kwargs = mock_client.chat.completions.create.call_args
-        assert call_kwargs.kwargs["model"] == "test-model"
+        mock_llm.invoke.assert_called_once()
 
-    @patch("multimodal_rag.query.generator.OpenAI")
-    def test_passes_context_to_llm(
-        self, mock_openai_cls: MagicMock
-    ) -> None:
-        mock_client = MagicMock()
-        mock_openai_cls.return_value = mock_client
-        mock_choice = MagicMock()
-        mock_choice.message.content = "Answer."
-        mock_client.chat.completions.create.return_value = MagicMock(
-            choices=[mock_choice]
-        )
+    def test_passes_context_to_llm(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="Answer.")
 
         results = [_video_result(), _web_result()]
-        generate_cited_answer("question?", results, api_key="fake")
+        generate_cited_answer("question?", results, llm=mock_llm)
 
-        call_kwargs = mock_client.chat.completions.create.call_args
-        messages = call_kwargs.kwargs["messages"]
-        assert messages[0]["role"] == "system"
-        assert "Paro Software" in messages[0]["content"]
-        assert "## Sources" in messages[1]["content"]
-        assert "## Question" in messages[1]["content"]
+        messages = mock_llm.invoke.call_args[0][0]
+        assert messages[0].content == SYSTEM_PROMPT
+        assert "## Sources" in messages[1].content
+        assert "## Question" in messages[1].content

@@ -4,6 +4,7 @@ import logging
 
 import weaviate
 import weaviate.classes.config as wvc
+from langchain_core.embeddings import Embeddings
 from weaviate.classes.query import MetadataQuery
 
 from multimodal_rag.models.chunks import SourceType, SupportChunk
@@ -20,14 +21,9 @@ class WeaviateStore:
     def __init__(
         self,
         weaviate_url: str,
-        openrouter_api_key: str,
-        openrouter_base_url: str = "https://openrouter.ai/api/v1",
-        embedding_model: str = "openai/text-embedding-3-small",
+        embeddings: Embeddings,
     ) -> None:
-        self._weaviate_url = weaviate_url
-        self._api_key = openrouter_api_key
-        self._base_url = openrouter_base_url
-        self._embedding_model = embedding_model
+        self._embeddings = embeddings
         host = weaviate_url.replace("http://", "").split(":")[0]
         tail = weaviate_url.rsplit("/", 1)[-1]
         port = int(weaviate_url.split(":")[-1]) if ":" in tail else 8080
@@ -71,12 +67,7 @@ class WeaviateStore:
             logger.info("Deleted collection %s", COLLECTION_NAME)
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
-        return embed_texts(
-            texts,
-            api_key=self._api_key,
-            base_url=self._base_url,
-            model=self._embedding_model,
-        )
+        return embed_texts(texts, embeddings=self._embeddings)
 
     def add_chunks(self, chunks: list[SupportChunk]) -> int:
         """Add SupportChunks to Weaviate with embeddings. Returns count added."""
