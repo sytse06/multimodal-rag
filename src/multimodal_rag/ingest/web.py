@@ -21,6 +21,7 @@ def crawl_knowledge_base(
     result = app.crawl(
         root_url,
         limit=limit,
+        max_concurrency=1,
         scrape_options=ScrapeOptions(
             formats=["markdown"],
             only_main_content=True,

@@ -5,6 +5,7 @@ Usage: python -m multimodal_rag.ingest
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -40,8 +41,10 @@ def run() -> None:
     sources = load_sources()
     all_chunks: list[SupportChunk] = []
 
-    # YouTube sources
-    for yt in sources.youtube:
+    # YouTube sources (with rate limiting to avoid IP bans)
+    for i, yt in enumerate(sources.youtube):
+        if i > 0:
+            time.sleep(2)
         logger.info("Processing YouTube: %s", yt.name)
         tc = fetch_transcript_chunks(
             video_url=str(yt.url),
@@ -50,8 +53,10 @@ def run() -> None:
         )
         all_chunks.extend(SupportChunk.from_transcript_chunk(c) for c in tc)
 
-    # Web knowledge base sources
-    for kb in sources.kb_sources:
+    # Web knowledge base sources (sequential to respect Firecrawl rate limits)
+    for i, kb in enumerate(sources.kb_sources):
+        if i > 0:
+            time.sleep(5)
         logger.info("Processing KB: %s", kb.name)
         wc = fetch_web_chunks(
             root_url=str(kb.url),
