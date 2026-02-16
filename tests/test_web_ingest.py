@@ -9,28 +9,34 @@ from multimodal_rag.ingest.web import (
 )
 
 
-class TestCrawlKnowledgeBase:
-    def _mock_crawl_result(
-        self, pages: list[dict[str, str]]
-    ) -> dict[str, list[dict]]:
-        return {
-            "data": [
-                {
-                    "markdown": p["content"],
-                    "metadata": {
-                        "sourceURL": p["url"],
-                        "title": p.get("title", ""),
-                    },
-                }
-                for p in pages
-            ]
-        }
+def _make_doc(url: str, title: str, markdown: str) -> MagicMock:
+    """Create a mock Firecrawl Document."""
+    doc = MagicMock()
+    doc.markdown = markdown
+    doc.metadata = MagicMock()
+    doc.metadata.source_url = url
+    doc.metadata.title = title
+    return doc
 
+
+def _make_crawl_result(pages: list[dict[str, str]]) -> MagicMock:
+    """Create a mock CrawlJob result."""
+    result = MagicMock()
+    result.data = [
+        _make_doc(p["url"], p.get("title", ""), p["content"]) for p in pages
+    ]
+    return result
+
+
+class TestCrawlKnowledgeBase:
+    @patch("multimodal_rag.ingest.web.ScrapeOptions")
     @patch("multimodal_rag.ingest.web.FirecrawlApp")
-    def test_returns_pages_with_content(self, mock_fc_cls: MagicMock) -> None:
+    def test_returns_pages_with_content(
+        self, mock_fc_cls: MagicMock, _mock_opts: MagicMock
+    ) -> None:
         mock_app = MagicMock()
         mock_fc_cls.return_value = mock_app
-        mock_app.crawl_url.return_value = self._mock_crawl_result(
+        mock_app.crawl.return_value = _make_crawl_result(
             [
                 {"url": "https://example.com/a", "title": "A", "content": "# Hello"},
                 {"url": "https://example.com/b", "title": "B", "content": "World"},
@@ -41,11 +47,14 @@ class TestCrawlKnowledgeBase:
         assert pages[0]["url"] == "https://example.com/a"
         assert pages[1]["content"] == "World"
 
+    @patch("multimodal_rag.ingest.web.ScrapeOptions")
     @patch("multimodal_rag.ingest.web.FirecrawlApp")
-    def test_skips_empty_pages(self, mock_fc_cls: MagicMock) -> None:
+    def test_skips_empty_pages(
+        self, mock_fc_cls: MagicMock, _mock_opts: MagicMock
+    ) -> None:
         mock_app = MagicMock()
         mock_fc_cls.return_value = mock_app
-        mock_app.crawl_url.return_value = self._mock_crawl_result(
+        mock_app.crawl.return_value = _make_crawl_result(
             [
                 {"url": "https://example.com/a", "content": "Real content"},
                 {"url": "https://example.com/b", "content": "   "},
@@ -54,21 +63,33 @@ class TestCrawlKnowledgeBase:
         pages = crawl_knowledge_base("https://example.com", "fake-key")
         assert len(pages) == 1
 
+    @patch("multimodal_rag.ingest.web.ScrapeOptions")
     @patch("multimodal_rag.ingest.web.FirecrawlApp")
-    def test_handles_empty_data(self, mock_fc_cls: MagicMock) -> None:
+    def test_handles_empty_data(
+        self, mock_fc_cls: MagicMock, _mock_opts: MagicMock
+    ) -> None:
         mock_app = MagicMock()
         mock_fc_cls.return_value = mock_app
-        mock_app.crawl_url.return_value = {"data": []}
+        mock_app.crawl.return_value = _make_crawl_result([])
         pages = crawl_knowledge_base("https://example.com", "fake-key")
         assert pages == []
 
+    @patch("multimodal_rag.ingest.web.ScrapeOptions")
     @patch("multimodal_rag.ingest.web.FirecrawlApp")
-    def test_handles_non_dict_result(self, mock_fc_cls: MagicMock) -> None:
+    def test_handles_no_metadata(
+        self, mock_fc_cls: MagicMock, _mock_opts: MagicMock
+    ) -> None:
         mock_app = MagicMock()
         mock_fc_cls.return_value = mock_app
-        mock_app.crawl_url.return_value = "unexpected"
+        doc = MagicMock()
+        doc.markdown = "Some content"
+        doc.metadata = None
+        result = MagicMock()
+        result.data = [doc]
+        mock_app.crawl.return_value = result
         pages = crawl_knowledge_base("https://example.com", "fake-key")
-        assert pages == []
+        assert len(pages) == 1
+        assert pages[0]["url"] == "https://example.com"
 
 
 class TestSplitBySections:

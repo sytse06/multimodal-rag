@@ -4,6 +4,7 @@ import logging
 import re
 
 from firecrawl import FirecrawlApp
+from firecrawl.v2.types import ScrapeOptions
 
 from multimodal_rag.models.chunks import WebChunk
 
@@ -17,25 +18,23 @@ def crawl_knowledge_base(
 ) -> list[dict[str, str]]:
     """Crawl a knowledge base from root URL, returning page content."""
     app = FirecrawlApp(api_key=api_key)
-    result = app.crawl_url(
+    result = app.crawl(
         root_url,
-        params={
-            "limit": limit,
-            "scrapeOptions": {
-                "formats": ["markdown"],
-                "onlyMainContent": True,
-            },
-        },
+        limit=limit,
+        scrape_options=ScrapeOptions(
+            formats=["markdown"],
+            only_main_content=True,
+        ),
     )
 
     pages: list[dict[str, str]] = []
-    data = result.get("data", []) if isinstance(result, dict) else []
-    for page in data:
-        markdown = page.get("markdown", "")
-        url = page.get("metadata", {}).get("sourceURL", root_url)
-        title = page.get("metadata", {}).get("title", "")
+    for doc in result.data:
+        markdown = doc.markdown or ""
+        meta = doc.metadata
+        url = meta.source_url if meta and meta.source_url else root_url
+        title = meta.title if meta else ""
         if markdown.strip():
-            pages.append({"url": url, "title": title, "content": markdown})
+            pages.append({"url": url, "title": title or "", "content": markdown})
 
     logger.info("Crawled %s: %d pages with content", root_url, len(pages))
     return pages
