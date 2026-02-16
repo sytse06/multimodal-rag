@@ -208,7 +208,7 @@ class TestAppSettings:
             firecrawl_api_key="test",
         )
         assert settings.llm_model == "google/gemini-3-flash-preview"
-        assert settings.embedding_model == "ollama/nomic-embed-text"
+        assert settings.embedding_model == "nomic-embed-text"
         assert settings.weaviate_url == "http://localhost:8080"
         assert settings.chunk_size == 400
         assert settings.top_k == 5
