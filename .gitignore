@@ -3,6 +3,7 @@ config/development.env
 *.db
 .venv/
 *.code-workspace
+*.txt
 __pycache__/
 .pytest_cache/
 .mypy_cache/

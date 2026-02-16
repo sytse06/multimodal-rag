@@ -141,6 +141,47 @@ class TestSupportChunk:
         )
         assert sc1.url_hash != sc2.url_hash
 
+    def test_chunk_id_deterministic(self) -> None:
+        kwargs = dict(
+            text="Same text",
+            source_type=SourceType.WEB,
+            source_url="https://example.com",
+            source_name="Test",
+        )
+        sc1 = SupportChunk(**kwargs)
+        sc2 = SupportChunk(**kwargs)
+        assert sc1.chunk_id == sc2.chunk_id
+
+    def test_chunk_id_differs_by_text(self) -> None:
+        sc1 = SupportChunk(
+            text="alpha",
+            source_type=SourceType.WEB,
+            source_url="https://example.com",
+            source_name="Test",
+        )
+        sc2 = SupportChunk(
+            text="beta",
+            source_type=SourceType.WEB,
+            source_url="https://example.com",
+            source_name="Test",
+        )
+        assert sc1.chunk_id != sc2.chunk_id
+
+    def test_chunk_id_differs_by_url(self) -> None:
+        sc1 = SupportChunk(
+            text="same",
+            source_type=SourceType.WEB,
+            source_url="https://example.com/a",
+            source_name="Test",
+        )
+        sc2 = SupportChunk(
+            text="same",
+            source_type=SourceType.WEB,
+            source_url="https://example.com/b",
+            source_name="Test",
+        )
+        assert sc1.chunk_id != sc2.chunk_id
+
 
 class TestSearchResult:
     def test_video_citation_markdown(self) -> None:
@@ -208,7 +249,7 @@ class TestAppSettings:
             firecrawl_api_key="test",
         )
         assert settings.llm_model == "google/gemini-3-flash-preview"
-        assert settings.embedding_model == "nomic-embed-text"
+        assert settings.embedding_model == "nomic-embed-text-16k"
         assert settings.weaviate_url == "http://localhost:8080"
         assert settings.chunk_size == 400
         assert settings.top_k == 5
