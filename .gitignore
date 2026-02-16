@@ -12,4 +12,4 @@ dist/
 *.egg-info/
 .coverage
 .DS_Store
-sources.yaml
+config/sources.yaml
