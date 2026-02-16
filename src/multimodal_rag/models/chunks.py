@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from enum import StrEnum
 from hashlib import sha256
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -46,7 +46,7 @@ class WebChunk(BaseModel):
 class SupportChunk(BaseModel):
     """Unified chunk model for Weaviate storage."""
 
-    chunk_id: UUID = Field(default_factory=uuid4)
+    chunk_id: UUID = Field(default=None)  # type: ignore[assignment]
     text: str
     source_type: SourceType
     source_url: str
@@ -59,6 +59,8 @@ class SupportChunk(BaseModel):
     def model_post_init(self, __context: object) -> None:
         if not self.url_hash:
             self.url_hash = sha256(self.source_url.encode()).hexdigest()
+        if self.chunk_id is None:
+            self.chunk_id = uuid5(NAMESPACE_URL, self.source_url + "|" + self.text)
 
     @classmethod
     def from_transcript_chunk(cls, chunk: TranscriptChunk) -> "SupportChunk":

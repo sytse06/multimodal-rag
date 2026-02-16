@@ -21,7 +21,7 @@ class AppSettings(BaseSettings):
 
     # Models
     llm_model: str = "google/gemini-3-flash-preview"
-    embedding_model: str = "nomic-embed-text"
+    embedding_model: str = "nomic-embed-text-16k"
 
     # Weaviate
     weaviate_url: str = "http://localhost:8080"

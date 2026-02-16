@@ -28,11 +28,19 @@ class TestEmbedTexts:
     def test_batching(self) -> None:
         mock_emb = MagicMock()
         mock_emb.embed_documents.return_value = [[0.1]]
-        texts = [f"text_{i}" for i in range(150)]
+        texts = [f"text_{i}" for i in range(12)]
         result = embed_texts(texts, embeddings=mock_emb)
-        # 150 texts / 100 batch size = 2 calls
-        assert mock_emb.embed_documents.call_count == 2
-        assert len(result) == 2
+        # 12 texts / 5 batch size = 3 calls
+        assert mock_emb.embed_documents.call_count == 3
+        assert len(result) == 3
+
+    def test_truncates_long_texts(self) -> None:
+        mock_emb = MagicMock()
+        mock_emb.embed_documents.return_value = [[0.1]]
+        long_text = "word " * 2000
+        embed_texts([long_text], embeddings=mock_emb)
+        called_texts = mock_emb.embed_documents.call_args[0][0]
+        assert len(called_texts[0].split()) == 800
 
 
 class TestSupportChunkConversion:
