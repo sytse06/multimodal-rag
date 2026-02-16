@@ -1,5 +1,6 @@
 """Tests for data models."""
 
+import pytest
 import yaml
 
 from multimodal_rag.models import (
@@ -198,13 +199,16 @@ class TestCitedAnswer:
 
 
 class TestAppSettings:
-    def test_defaults(self) -> None:
+    def test_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
         settings = AppSettings(
+            _env_file=None,
             openrouter_api_key="test",
             firecrawl_api_key="test",
         )
-        assert settings.llm_model == "openai/gpt-4o-mini"
-        assert settings.embedding_model == "openai/text-embedding-3-small"
+        assert settings.llm_model == "google/gemini-3-flash-preview"
+        assert settings.embedding_model == "nomic-embed-text"
         assert settings.weaviate_url == "http://localhost:8080"
         assert settings.chunk_size == 400
         assert settings.top_k == 5

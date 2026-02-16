@@ -20,8 +20,8 @@ class AppSettings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
 
     # Models
-    llm_model: str = "openai/gpt-4o-mini"
-    embedding_model: str = "openai/text-embedding-3-small"
+    llm_model: str = "google/gemini-3-flash-preview"
+    embedding_model: str = "nomic-embed-text"
 
     # Weaviate
     weaviate_url: str = "http://localhost:8080"
