@@ -26,7 +26,7 @@ def extract_video_id(url: str) -> str | None:
 def fetch_transcript(video_id: str) -> list[dict[str, float | str]]:
     """Fetch timestamped transcript segments for a video."""
     ytt_api = YouTubeTranscriptApi()
-    transcript = ytt_api.fetch(video_id)
+    transcript = ytt_api.fetch(video_id, languages=["en", "en-GB", "en-US"])
     return [
         {
             "text": str(snippet.text),
