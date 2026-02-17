@@ -8,7 +8,7 @@ from multimodal_rag.models.chunks import (
     TranscriptChunk,
     WebChunk,
 )
-from multimodal_rag.store.embeddings import embed_texts
+from multimodal_rag.store.embeddings import _MAX_WORDS, _RETRY_MAX_WORDS, embed_texts
 
 
 class TestEmbedTexts:
@@ -40,7 +40,31 @@ class TestEmbedTexts:
         long_text = "word " * 2000
         embed_texts([long_text], embeddings=mock_emb)
         called_texts = mock_emb.embed_documents.call_args[0][0]
-        assert len(called_texts[0].split()) == 800
+        assert len(called_texts[0].split()) == _MAX_WORDS
+
+    def test_context_length_retry(self) -> None:
+        mock_emb = MagicMock()
+        # First call raises context length error, retry succeeds
+        mock_emb.embed_documents.side_effect = [
+            Exception("the input length exceeds the context length"),
+            [[0.1, 0.2]],
+        ]
+        long_text = "word " * 500
+        result = embed_texts([long_text], embeddings=mock_emb)
+        assert result == [[0.1, 0.2]]
+        assert mock_emb.embed_documents.call_count == 2
+        # Retry batch should be truncated to _RETRY_MAX_WORDS
+        retry_texts = mock_emb.embed_documents.call_args_list[1][0][0]
+        assert len(retry_texts[0].split()) == _RETRY_MAX_WORDS
+
+    def test_non_context_error_propagates(self) -> None:
+        mock_emb = MagicMock()
+        mock_emb.embed_documents.side_effect = ConnectionError("network down")
+        try:
+            embed_texts(["hello"], embeddings=mock_emb)
+            assert False, "Should have raised"
+        except ConnectionError:
+            pass
 
 
 class TestSupportChunkConversion:

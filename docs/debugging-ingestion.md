@@ -483,19 +483,26 @@ result = app.crawl(
 **2. Add delay between knowledge base crawls:**
 
 ```python
-# File: src/multimodal_rag/ingest/__main__.py, lines 56-67
+# File: src/multimodal_rag/ingest/__main__.py
 
 for i, kb in enumerate(sources.kb_sources):
     if i > 0:
         time.sleep(5)  # ← 5 seconds between KB crawls
-    logger.info("Processing KB: %s", kb.name)
-    wc = fetch_web_chunks(
+    logger.info("Processing %s", f"kb:{kb.name}")
+    pages = crawl_knowledge_base(
         root_url=str(kb.url),
-        source_name=kb.name,
         api_key=settings.firecrawl_api_key,
-        target_tokens=settings.chunk_size,
+        limit=100,
     )
-    all_chunks.extend(SupportChunk.from_web_chunk(c) for c in wc)
+    for page in pages:
+        web_chunks = split_by_sections(
+            content=page["content"],
+            source_url=page["url"],
+            source_name=kb.name,
+            target_tokens=settings.chunk_size,
+        )
+        chunks = [SupportChunk.from_web_chunk(c) for c in web_chunks]
+        store.add_chunks(chunks)  # per-page embed+store
 ```
 
 #### Rate Limits by Plan
@@ -1039,16 +1046,14 @@ print(f'Fetched {len(chunks)} chunks')
 
 # 4. Test Firecrawl (requires valid API key)
 uv run python -c "
-from multimodal_rag.ingest.web import fetch_web_chunks
+from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
 from multimodal_rag.models.config import AppSettings
 s = AppSettings()
-chunks = fetch_web_chunks(
-    'https://example.com',
-    'Test KB',
-    s.firecrawl_api_key,
-    target_tokens=400
-)
-print(f'Fetched {len(chunks)} chunks')
+pages = crawl_knowledge_base('https://example.com', s.firecrawl_api_key)
+print(f'Crawled {len(pages)} pages')
+for p in pages[:1]:
+    chunks = split_by_sections(p['content'], p['url'], 'Test KB')
+    print(f'  {p[\"url\"]}: {len(chunks)} chunks')
 "
 
 # 5. Full ingestion pipeline

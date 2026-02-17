@@ -226,6 +226,14 @@ knowledge_bases:
 | QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, model selector, clear button |
 | QUERY-004 | LangChain model client | Replace direct openai SDK with LangChain BaseChatModel/Embeddings, support OpenRouter + Ollama |
 
+**Epic 3: Per-source Ingestion Pipeline** (completed)
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| INGEST-001 | Per-source ingest loop | Process each YouTube video and each KB page individually — scrape, chunk, embed, store per unit |
+| INGEST-002 | Error isolation | Try/except per video and per page — failures logged and skipped, pipeline continues |
+| INGEST-003 | Embedding safety | Lower max words 800→400, retry with 200 on context-length errors, warning logs |
+
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
 
