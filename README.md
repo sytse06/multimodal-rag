@@ -95,7 +95,7 @@ src/multimodal_rag/
 ## Development
 
 ```bash
-make test          # Run test suite (80 tests)
+make test          # Run test suite
 make quality       # Ruff lint + mypy type checking
 make quality-fix   # Auto-fix lint issues
 make pre-commit    # Full quality gate (lint + type check + tests)

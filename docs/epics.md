@@ -133,10 +133,55 @@ Replace direct `openai` SDK usage with LangChain's `BaseChatModel` and `Embeddin
 
 ---
 
+## Epic 3: Per-source Ingestion Pipeline (completed)
+
+Restructured the ingestion pipeline from monolithic batch processing to per-source granularity. Each YouTube video and each crawled KB page is independently scraped → chunked → embedded → stored. Failures are isolated and logged, not fatal.
+
+### INGEST-001 — Per-source Ingest Loop
+
+**Branch:** `feature/per-source-ingest`
+
+- `__main__.py` opens `WeaviateStore` and embeddings once, then processes per unit
+- YouTube: after fetching+chunking each video, immediately `store.add_chunks()` for that video
+- Web KBs: `crawl_knowledge_base()` per KB, then `split_by_sections()` + `store.add_chunks()` per page
+- Removed `fetch_web_chunks()` monolith — orchestrator calls `crawl_knowledge_base()` and `split_by_sections()` directly
+- Extracted `_ingest_chunks()` helper with per-unit logging (source name, page URL, chunk count)
+
+**Files:** `src/multimodal_rag/ingest/__main__.py`, `src/multimodal_rag/ingest/web.py`, `src/multimodal_rag/ingest/__init__.py`
+**Tests:** 6
+
+### INGEST-002 — Error Isolation
+
+**Branch:** `feature/per-source-ingest`
+
+- Each video ingest wrapped in try/except — logs error with video name, continues
+- Each KB page ingest wrapped in try/except — logs error with page URL, continues
+- KB crawl failure skips entire KB, continues to next
+- Summary log at end: total added, total failed, total in store
+
+**Files:** `src/multimodal_rag/ingest/__main__.py`
+
+### INGEST-003 — Embedding Safety
+
+**Branch:** `feature/per-source-ingest`
+
+- Lowered `_MAX_WORDS` from 800 → 400 (matches chunk target, safer for URL-heavy markdown)
+- On "context length" error: catch per-batch, re-truncate to `_RETRY_MAX_WORDS = 200`, retry once
+- Logs warning when truncation or retry kicks in (includes original word count)
+- Non-context-length errors propagate normally
+
+**Files:** `src/multimodal_rag/store/embeddings.py`
+**Tests:** 2
+
+**Note:** `_MAX_WORDS` (400) is independent of the `CHUNK_SIZE` env var (default 400 tokens). If `CHUNK_SIZE` is increased above ~500 tokens, embeddings will silently truncate chunks to 400 words. This is intentional — the embedding model's context window is the hard limit, not the chunk target.
+
+---
+
 ## Summary
 
 | Epic | Features | Total Tests |
 |------|----------|-------------|
-| 1 — Ingestion Pipeline | 5 | 55 |
+| 1 — Ingestion Pipeline | 5 | 51 |
 | 2 — Query + UI | 4 | 80+ (after QUERY-004) |
-| **Total** | **9** | **80+** |
+| 3 — Per-source Ingest | 3 | 8 |
+| **Total** | **12** | **80+** |

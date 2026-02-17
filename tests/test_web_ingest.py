@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 from multimodal_rag.ingest.web import (
     crawl_knowledge_base,
-    fetch_web_chunks,
     split_by_sections,
 )
 
@@ -137,41 +136,3 @@ class TestSplitBySections:
         assert len(chunks) == 3
 
 
-class TestFetchWebChunks:
-    @patch("multimodal_rag.ingest.web.crawl_knowledge_base")
-    def test_returns_chunks(self, mock_crawl: MagicMock) -> None:
-        mock_crawl.return_value = [
-            {
-                "url": "https://ex.com/page",
-                "title": "Page",
-                "content": "## Section\nSome content here.",
-            }
-        ]
-        chunks = fetch_web_chunks(
-            "https://ex.com", "Test KB", "fake-key", target_tokens=400
-        )
-        assert len(chunks) >= 1
-        assert chunks[0].source_name == "Test KB"
-
-    @patch("multimodal_rag.ingest.web.crawl_knowledge_base")
-    def test_crawl_failure_returns_empty(self, mock_crawl: MagicMock) -> None:
-        mock_crawl.side_effect = RuntimeError("Network error")
-        chunks = fetch_web_chunks("https://ex.com", "Test KB", "fake-key")
-        assert chunks == []
-
-    @patch("multimodal_rag.ingest.web.crawl_knowledge_base")
-    def test_no_pages_returns_empty(self, mock_crawl: MagicMock) -> None:
-        mock_crawl.return_value = []
-        chunks = fetch_web_chunks("https://ex.com", "Test KB", "fake-key")
-        assert chunks == []
-
-    @patch("multimodal_rag.ingest.web.crawl_knowledge_base")
-    def test_multiple_pages_aggregated(self, mock_crawl: MagicMock) -> None:
-        mock_crawl.return_value = [
-            {"url": "https://ex.com/a", "title": "A", "content": "## S1\nText A."},
-            {"url": "https://ex.com/b", "title": "B", "content": "## S2\nText B."},
-        ]
-        chunks = fetch_web_chunks("https://ex.com", "Test KB", "fake-key")
-        urls = {c.source_url for c in chunks}
-        assert "https://ex.com/a" in urls
-        assert "https://ex.com/b" in urls
