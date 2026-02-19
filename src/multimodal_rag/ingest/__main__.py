@@ -75,6 +75,7 @@ def run() -> None:
                     video_url=str(yt.url),
                     source_name=yt.name,
                     target_tokens=settings.chunk_size,
+                    mistral_api_key=settings.mistral_api_key,
                 )
                 chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
                 total_added += _ingest_chunks(store, chunks, label)
