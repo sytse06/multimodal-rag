@@ -1,110 +1,56 @@
 # Multimodal RAG — Support Knowledge Base
 
-RAG-powered support tool for Paro Software. Indexes YouTube tutorial transcripts and web knowledge bases into Weaviate, enabling support staff to ask natural language questions and receive cited answers with clickable video timestamps and source page links.
+A RAG pipeline that turns YouTube tutorials and web documentation into a
+searchable, cited support tool. Ask a question in plain English; get an answer
+with clickable video timestamp links and source page references.
+
+Handles caption-disabled YouTube videos automatically via Mistral Voxtral audio
+transcription — no manual intervention needed.
 
 ## How It Works
 
 ```
-YouTube videos ──→ transcript extraction ──→ chunking ──→ embedding ──→ Weaviate
-Web KBs        ──→ Firecrawl crawling    ──→ chunking ──→ embedding ──→ Weaviate
-
-User question ──→ embedding ──→ Weaviate search ──→ top-k chunks ──→ LLM ──→ cited answer
+YouTube URLs  ──→ captions available? ──yes──→ youtube-transcript-api ──→ chunks
+                                      └─no───→ yt-dlp + Voxtral Mini  ──→ chunks
+                                                                            │
+Web KB URLs   ──→ Firecrawl crawl ──→ markdown split ──────────────────→ chunks
+                                                                            │
+                                      embed ──→ Weaviate ←─────────────────┘
+                                                  │
+User question ──→ embed ──→ similarity search ──→ top-k chunks ──→ LLM ──→ cited answer
 ```
 
-Answers include:
-- Clickable YouTube timestamp links (`Video Title @ 02:15`)
-- Clickable knowledge base page links with section headings
-- Relevance scores per source
+Answers include clickable `Video Title @ 02:15` timestamp links and KB page links
+with section headings.
 
 ## Prerequisites
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- Docker (for Weaviate)
-- API keys: [OpenRouter](https://openrouter.ai/), [Firecrawl](https://firecrawl.dev/)
+- Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker
+- [OpenRouter](https://openrouter.ai/) API key (LLM + embeddings)
+- [Firecrawl](https://firecrawl.dev/) API key (web crawling)
+- [Mistral](https://console.mistral.ai/) API key (optional — Voxtral fallback for caption-disabled videos)
 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
-make install
-
-# 2. Configure environment
-cp config/.env.example config/development.env
-# Edit config/development.env with your API keys
-make dev
-
-# 3. Start Weaviate
-make docker-up
-
-# 4. Configure sources
-# Edit config/sources.yaml with your YouTube URLs and knowledge base URLs
-
-# 5. Run ingestion
-make ingest
-
-# 6. Launch chat interface
-make run
+make install      # install dependencies
+make docker-up    # start Weaviate
+# edit .env with your API keys, config/sources.yaml with your sources
+make ingest       # index YouTube + web sources
+make run          # launch Gradio chat interface
 ```
 
 ## Configuration
 
-All settings are managed via environment variables (`.env`):
-
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `OPENROUTER_API_KEY` | LLM + embedding API access | — |
-| `OPENROUTER_BASE_URL` | OpenRouter endpoint | `https://openrouter.ai/api/v1` |
-| `LLM_MODEL` | Chat model | `openai/gpt-4o-mini` |
-| `EMBEDDING_MODEL` | Embedding model | `openai/text-embedding-3-small` |
+| `OPENROUTER_API_KEY` | LLM + embedding access | — |
+| `LLM_PROVIDER` | Backend (`openrouter` / `ollama`) | `openrouter` |
+| `LLM_MODEL` | Chat model | `google/gemini-3-flash-preview` |
+| `EMBEDDING_MODEL` | Embedding model | `nomic-embed-text` |
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |
-| `FIRECRAWL_API_KEY` | Web crawling API access | — |
-| `CHUNK_SIZE` | Target tokens per chunk | `400` |
-| `TOP_K` | Retrieved chunks per query | `5` |
-
-Sources are configured in `config/sources.yaml`:
-
-```yaml
-youtube:
-  - url: https://www.youtube.com/watch?v=KHo5xEaPyAI
-    name: "HydroSym Tutorials: 4 minutes Quickstart"
-
-knowledge_bases:
-  - url: https://docs.example.com
-    name: "Product Documentation"
-```
-
-## Project Structure
-
-```
-src/multimodal_rag/
-├── models/          # Pydantic models (chunks, config, sources, query)
-├── ingest/          # Ingestion pipeline (YouTube, web, CLI orchestrator)
-│   ├── youtube.py   # Transcript fetching + chunking
-│   ├── web.py       # Firecrawl crawling + markdown splitting
-│   └── __main__.py  # CLI entrypoint (make ingest)
-├── store/           # Vector store layer
-│   ├── embeddings.py  # OpenRouter embedding (batched)
-│   └── weaviate.py    # Weaviate collection management + search
-├── query/           # Query pipeline
-│   ├── retriever.py   # Embed query → Weaviate search → SearchResults
-│   └── generator.py   # LLM cited answer generation
-└── app.py           # Gradio chat interface (make run)
-```
-
-## Development
-
-```bash
-make test          # Run test suite
-make quality       # Ruff lint + mypy type checking
-make quality-fix   # Auto-fix lint issues
-make pre-commit    # Full quality gate (lint + type check + tests)
-```
-
-### Git Workflow
-
-- **Branches:** `main` → `develop` → `feature/*`
-- **Commits:** conventional format — `feat(scope): description`
+| `FIRECRAWL_API_KEY` | Web crawling | — |
+| `MISTRAL_API_KEY` | Voxtral audio transcription fallback | — |
 
 ## Tech Stack
 
@@ -114,13 +60,22 @@ make pre-commit    # Full quality gate (lint + type check + tests)
 | Package manager | uv |
 | RAG framework | LangChain |
 | Vector store | Weaviate |
-| Embeddings + LLM | OpenRouter (OpenAI-compatible) |
-| Transcripts | youtube-transcript-api |
+| LLM + embeddings | OpenRouter / Ollama |
+| Transcripts | youtube-transcript-api + Mistral Voxtral |
+| Audio download | yt-dlp |
 | Web crawling | Firecrawl |
 | Data validation | Pydantic + BaseSettings |
 | UI | Gradio |
 
+## Development
+
+```bash
+make test         # run test suite with coverage
+make quality      # ruff + mypy
+make pre-commit   # full quality gate
+```
+
 ## Documentation
 
 - [PRD](docs/PRD.md) — product requirements
-- [Epics](docs/epics.md) — development epics and feature breakdown
+- [Epics](docs/epics.md) — feature breakdown
