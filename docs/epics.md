@@ -177,6 +177,45 @@ Restructured the ingestion pipeline from monolithic batch processing to per-sour
 
 ---
 
+## Epic 4: Voxtral Audio Transcription Fallback (completed)
+
+Automatic fallback to Mistral Voxtral Mini audio transcription when `youtube-transcript-api` cannot retrieve captions. Produces segment-level timestamps fed into the unchanged `chunk_segments` pipeline. `IpBlocked` (transient network error) is explicitly excluded from the fallback path.
+
+### VOXTRAL-001 — Audio Download
+
+**Branch:** `feature/voxtral-transcription-fallback`
+
+- `download_audio()` — invokes `yt-dlp` with `bestaudio[ext=m4a]/bestaudio` format preference, writes to a caller-supplied `output_dir`
+- Falls back to directory scan when `yt-dlp` adjusts the output filename after download
+
+**Files:** `src/multimodal_rag/ingest/voxtral.py`
+
+### VOXTRAL-002 — Voxtral Transcription
+
+**Branch:** `feature/voxtral-transcription-fallback`
+
+- `transcribe_with_voxtral()` — calls `mistralai` SDK (`voxtral-mini-latest`) with `timestamp_granularities=["segment"]`
+- Normalises Mistral segment objects to `{"text", "start", "duration"}` dicts — same schema as `youtube-transcript-api` output
+- Returns empty list (with warning log) when Voxtral returns no segments
+
+**Files:** `src/multimodal_rag/ingest/voxtral.py`
+
+### VOXTRAL-003 — Fallback Integration
+
+**Branch:** `feature/voxtral-transcription-fallback`
+
+- `fetch_voxtral_transcript()` — orchestrator: creates `tempfile.TemporaryDirectory`, calls `download_audio` + `transcribe_with_voxtral`, guarantees cleanup on exit
+- `fetch_transcript_chunks()` gains `mistral_api_key: str = ""` parameter
+- Catches `TranscriptsDisabled` and `NoTranscriptFound` → invokes Voxtral fallback if key is set; logs warning and returns `[]` if key is absent
+- `IpBlocked` bypasses fallback — logged as warning, returns `[]`
+- Voxtral failure propagates as `[]` (exception logged, pipeline continues)
+- `AppSettings.mistral_api_key` added; `__main__.py` passes it through to `fetch_transcript_chunks`
+
+**Files:** `src/multimodal_rag/ingest/youtube.py`, `src/multimodal_rag/ingest/__main__.py`, `src/multimodal_rag/models/config.py`
+**Tests:** 13 (all mocked — no real API calls or audio downloads)
+
+---
+
 ## Summary
 
 | Epic | Features | Total Tests |
@@ -184,4 +223,5 @@ Restructured the ingestion pipeline from monolithic batch processing to per-sour
 | 1 — Ingestion Pipeline | 5 | 51 |
 | 2 — Query + UI | 4 | 80+ (after QUERY-004) |
 | 3 — Per-source Ingest | 3 | 8 |
-| **Total** | **12** | **80+** |
+| 4 — Voxtral Fallback | 3 | 13 |
+| **Total** | **15** | **93+** |

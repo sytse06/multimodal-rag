@@ -38,7 +38,7 @@ YouTube videos and knowledge base URLs so the support chatbot has up-to-date con
 
 *Acceptance criteria:*
 - Reads source URLs from a YAML config file (`config/sources.yaml`)
-- YouTube: fetches timestamped transcripts via `youtube-transcript-api`
+- YouTube: fetches timestamped transcripts via `youtube-transcript-api`; if captions are disabled or not found, automatically falls back to Voxtral Mini audio transcription (requires `MISTRAL_API_KEY`)
 - Web: crawls 3 root URLs and all child pages via Firecrawl
 - Chunks text into ~300-500 token segments preserving source metadata
 - Video chunks: video title, video URL, start timestamp (seconds), chunk text
@@ -147,6 +147,7 @@ knowledge_bases:
 | Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
 | LLM gateway | Configurable (default: OpenRouter, local: Ollama) | LangChain abstraction — never lock into a single provider |
 | Transcript extraction | youtube-transcript-api | Timestamped segments, no compute needed |
+| Transcript fallback | Mistral Voxtral Mini + yt-dlp | Audio transcription for caption-disabled videos; segment-level timestamps |
 | Web crawling | Firecrawl | Handles full-site crawling from root URL |
 | Data validation | Pydantic | Type-safe models, config via BaseSettings |
 | UI | Gradio | Fast prototyping, HF Spaces deployment path |
@@ -234,6 +235,14 @@ knowledge_bases:
 | INGEST-002 | Error isolation | Try/except per video and per page — failures logged and skipped, pipeline continues |
 | INGEST-003 | Embedding safety | Lower max words 800→400, retry with 200 on context-length errors, warning logs |
 
+**Epic 4: Voxtral Audio Transcription Fallback** (completed)
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| VOXTRAL-001 | Audio download | `yt-dlp` downloads best available audio to a temporary directory, cleaned up on exit |
+| VOXTRAL-002 | Voxtral transcription | Mistral Voxtral Mini Transcribe API produces segment-level timestamps from audio |
+| VOXTRAL-003 | Fallback integration | `fetch_transcript_chunks` catches `TranscriptsDisabled`/`NoTranscriptFound` and invokes Voxtral; `IpBlocked` is not retried |
+
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
 
@@ -257,6 +266,7 @@ linking to specific video timestamps and knowledge base pages.
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | YouTube transcript quality (auto-generated) | Medium | Medium | Verified: test video has clean captions. Flag low-quality transcripts during ingestion |
+| Caption-disabled YouTube videos | Medium | Medium | Mitigated: Voxtral fallback handles `TranscriptsDisabled` and `NoTranscriptFound` automatically when `MISTRAL_API_KEY` is set |
 | Weaviate Docker overhead for local dev | Low | Low | Single container, minimal resources for dozens of videos |
 | OpenRouter rate limits | Medium | Low | Implement retry logic with exponential backoff via tenacity |
 | Chunking too coarse or too fine | High | Medium | Start with 300-500 tokens, tune based on retrieval quality |

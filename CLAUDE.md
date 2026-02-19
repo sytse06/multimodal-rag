@@ -33,6 +33,11 @@ make git-status   # Show git overview
 │ Ingestion Pipeline (batch, CLI)                 │
 │                                                 │
 │ YouTube URLs ──→ youtube-transcript-api          │
+│                  │  (captions available)         │
+│                  ├─ TranscriptsDisabled/         │
+│                  │  NoTranscriptFound            │
+│                  │  ──→ yt-dlp (download audio)  │
+│                  │     ──→ Voxtral Mini (Mistral)│
 │                  ──→ chunk (with timestamps)     │
 │                     ──→ embed (LangChain)        │
 │                        ──→ Weaviate             │

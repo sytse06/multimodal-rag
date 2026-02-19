@@ -14,3 +14,4 @@ dist/
 .coverage
 .DS_Store
 config/sources.yaml
+config/sources_original.yaml
