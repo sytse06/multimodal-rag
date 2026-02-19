@@ -135,4 +135,25 @@ class TestSplitBySections:
         chunks = split_by_sections(content, "https://ex.com", "Test")
         assert len(chunks) == 3
 
+    def test_chunk_index_is_sequential(self) -> None:
+        content = "## A\nText A.\n## B\nText B.\n## C\nText C."
+        chunks = split_by_sections(content, "https://ex.com", "Test")
+        assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
+
+    def test_chunk_index_sequential_across_sections(self) -> None:
+        """Index must be global across sections, not reset per section."""
+        long = "word " * 500
+        content = f"## First\n{long}\n## Second\n{long}"
+        chunks = split_by_sections(
+            content, "https://ex.com", "Test", target_tokens=50
+        )
+        assert len(chunks) > 2
+        assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
+
+    def test_chunk_index_set_when_no_headers(self) -> None:
+        content = "Just plain text without any headers."
+        chunks = split_by_sections(content, "https://ex.com", "Test")
+        assert all(c.chunk_index is not None for c in chunks)
+        assert chunks[0].chunk_index == 0
+
 

@@ -52,7 +52,9 @@ def split_by_sections(
     matches = list(section_pattern.finditer(content))
 
     if not matches:
-        return _split_by_tokens(content, source_url, source_name, None, target_tokens)
+        return _split_by_tokens(
+            content, source_url, source_name, None, target_tokens, start_index=0
+        )
 
     chunks: list[WebChunk] = []
 
@@ -60,7 +62,10 @@ def split_by_sections(
     pre_header = content[: matches[0].start()].strip()
     if pre_header:
         chunks.extend(
-            _split_by_tokens(pre_header, source_url, source_name, None, target_tokens)
+            _split_by_tokens(
+                pre_header, source_url, source_name, None, target_tokens,
+                start_index=len(chunks),
+            )
         )
 
     for i, match in enumerate(matches):
@@ -72,7 +77,8 @@ def split_by_sections(
         if section_text:
             chunks.extend(
                 _split_by_tokens(
-                    section_text, source_url, source_name, heading, target_tokens
+                    section_text, source_url, source_name, heading, target_tokens,
+                    start_index=len(chunks),
                 )
             )
 
@@ -85,6 +91,7 @@ def _split_by_tokens(
     source_name: str,
     section_heading: str | None,
     target_tokens: int,
+    start_index: int = 0,
 ) -> list[WebChunk]:
     """Split text into chunks of ~target_tokens."""
     words = text.split()
@@ -105,6 +112,7 @@ def _split_by_tokens(
                     source_url=source_url,
                     source_name=source_name,
                     section_heading=section_heading,
+                    chunk_index=start_index + len(chunks),
                 )
             )
 

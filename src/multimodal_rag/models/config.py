@@ -32,6 +32,9 @@ class AppSettings(BaseSettings):
     # Mistral (Voxtral audio transcription fallback)
     mistral_api_key: str = ""
 
+    # Vision (visual grounding — empty = disabled)
+    vision_model: str = ""
+
     # Ingestion
     chunk_size: int = 400
     chunk_overlap: int = 50
