@@ -42,6 +42,7 @@ class WebChunk(BaseModel):
     source_name: str
     section_heading: str | None = None
     image_url: str | None = None
+    chunk_index: int | None = None
 
 
 class SupportChunk(BaseModel):
@@ -65,7 +66,12 @@ class SupportChunk(BaseModel):
 
     @classmethod
     def from_transcript_chunk(cls, chunk: TranscriptChunk) -> "SupportChunk":
+        stable_id = uuid5(
+            NAMESPACE_URL,
+            chunk.source_url + "|transcript|" + str(chunk.start_seconds),
+        )
         return cls(
+            chunk_id=stable_id,
             text=chunk.text,
             source_type=SourceType.VIDEO,
             source_url=chunk.source_url,
@@ -75,6 +81,18 @@ class SupportChunk(BaseModel):
 
     @classmethod
     def from_web_chunk(cls, chunk: WebChunk) -> "SupportChunk":
+        if chunk.chunk_index is not None:
+            return cls(
+                chunk_id=uuid5(
+                    NAMESPACE_URL,
+                    chunk.source_url + "|" + str(chunk.chunk_index),
+                ),
+                text=chunk.text,
+                source_type=SourceType.WEB,
+                source_url=chunk.source_url,
+                source_name=chunk.source_name,
+                section_heading=chunk.section_heading,
+            )
         return cls(
             text=chunk.text,
             source_type=SourceType.WEB,

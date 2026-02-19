@@ -182,6 +182,86 @@ class TestSupportChunk:
         )
         assert sc1.chunk_id != sc2.chunk_id
 
+    def test_from_transcript_chunk_stable_id(self) -> None:
+        """from_transcript_chunk produces same UUID regardless of text."""
+        tc_a = TranscriptChunk(
+            text="First transcription",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=30,
+            end_seconds=60,
+        )
+        tc_b = TranscriptChunk(
+            text="Completely different transcription",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=30,
+            end_seconds=60,
+        )
+        assert SupportChunk.from_transcript_chunk(tc_a).chunk_id == \
+            SupportChunk.from_transcript_chunk(tc_b).chunk_id
+
+    def test_from_transcript_chunk_differs_by_timestamp(self) -> None:
+        tc1 = TranscriptChunk(
+            text="Same text",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=0,
+            end_seconds=30,
+        )
+        tc2 = TranscriptChunk(
+            text="Same text",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=30,
+            end_seconds=60,
+        )
+        assert SupportChunk.from_transcript_chunk(tc1).chunk_id != \
+            SupportChunk.from_transcript_chunk(tc2).chunk_id
+
+    def test_from_web_chunk_stable_id(self) -> None:
+        """from_web_chunk produces same UUID regardless of text when chunk_index set."""
+        wc_a = WebChunk(
+            text="First version of this chunk",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            chunk_index=2,
+        )
+        wc_b = WebChunk(
+            text="Completely rewritten chunk text",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            chunk_index=2,
+        )
+        assert SupportChunk.from_web_chunk(wc_a).chunk_id == \
+            SupportChunk.from_web_chunk(wc_b).chunk_id
+
+    def test_from_web_chunk_differs_by_index(self) -> None:
+        wc1 = WebChunk(
+            text="Same text",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            chunk_index=0,
+        )
+        wc2 = WebChunk(
+            text="Same text",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            chunk_index=1,
+        )
+        assert SupportChunk.from_web_chunk(wc1).chunk_id != \
+            SupportChunk.from_web_chunk(wc2).chunk_id
+
+    def test_from_web_chunk_without_index_falls_back_to_text(self) -> None:
+        """WebChunks without chunk_index still get a UUID via model_post_init."""
+        wc = WebChunk(
+            text="Some text",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+        )
+        sc = SupportChunk.from_web_chunk(wc)
+        assert sc.chunk_id is not None
+
     def test_from_frame_chunk_stable_id(self) -> None:
         """from_frame_chunk produces same UUID regardless of LLM description."""
         tc_a = TranscriptChunk(
