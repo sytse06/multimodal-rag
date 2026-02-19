@@ -27,6 +27,24 @@ def create_chat_model(settings: AppSettings) -> BaseChatModel:
     )
 
 
+def create_vision_llm(settings: AppSettings) -> BaseChatModel:
+    """Create a vision-capable LangChain chat model via OpenRouter.
+
+    Always uses OpenRouter (no Ollama vision path).
+    Raises ValueError if vision_model is not configured.
+    """
+    if not settings.vision_model:
+        raise ValueError("vision_model is not configured in settings")
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        model=settings.vision_model,
+        api_key=SecretStr(settings.openrouter_api_key),
+        base_url=settings.openrouter_base_url,
+        temperature=0.3,
+    )
+
+
 def create_embeddings(settings: AppSettings) -> Embeddings:
     """Create a LangChain embeddings instance based on the configured provider."""
     if settings.embedding_provider == "ollama":

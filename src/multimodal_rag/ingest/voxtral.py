@@ -53,7 +53,12 @@ def transcribe_with_voxtral(
         )
 
     if not response.segments:
-        logger.warning("Voxtral returned no segments for %s", audio_path.name)
+        text_preview = (response.text or "")[:120]
+        logger.warning(
+            "Voxtral returned no segments for %s (text: %r)",
+            audio_path.name,
+            text_preview,
+        )
         return []
 
     return [

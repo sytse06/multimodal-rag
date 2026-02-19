@@ -116,3 +116,4 @@ All configurable via environment variables (`.env`):
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |
 | `FIRECRAWL_API_KEY` | Firecrawl API access | — |
 | `MISTRAL_API_KEY` | Mistral Voxtral transcription fallback | — |
+| `VISION_MODEL` | Vision LLM for frame/screenshot description (empty = disabled) | `""` |
