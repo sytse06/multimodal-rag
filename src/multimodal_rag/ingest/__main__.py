@@ -10,11 +10,13 @@ from pathlib import Path
 
 import yaml
 
+from multimodal_rag.ingest.video_frames import fetch_frame_chunks
 from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
+from multimodal_rag.ingest.web_images import fetch_image_chunks
 from multimodal_rag.ingest.youtube import fetch_transcript_chunks
 from multimodal_rag.models.chunks import SupportChunk
 from multimodal_rag.models.config import AppSettings
-from multimodal_rag.models.llm import create_embeddings
+from multimodal_rag.models.llm import create_embeddings, create_vision_llm
 from multimodal_rag.models.sources import SourceConfig
 from multimodal_rag.store.weaviate import WeaviateStore
 
@@ -55,6 +57,13 @@ def run() -> None:
     sources = load_sources()
     embeddings = create_embeddings(settings)
 
+    if settings.vision_model:
+        vision_llm = create_vision_llm(settings)
+        logger.info("Visual grounding enabled with model: %s", settings.vision_model)
+    else:
+        vision_llm = None
+        logger.info("VISION_MODEL not set — skipping visual grounding")
+
     total_added = 0
     total_failed = 0
 
@@ -82,6 +91,21 @@ def run() -> None:
             except Exception:
                 logger.exception("[%s] Failed, skipping", label)
                 total_failed += 1
+
+            if vision_llm is not None:
+                try:
+                    frame_chunks = fetch_frame_chunks(
+                        str(yt.url), yt.name, vision_llm
+                    )
+                    support_chunks = [
+                        SupportChunk.from_frame_chunk(c) for c in frame_chunks
+                    ]
+                    total_added += _ingest_chunks(
+                        store, support_chunks, f"{label} [frames]"
+                    )
+                except Exception:
+                    logger.exception("[%s] Frame extraction failed, skipping", label)
+                    total_failed += 1
 
         # Web knowledge base sources
         for i, kb in enumerate(sources.kb_sources):
@@ -115,6 +139,26 @@ def run() -> None:
                 except Exception:
                     logger.exception("[%s] Failed, skipping", page_label)
                     total_failed += 1
+
+                if vision_llm is not None:
+                    try:
+                        img_chunks = fetch_image_chunks(
+                            page_url,
+                            kb.name,
+                            page.get("content", ""),
+                            vision_llm,
+                        )
+                        support_chunks = [
+                            SupportChunk.from_screenshot_chunk(c) for c in img_chunks
+                        ]
+                        total_added += _ingest_chunks(
+                            store, support_chunks, f"{page_label} [images]"
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[%s] Image description failed, skipping", page_label
+                        )
+                        total_failed += 1
 
         total_in_store = store.count()
 

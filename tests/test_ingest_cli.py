@@ -13,13 +13,14 @@ class TestLoadSources:
         assert sources.youtube[0].name is not None
 
 
-def _make_settings() -> MagicMock:
+def _make_settings(vision_model: str = "") -> MagicMock:
     settings = MagicMock()
     settings.log_level = "WARNING"
     settings.chunk_size = 400
     settings.firecrawl_api_key = "fake"
     settings.weaviate_url = "http://localhost:8080"
     settings.mistral_api_key = ""
+    settings.vision_model = vision_model
     return settings
 
 
@@ -272,3 +273,87 @@ class TestRun:
 
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_not_called()
+
+    @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
+    @patch("multimodal_rag.ingest.__main__.create_vision_llm")
+    @patch("multimodal_rag.ingest.__main__.WeaviateStore")
+    @patch("multimodal_rag.ingest.__main__.create_embeddings")
+    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.__main__.load_sources")
+    @patch("multimodal_rag.ingest.__main__.AppSettings")
+    def test_visual_grounding_skipped_when_vision_model_not_set(
+        self,
+        mock_settings_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_yt: MagicMock,
+        mock_create_emb: MagicMock,
+        mock_store_cls: MagicMock,
+        mock_create_vision: MagicMock,
+        mock_fetch_frames: MagicMock,
+    ) -> None:
+        mock_settings_cls.return_value = _make_settings(vision_model="")
+        mock_create_emb.return_value = MagicMock()
+
+        from multimodal_rag.models.sources import SourceConfig, YouTubeSource
+
+        mock_load.return_value = SourceConfig(
+            youtube=[YouTubeSource(url="https://youtube.com/watch?v=abc", name="Vid")]
+        )
+        mock_yt.return_value = []
+
+        mock_store = _make_store()
+        _setup_store_cls(mock_store_cls, mock_store)
+
+        run()
+
+        mock_create_vision.assert_not_called()
+        mock_fetch_frames.assert_not_called()
+
+    @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
+    @patch("multimodal_rag.ingest.__main__.create_vision_llm")
+    @patch("multimodal_rag.ingest.__main__.WeaviateStore")
+    @patch("multimodal_rag.ingest.__main__.create_embeddings")
+    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.__main__.load_sources")
+    @patch("multimodal_rag.ingest.__main__.AppSettings")
+    def test_visual_grounding_runs_when_vision_model_set(
+        self,
+        mock_settings_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_yt: MagicMock,
+        mock_create_emb: MagicMock,
+        mock_store_cls: MagicMock,
+        mock_create_vision: MagicMock,
+        mock_fetch_frames: MagicMock,
+    ) -> None:
+        mock_settings_cls.return_value = _make_settings(
+            vision_model="google/gemini-flash-1.5"
+        )
+        mock_create_emb.return_value = MagicMock()
+        mock_create_vision.return_value = MagicMock()
+
+        from multimodal_rag.models.sources import SourceConfig, YouTubeSource
+
+        mock_load.return_value = SourceConfig(
+            youtube=[YouTubeSource(url="https://youtube.com/watch?v=abc", name="Vid")]
+        )
+        mock_yt.return_value = []
+        mock_fetch_frames.return_value = [
+            TranscriptChunk(
+                text="A menu is visible",
+                source_url="https://youtube.com/watch?v=abc",
+                source_name="Vid",
+                start_seconds=0,
+                end_seconds=30,
+            )
+        ]
+
+        mock_store = _make_store()
+        _setup_store_cls(mock_store_cls, mock_store)
+
+        run()
+
+        mock_create_vision.assert_called_once()
+        mock_fetch_frames.assert_called_once()
+        # add_chunks called for the frame chunk
+        mock_store.add_chunks.assert_called_once()

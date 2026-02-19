@@ -182,6 +182,90 @@ class TestSupportChunk:
         )
         assert sc1.chunk_id != sc2.chunk_id
 
+    def test_from_frame_chunk_stable_id(self) -> None:
+        """from_frame_chunk produces same UUID regardless of LLM description."""
+        tc_a = TranscriptChunk(
+            text="Description A",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=60,
+            end_seconds=90,
+        )
+        tc_b = TranscriptChunk(
+            text="Description B — completely different",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=60,
+            end_seconds=90,
+        )
+        id_a = SupportChunk.from_frame_chunk(tc_a).chunk_id
+        id_b = SupportChunk.from_frame_chunk(tc_b).chunk_id
+        assert id_a == id_b
+
+    def test_from_frame_chunk_differs_by_timestamp(self) -> None:
+        tc1 = TranscriptChunk(
+            text="Same text",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=0,
+            end_seconds=30,
+        )
+        tc2 = TranscriptChunk(
+            text="Same text",
+            source_url="https://youtube.com/watch?v=abc",
+            source_name="Vid",
+            start_seconds=30,
+            end_seconds=60,
+        )
+        id1 = SupportChunk.from_frame_chunk(tc1).chunk_id
+        id2 = SupportChunk.from_frame_chunk(tc2).chunk_id
+        assert id1 != id2
+
+    def test_from_screenshot_chunk_stable_id(self) -> None:
+        """from_screenshot_chunk produces same UUID regardless of LLM description."""
+        wc_a = WebChunk(
+            text="Description A",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            image_url="https://cdn.example.com/screen.png",
+        )
+        wc_b = WebChunk(
+            text="Description B — completely different",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            image_url="https://cdn.example.com/screen.png",
+        )
+        id_a = SupportChunk.from_screenshot_chunk(wc_a).chunk_id
+        id_b = SupportChunk.from_screenshot_chunk(wc_b).chunk_id
+        assert id_a == id_b
+
+    def test_from_screenshot_chunk_differs_by_image_url(self) -> None:
+        wc1 = WebChunk(
+            text="Same text",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            image_url="https://cdn.example.com/img_a.png",
+        )
+        wc2 = WebChunk(
+            text="Same text",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+            image_url="https://cdn.example.com/img_b.png",
+        )
+        id1 = SupportChunk.from_screenshot_chunk(wc1).chunk_id
+        id2 = SupportChunk.from_screenshot_chunk(wc2).chunk_id
+        assert id1 != id2
+
+    def test_from_screenshot_chunk_raises_without_image_url(self) -> None:
+        import pytest
+        wc = WebChunk(
+            text="Some description",
+            source_url="https://docs.example.com/page",
+            source_name="Docs",
+        )
+        with pytest.raises(ValueError, match="image_url"):
+            SupportChunk.from_screenshot_chunk(wc)
+
 
 class TestSearchResult:
     def test_video_citation_markdown(self) -> None:
