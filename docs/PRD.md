@@ -148,6 +148,8 @@ knowledge_bases:
 | LLM gateway | Configurable (default: OpenRouter, local: Ollama) | LangChain abstraction — never lock into a single provider |
 | Transcript extraction | youtube-transcript-api | Timestamped segments, no compute needed |
 | Transcript fallback | Mistral Voxtral Mini + yt-dlp | Audio transcription for caption-disabled videos; segment-level timestamps |
+| Visual understanding | Vision LLM via OpenRouter (e.g. GPT-4V / Gemini Flash) | Describes keyframes and web screenshots as text; uses existing OpenRouter config, no new API keys |
+| Frame extraction | yt-dlp + ffmpeg | yt-dlp already a dependency; ffmpeg is the standard tool for keyframe extraction |
 | Web crawling | Firecrawl | Handles full-site crawling from root URL |
 | Data validation | Pydantic | Type-safe models, config via BaseSettings |
 | UI | Gradio | Fast prototyping, HF Spaces deployment path |
@@ -178,7 +180,7 @@ knowledge_bases:
 | `WebChunk` | Web page segment with URL and section metadata |
 | `SearchResult` | Retrieved chunk + relevance score |
 | `CitedAnswer` | LLM response with structured citations |
-| `AppSettings` | BaseSettings for API keys, model config (LLM + embedding model), Weaviate connection |
+| `AppSettings` | BaseSettings for API keys, model config (LLM, embedding, vision model), Weaviate connection |
 
 ## 6. UI/UX Design Principles
 
@@ -242,6 +244,16 @@ knowledge_bases:
 | VOXTRAL-001 | Audio download | `yt-dlp` downloads best available audio to a temporary directory, cleaned up on exit |
 | VOXTRAL-002 | Voxtral transcription | Mistral Voxtral Mini Transcribe API produces segment-level timestamps from audio |
 | VOXTRAL-003 | Fallback integration | `fetch_transcript_chunks` catches `TranscriptsDisabled`/`NoTranscriptFound` and invokes Voxtral; `IpBlocked` is not retried |
+
+**Epic 5: Visual Grounding** (planned)
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| VIS-001 | Video frame extraction and description | `yt-dlp` + `ffmpeg` extract keyframes; vision LLM describes each frame; returns `list[TranscriptChunk]` |
+| VIS-002 | Web screenshot extraction and description | Extract image URLs from Firecrawl markdown; vision LLM describes each image; returns `list[WebChunk]` |
+| VIS-003 | Vision LLM factory and config | `create_vision_llm()` factory in `models/llm.py`; `VISION_MODEL` env var in `AppSettings` |
+| VIS-004 | Stable chunk ID for frame and screenshot chunks | Chunk ID keyed on frame identity (`hash(source_url + timestamp_seconds)` or `hash(image_url)`) — not on non-deterministic LLM text output |
+| VIS-005 | Ingestion orchestrator wiring and tests | Wire both new paths in `ingest/__main__.py`; all vision LLM, ffmpeg, and download calls fully mocked in tests |
 
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.

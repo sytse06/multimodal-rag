@@ -216,6 +216,65 @@ Automatic fallback to Mistral Voxtral Mini audio transcription when `youtube-tra
 
 ---
 
+## Epic 5: Visual Grounding (planned)
+
+Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM converts images to text descriptions that are embedded with the existing `nomic-embed-text` model — no embedding model change required. This makes the project genuinely multimodal: it indexes not just what was said or written, but what was shown on screen.
+
+### VIS-001 — Video Frame Extraction and Description
+
+**Branch:** `feature/VIS-001-video-frames`
+
+- `extract_keyframes()` — invokes `ffmpeg` to extract frames at regular intervals from a video downloaded by `yt-dlp`
+- `describe_frame()` — sends a keyframe image to a vision LLM via OpenRouter, returns a text description
+- `fetch_frame_chunks()` — orchestrator: extracts frames, describes each, returns `list[TranscriptChunk]` with stable chunk IDs keyed on `hash(source_url + timestamp_seconds)` to prevent duplicate accumulation on re-ingest
+
+**Files:** `src/multimodal_rag/ingest/video_frames.py`
+
+### VIS-002 — Web Screenshot Extraction and Description
+
+**Branch:** `feature/VIS-002-web-images`
+
+- `extract_image_urls()` — parses crawled markdown from Firecrawl, extracts all embedded image URLs
+- `describe_image()` — downloads each image, sends it to a vision LLM via OpenRouter, returns a text description
+- `fetch_image_chunks()` — orchestrator: extracts image URLs, describes each, returns `list[WebChunk]` with stable chunk IDs keyed on `hash(image_url)`
+
+**Files:** `src/multimodal_rag/ingest/web_images.py`
+
+### VIS-003 — Vision LLM Factory and Config
+
+**Branch:** `feature/VIS-003-vision-llm-factory`
+
+- `create_vision_llm()` — returns a LangChain-compatible vision model instance configured from `AppSettings`; defaults to an OpenRouter model (e.g. GPT-4V or Gemini Flash) — no new API keys required
+- `AppSettings.vision_model` — new `VISION_MODEL` env var; consistent with existing `LLM_MODEL` / `EMBEDDING_MODEL` pattern
+
+**Files:** `src/multimodal_rag/models/llm.py`, `src/multimodal_rag/models/config.py`
+
+### VIS-004 — Stable Chunk ID for Frame and Screenshot Chunks
+
+**Branch:** `feature/VIS-004-chunk-id-stability`
+
+- Override chunk ID generation in `TranscriptChunk` for frame chunks: ID is `hash(source_url + timestamp_seconds)`, not derived from vision LLM output text (which is non-deterministic)
+- Override chunk ID generation in `WebChunk` for screenshot chunks: ID is `hash(image_url)`
+- Ensures idempotent re-ingestion — re-running `make ingest` does not accumulate duplicate visual chunks
+
+**Files:** `src/multimodal_rag/models/chunks.py`
+
+### VIS-005 — Ingestion Orchestrator Wiring and Tests
+
+**Branch:** `feature/VIS-005-ingest-wiring`
+
+- `ingest/__main__.py` wires both new ingestion paths alongside existing YouTube and web paths
+- Frame chunk path: `fetch_frame_chunks()` → `SupportChunk.from_transcript_chunk()` → `store.add_chunks()`
+- Screenshot chunk path: `fetch_image_chunks()` → `SupportChunk.from_web_chunk()` → `store.add_chunks()`
+- Tests for all new code — vision LLM calls, `ffmpeg`/`yt-dlp` invocations, and image downloads are fully mocked
+
+**Files:** `src/multimodal_rag/ingest/__main__.py`
+**Tests:** target coverage for all five VIS stories
+
+**Not modified:** `store/`, `query/`, `app.py`, embedding pipeline
+
+---
+
 ## Summary
 
 | Epic | Features | Total Tests |
@@ -224,4 +283,5 @@ Automatic fallback to Mistral Voxtral Mini audio transcription when `youtube-tra
 | 2 — Query + UI | 4 | 80+ (after QUERY-004) |
 | 3 — Per-source Ingest | 3 | 8 |
 | 4 — Voxtral Fallback | 3 | 13 |
-| **Total** | **15** | **93+** |
+| 5 — Visual Grounding | 5 | planned |
+| **Total** | **20** | **93+ planned** |
