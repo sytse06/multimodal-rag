@@ -19,6 +19,7 @@ def _make_settings() -> MagicMock:
     settings.chunk_size = 400
     settings.firecrawl_api_key = "fake"
     settings.weaviate_url = "http://localhost:8080"
+    settings.mistral_api_key = ""
     return settings
 
 
@@ -78,7 +79,12 @@ class TestRun:
         run()
 
         mock_create_emb.assert_called_once()
-        mock_yt.assert_called_once()
+        mock_yt.assert_called_once_with(
+            video_url="https://www.youtube.com/watch?v=abc",
+            source_name="Test",
+            target_tokens=400,
+            mistral_api_key="",
+        )
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_called_once()
 

@@ -7,7 +7,7 @@ YouTube tutorial transcripts and web knowledge bases into Weaviate, enabling sup
 staff to ask natural language questions and receive cited answers with clickable video
 timestamps and source page links.
 
-**Tech stack:** Python, LangChain, Gradio, Weaviate, OpenRouter, youtube-transcript-api, Firecrawl
+**Tech stack:** Python, LangChain, Gradio, Weaviate, OpenRouter, youtube-transcript-api, Firecrawl, Mistral (Voxtral), yt-dlp
 
 ## Development Commands
 
@@ -65,7 +65,8 @@ src/multimodal_rag/
 │   ├── chunks.py      #   TranscriptChunk, WebChunk, SupportChunk
 │   └── query.py       #   SearchResult, Citation, CitedAnswer
 ├── ingest/            # Ingestion pipeline
-│   ├── youtube.py     #   Transcript fetching + chunking
+│   ├── youtube.py     #   Transcript fetching + chunking (+ Voxtral fallback)
+│   ├── voxtral.py     #   Voxtral audio transcription (yt-dlp + Mistral)
 │   ├── web.py         #   Firecrawl crawling + markdown splitting
 │   └── __main__.py    #   CLI orchestrator (make ingest)
 ├── store/             # Vector store layer
@@ -109,3 +110,4 @@ All configurable via environment variables (`.env`):
 | `EMBEDDING_MODEL` | Embedding model | `openai/text-embedding-3-small` |
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |
 | `FIRECRAWL_API_KEY` | Firecrawl API access | — |
+| `MISTRAL_API_KEY` | Mistral Voxtral transcription fallback | — |

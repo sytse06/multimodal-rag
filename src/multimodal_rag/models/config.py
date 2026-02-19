@@ -29,6 +29,9 @@ class AppSettings(BaseSettings):
     # Firecrawl
     firecrawl_api_key: str = ""
 
+    # Mistral (Voxtral audio transcription fallback)
+    mistral_api_key: str = ""
+
     # Ingestion
     chunk_size: int = 400
     chunk_overlap: int = 50
