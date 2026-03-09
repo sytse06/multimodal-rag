@@ -1,4 +1,4 @@
-.PHONY: help install test quality quality-fix clean pre-commit ingest dev git-status docker-up docker-down
+.PHONY: help install test quality quality-fix clean pre-commit ingest purge dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -31,6 +31,7 @@ help:
 	@echo ""
 	@echo "Data Pipeline:"
 	@echo "  make ingest       - Run ingestion pipeline (YouTube + web)"
+	@echo "  make purge        - Delete Weaviate collection (irreversible)"
 	@echo ""
 	@echo "Application:"
 	@echo "  make run          - Start Gradio chat interface"
@@ -90,6 +91,21 @@ docker-down:
 	@echo -e "$(BLUE)🐳 Stopping Weaviate...$(NC)"
 	@docker compose down
 	@echo -e "$(GREEN)✅ Weaviate stopped$(NC)"
+
+purge:
+	@echo -e "$(RED)⚠️  Deleting Weaviate collection...$(NC)"
+	@read -p "Are you sure? This cannot be undone. [y/N] " confirm && [ "$$confirm" = "y" ]
+	@uv run python -c "\
+from multimodal_rag.store.weaviate import WeaviateStore; \
+from multimodal_rag.models.config import AppSettings; \
+from multimodal_rag.models.llm import create_embeddings; \
+settings = AppSettings(); \
+embeddings = create_embeddings(settings); \
+store = WeaviateStore(weaviate_url=settings.weaviate_url, embeddings=embeddings); \
+store.delete_collection(); \
+store.close(); \
+print('Collection deleted.')"
+	@echo -e "$(GREEN)✅ Weaviate collection purged$(NC)"
 
 ingest:
 	@echo -e "$(BLUE)📥 Running ingestion pipeline...$(NC)"

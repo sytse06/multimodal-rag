@@ -274,6 +274,49 @@ class TestRun:
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_not_called()
 
+    @patch("multimodal_rag.ingest.__main__.WeaviateStore")
+    @patch("multimodal_rag.ingest.__main__.create_embeddings")
+    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.__main__.load_sources")
+    @patch("multimodal_rag.ingest.__main__.AppSettings")
+    def test_skip_voxtral_passes_empty_mistral_key(
+        self,
+        mock_settings_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_yt: MagicMock,
+        mock_create_emb: MagicMock,
+        mock_store_cls: MagicMock,
+    ) -> None:
+        settings = _make_settings()
+        settings.mistral_api_key = "real-key"
+        mock_settings_cls.return_value = settings
+        mock_create_emb.return_value = MagicMock()
+
+        from multimodal_rag.models.sources import SourceConfig, YouTubeSource
+
+        mock_load.return_value = SourceConfig(
+            youtube=[
+                YouTubeSource(
+                    url="https://www.youtube.com/watch?v=abc",
+                    name="Silent Video",
+                    skip_voxtral=True,
+                )
+            ]
+        )
+        mock_yt.return_value = []
+
+        mock_store = _make_store()
+        _setup_store_cls(mock_store_cls, mock_store)
+
+        run()
+
+        mock_yt.assert_called_once_with(
+            video_url="https://www.youtube.com/watch?v=abc",
+            source_name="Silent Video",
+            target_tokens=400,
+            mistral_api_key="",
+        )
+
     @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
     @patch("multimodal_rag.ingest.__main__.create_vision_llm")
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
