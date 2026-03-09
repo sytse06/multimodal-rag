@@ -79,12 +79,16 @@ def run() -> None:
                 time.sleep(2)
             label = f"youtube:{yt.name}"
             logger.info("Processing %s", label)
+            if yt.skip_voxtral:
+                logger.info("[%s] skip_voxtral=true — Voxtral bypassed", label)
             try:
                 tc = fetch_transcript_chunks(
                     video_url=str(yt.url),
                     source_name=yt.name,
                     target_tokens=settings.chunk_size,
-                    mistral_api_key=settings.mistral_api_key,
+                    mistral_api_key=(
+                        "" if yt.skip_voxtral else settings.mistral_api_key
+                    ),
                 )
                 chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
                 total_added += _ingest_chunks(store, chunks, label)

@@ -6,6 +6,7 @@ from pydantic import BaseModel, HttpUrl
 class YouTubeSource(BaseModel):
     url: HttpUrl
     name: str
+    skip_voxtral: bool = False
 
 
 class KnowledgeBaseSource(BaseModel):

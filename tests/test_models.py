@@ -44,6 +44,36 @@ class TestSourceConfig:
         assert len(config.youtube) >= 1
 
 
+class TestYouTubeSource:
+    def test_skip_voxtral_defaults_to_false(self) -> None:
+        from multimodal_rag.models.sources import YouTubeSource
+
+        source = YouTubeSource(url="https://youtube.com/watch?v=abc", name="Vid")
+        assert source.skip_voxtral is False
+
+    def test_skip_voxtral_can_be_set(self) -> None:
+        from multimodal_rag.models.sources import YouTubeSource
+
+        source = YouTubeSource(
+            url="https://youtube.com/watch?v=abc", name="Vid", skip_voxtral=True
+        )
+        assert source.skip_voxtral is True
+
+    def test_skip_voxtral_parsed_from_dict(self) -> None:
+        from multimodal_rag.models.sources import SourceConfig
+
+        config = SourceConfig.model_validate({
+            "youtube": [
+                {
+                    "url": "https://youtube.com/watch?v=abc",
+                    "name": "Vid",
+                    "skip_voxtral": True,
+                }
+            ]
+        })
+        assert config.youtube[0].skip_voxtral is True
+
+
 class TestTranscriptChunk:
     def test_timestamp_url(self) -> None:
         chunk = TranscriptChunk(
