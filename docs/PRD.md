@@ -292,3 +292,50 @@ linking to specific video timestamps and knowledge base pages.
 - **Incremental ingestion** — watch for new videos/pages automatically
 - **Evaluation framework** — measure retrieval quality and answer accuracy
 - **FastAPI backend** — expose RAG as API for integration with existing support systems
+
+## 11. Future Requirements
+
+### 11.1 Content-Hash Check Before Embedding (Idempotent Re-Ingest Optimization)
+
+*User story:* As a system administrator running frequent or nightly re-ingests, I want the
+pipeline to skip embedding chunks whose content has not changed since the last ingest, so
+that embedding API calls and wall-clock time are not wasted on unchanged material.
+
+*Context:*
+- The ingestion pipeline already assigns stable chunk IDs: `source_url + timestamp_seconds`
+  for transcript chunks, `source_url + chunk_index` for web chunks, `image_url` for
+  screenshot chunks, and `source_url + timestamp_seconds` for frame chunks
+- Weaviate upserts on these stable IDs, so re-ingest is always correct and duplicate-free
+- However, every re-ingest currently re-embeds all chunks unconditionally, even when the
+  underlying text is identical to what is already stored — this costs embedding API calls
+  and time proportional to the full corpus size
+
+*Acceptance criteria:*
+- Before embedding a batch of chunks, compute a content hash (e.g. SHA-256 of the chunk
+  text) for each chunk
+- Query Weaviate for existing objects by UUID, retrieve their stored `content_hash` property
+- Skip embedding for any chunk whose computed hash matches the stored value
+- Embed and upsert only chunks that are new or whose content hash differs from the stored value
+- Store `content_hash` as a string property on `SupportChunk` in Weaviate
+- Log the number of chunks skipped (hash match) versus embedded (new or changed) per run
+
+*Technical considerations:*
+- Add `content_hash: str | None` to the `SupportChunk` Pydantic model and to the Weaviate
+  collection schema (nullable for backwards compatibility with objects ingested before this
+  feature)
+- Batch the Weaviate UUID lookups to avoid N+1 query patterns — fetch hashes for the full
+  batch in one or a small number of requests before deciding what to embed
+- The hash must be computed from normalised text (e.g. stripped whitespace) so that purely
+  cosmetic differences in source formatting do not cause unnecessary re-embedding
+- Existing upsert logic remains unchanged for the chunks that do need embedding; only the
+  pre-embedding filter step is new
+- The optimisation is transparently bypassed if `content_hash` is absent on a stored object
+  (i.e. objects created before this feature are always re-embedded once, then hashed)
+
+*When this matters:*
+- Nightly or otherwise frequent re-ingests across large source sets
+- Corpora where embedding API cost is significant
+- Currently not needed at the project's scale (a handful of YouTube videos and web KB pages);
+  implement when re-ingest frequency or source volume makes the cost observable
+
+*Priority:* Nice-to-have (post-v1)
