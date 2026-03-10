@@ -35,6 +35,9 @@ class AppSettings(BaseSettings):
     # Vision (visual grounding — empty = disabled)
     vision_model: str = ""
 
+    # YouTube cookie file (Netscape format) — bypasses IP blocks
+    youtube_cookies_file: str = ""
+
     # Ingestion
     chunk_size: int = 400
     chunk_overlap: int = 50

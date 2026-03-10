@@ -19,7 +19,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "langchain-weaviate>=0.0.6",
     "mistralai>=1.12.3",
-    "yt-dlp>=2026.2.4",
+    "yt-dlp>=2026.3.1",
 ]
 
 [build-system]
@@ -59,4 +59,5 @@ dev = [
     "ruff>=0.9.0",
     "mypy>=1.14.0",
     "types-pyyaml>=6.0.12.20250915",
+    "types-requests>=2.32.4.20260107",
 ]
