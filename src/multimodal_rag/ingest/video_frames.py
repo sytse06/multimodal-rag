@@ -15,18 +15,22 @@ from multimodal_rag.models.chunks import TranscriptChunk
 logger = logging.getLogger(__name__)
 
 
-def download_video(video_url: str, output_dir: Path) -> Path:
+def download_video(
+    video_url: str, output_dir: Path, cookies_file: str = ""
+) -> Path:
     """Download best available video from a YouTube URL to output_dir.
 
     Returns the path to the downloaded file.
     Raises yt_dlp.utils.DownloadError on failure.
     """
     ydl_opts: dict = {
-        "format": "bestvideo[ext=mp4]/bestvideo",
+        "format": "bestvideo[vcodec!=images]/best[vcodec!=images]/best",
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
     }
+    if cookies_file:
+        ydl_opts["cookiefile"] = cookies_file
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
 
@@ -103,6 +107,7 @@ def fetch_frame_chunks(
     video_title: str,
     llm: BaseChatModel,
     interval_seconds: int = 30,
+    cookies_file: str = "",
 ) -> list[TranscriptChunk]:
     """Download a video, extract keyframes, and describe each with a vision LLM.
 
@@ -119,7 +124,7 @@ def fetch_frame_chunks(
         frame_dir.mkdir()
 
         logger.info("Downloading video for frame extraction: %s", video_title)
-        video_path = download_video(video_url, video_dir)
+        video_path = download_video(video_url, video_dir, cookies_file=cookies_file)
 
         frames = extract_keyframes(video_path, frame_dir, interval_seconds)
         logger.info("Extracted %d keyframes from %s", len(frames), video_title)

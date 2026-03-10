@@ -30,7 +30,8 @@ class TestDownloadVideo:
         result = download_video("https://youtu.be/abc123", tmp_path)
 
         call_kwargs = mock_ydl_cls.call_args[0][0]
-        assert call_kwargs["format"] == "bestvideo[ext=mp4]/bestvideo"
+        expected_fmt = "bestvideo[vcodec!=images]/best[vcodec!=images]/best"
+        assert call_kwargs["format"] == expected_fmt
         assert result == video_file
 
     @patch("multimodal_rag.ingest.video_frames.yt_dlp.YoutubeDL")

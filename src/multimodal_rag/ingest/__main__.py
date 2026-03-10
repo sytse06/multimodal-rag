@@ -89,6 +89,7 @@ def run() -> None:
                     mistral_api_key=(
                         "" if yt.skip_voxtral else settings.mistral_api_key
                     ),
+                    cookies_file=settings.youtube_cookies_file,
                 )
                 chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
                 total_added += _ingest_chunks(store, chunks, label)
@@ -99,7 +100,10 @@ def run() -> None:
             if vision_llm is not None:
                 try:
                     frame_chunks = fetch_frame_chunks(
-                        str(yt.url), yt.name, vision_llm
+                        str(yt.url),
+                        yt.name,
+                        vision_llm,
+                        cookies_file=settings.youtube_cookies_file,
                     )
                     support_chunks = [
                         SupportChunk.from_frame_chunk(c) for c in frame_chunks
