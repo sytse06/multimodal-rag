@@ -73,25 +73,34 @@ def extract_keyframes(
     return [(frame, (i) * interval_seconds) for i, frame in enumerate(frames)]
 
 
-def describe_frame(frame_path: Path, llm: BaseChatModel) -> str:
-    """Describe a video frame using a vision LLM.
+_PROMPT_DESCRIBE = (
+    "Describe what is shown in this video frame in detail. "
+    "Focus on any UI elements, text, menus, buttons, or actions visible. "
+    "Be specific and concise."
+)
 
-    Encodes the JPEG as base64 and sends it via an image_url content block.
-    Returns the LLM's text description.
+_PROMPT_TRANSCRIBE = (
+    "Transcribe all text visible in this video frame exactly as written. "
+    "Include any on-screen captions, labels, step descriptions, callouts, "
+    "or text overlays. "
+    "If no text is visible, respond with 'No text visible.'"
+)
+
+
+def describe_frame(
+    frame_path: Path, llm: BaseChatModel, transcribe_mode: bool = False
+) -> str:
+    """Describe or transcribe a video frame using a vision LLM.
+
+    In transcribe_mode, extracts on-screen text only (for silent screen recordings).
+    Returns the LLM's text response.
     """
     image_bytes = frame_path.read_bytes()
     b64 = base64.b64encode(image_bytes).decode("utf-8")
+    prompt = _PROMPT_TRANSCRIBE if transcribe_mode else _PROMPT_DESCRIBE
     message = HumanMessage(
         content=[
-            {
-                "type": "text",
-                "text": (
-                    "Describe what is shown in this video frame in detail. "
-                    "Focus on any UI elements, text, menus, buttons, "
-                    "or actions visible. "
-                    "Be specific and concise."
-                ),
-            },
+            {"type": "text", "text": prompt},
             {
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
@@ -108,6 +117,7 @@ def fetch_frame_chunks(
     llm: BaseChatModel,
     interval_seconds: int = 30,
     cookies_file: str = "",
+    transcribe_mode: bool = False,
 ) -> list[TranscriptChunk]:
     """Download a video, extract keyframes, and describe each with a vision LLM.
 
@@ -131,7 +141,9 @@ def fetch_frame_chunks(
 
         for frame_path, timestamp in frames:
             try:
-                description = describe_frame(frame_path, llm)
+                description = describe_frame(
+                    frame_path, llm, transcribe_mode=transcribe_mode
+                )
                 chunks.append(
                     TranscriptChunk(
                         text=description,

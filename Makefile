@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest purge dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest purge purge-source dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -32,7 +32,8 @@ help:
 	@echo ""
 	@echo "Data Pipeline:"
 	@echo "  make ingest       - Run ingestion pipeline (YouTube + web)"
-	@echo "  make purge        - Delete Weaviate collection (irreversible)"
+	@echo "  make purge                  - Delete Weaviate collection (irreversible)"
+	@echo "  make purge-source URL=...   - Delete chunks for one source URL"
 	@echo ""
 	@echo "Application:"
 	@echo "  make run          - Start Gradio chat interface"
@@ -112,6 +113,22 @@ store.delete_collection(); \
 store.close(); \
 print('Collection deleted.')"
 	@echo -e "$(GREEN)✅ Weaviate collection purged$(NC)"
+
+purge-source:
+	@if [ -z "$(URL)" ]; then echo -e "$(RED)❌ Usage: make purge-source URL=https://...$(NC)"; exit 1; fi
+	@echo -e "$(RED)⚠️  Deleting all chunks for: $(URL)$(NC)"
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ]
+	@uv run python -c "\
+from multimodal_rag.store.weaviate import WeaviateStore; \
+from multimodal_rag.models.config import AppSettings; \
+from multimodal_rag.models.llm import create_embeddings; \
+settings = AppSettings(); \
+embeddings = create_embeddings(settings); \
+store = WeaviateStore(weaviate_url=settings.weaviate_url, embeddings=embeddings); \
+n = store.delete_by_source('$(URL)'); \
+store.close(); \
+print(f'Deleted {n} chunks.')"
+	@echo -e "$(GREEN)✅ Source purged$(NC)"
 
 ingest:
 	@echo -e "$(BLUE)📥 Running ingestion pipeline...$(NC)"
