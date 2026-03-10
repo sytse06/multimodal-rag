@@ -1,8 +1,10 @@
 """YouTube transcript fetching and chunking."""
 
+import http.cookiejar
 import logging
 import re
 
+import requests
 from youtube_transcript_api import (
     IpBlocked,
     NoTranscriptFound,
@@ -29,9 +31,23 @@ def extract_video_id(url: str) -> str | None:
     return None
 
 
-def fetch_transcript(video_id: str) -> list[dict[str, float | str]]:
+def _build_http_client(cookies_file: str) -> requests.Session | None:
+    """Return a requests.Session with cookies loaded, or None if no file given."""
+    if not cookies_file:
+        return None
+    jar = http.cookiejar.MozillaCookieJar(cookies_file)
+    jar.load(ignore_discard=True, ignore_expires=True)
+    session = requests.Session()
+    session.cookies.update(jar)
+    return session
+
+
+def fetch_transcript(
+    video_id: str, cookies_file: str = ""
+) -> list[dict[str, float | str]]:
     """Fetch timestamped transcript segments for a video."""
-    ytt_api = YouTubeTranscriptApi()
+    http_client = _build_http_client(cookies_file)
+    ytt_api = YouTubeTranscriptApi(http_client=http_client)
     transcript = ytt_api.fetch(video_id, languages=["en", "en-GB", "en-US"])
     return [
         {
@@ -110,6 +126,7 @@ def fetch_transcript_chunks(
     source_name: str,
     target_tokens: int = 400,
     mistral_api_key: str = "",
+    cookies_file: str = "",
 ) -> list[TranscriptChunk]:
     """Fetch and chunk a YouTube video's transcript.
 
@@ -122,7 +139,7 @@ def fetch_transcript_chunks(
         return []
 
     try:
-        segments = fetch_transcript(video_id)
+        segments = fetch_transcript(video_id, cookies_file=cookies_file)
     except (TranscriptsDisabled, NoTranscriptFound) as exc:
         if mistral_api_key:
             logger.info(

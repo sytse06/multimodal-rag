@@ -21,6 +21,7 @@ def _make_settings(vision_model: str = "") -> MagicMock:
     settings.weaviate_url = "http://localhost:8080"
     settings.mistral_api_key = ""
     settings.vision_model = vision_model
+    settings.youtube_cookies_file = ""
     return settings
 
 
@@ -85,6 +86,7 @@ class TestRun:
             source_name="Test",
             target_tokens=400,
             mistral_api_key="",
+            cookies_file="",
         )
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_called_once()
@@ -315,6 +317,7 @@ class TestRun:
             source_name="Silent Video",
             target_tokens=400,
             mistral_api_key="",
+            cookies_file="",
         )
 
     @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")

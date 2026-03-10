@@ -1,4 +1,4 @@
-.PHONY: help install test quality quality-fix clean pre-commit ingest purge dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest purge dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -16,7 +16,8 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make install      - Install dependencies"
-	@echo "  make test         - Run test suite with coverage"
+	@echo "  make test             - Run test suite with coverage (no network)"
+	@echo "  make test-integration - Run integration tests (requires network)"
 	@echo "  make quality      - Code quality checks (ruff, mypy)"
 	@echo "  make quality-fix  - Auto-fix linting issues"
 	@echo "  make clean        - Clean build artifacts"
@@ -46,8 +47,13 @@ install:
 
 test:
 	@echo -e "$(BLUE)🧪 Running test suite...$(NC)"
-	@uv run pytest tests/ -v --cov=src/multimodal_rag
+	@uv run pytest tests/ -v --cov=src/multimodal_rag -m "not integration"
 	@echo -e "$(GREEN)✅ Tests complete$(NC)"
+
+test-integration:
+	@echo -e "$(BLUE)🧪 Running integration tests (requires network)...$(NC)"
+	@uv run pytest tests/ -v -m "integration"
+	@echo -e "$(GREEN)✅ Integration tests complete$(NC)"
 
 quality:
 	@echo -e "$(BLUE)🎨 Running code quality checks...$(NC)"
@@ -113,7 +119,8 @@ ingest:
 		echo -e "$(RED)❌ No .env file found. Run make dev first$(NC)"; \
 		exit 1; \
 	fi
-	@uv run python -m multimodal_rag.ingest
+	@mkdir -p logs
+	@uv run python -m multimodal_rag.ingest 2>&1 | tee logs/ingest-$$(date +%Y%m%d-%H%M%S).log
 	@echo -e "$(GREEN)✅ Ingestion complete$(NC)"
 
 run:
