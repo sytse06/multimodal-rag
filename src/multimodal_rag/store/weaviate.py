@@ -5,7 +5,7 @@ import logging
 import weaviate
 import weaviate.classes.config as wvc
 from langchain_core.embeddings import Embeddings
-from weaviate.classes.query import MetadataQuery
+from weaviate.classes.query import Filter, MetadataQuery
 
 from multimodal_rag.models.chunks import SourceType, SupportChunk
 from multimodal_rag.store.embeddings import embed_texts
@@ -59,6 +59,16 @@ class WeaviateStore:
             ],
         )
         logger.info("Created collection %s", COLLECTION_NAME)
+
+    def delete_by_source(self, source_url: str) -> int:
+        """Delete all chunks matching source_url. Returns count deleted."""
+        collection = self._client.collections.get(COLLECTION_NAME)
+        result = collection.data.delete_many(
+            where=Filter.by_property("source_url").equal(source_url)
+        )
+        deleted = result.successful if result else 0
+        logger.info("Deleted %d chunks for source: %s", deleted, source_url)
+        return deleted
 
     def delete_collection(self) -> None:
         """Delete the SupportChunk collection."""

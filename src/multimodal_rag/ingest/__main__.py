@@ -103,7 +103,9 @@ def run() -> None:
                         str(yt.url),
                         yt.name,
                         vision_llm,
+                        interval_seconds=5 if yt.skip_voxtral else 30,
                         cookies_file=settings.youtube_cookies_file,
+                        transcribe_mode=yt.skip_voxtral,
                     )
                     support_chunks = [
                         SupportChunk.from_frame_chunk(c) for c in frame_chunks
