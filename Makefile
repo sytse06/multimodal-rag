@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest purge purge-source dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report purge purge-source dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -31,7 +31,8 @@ help:
 	@echo "  make docker-down  - Stop Weaviate (Docker)"
 	@echo ""
 	@echo "Data Pipeline:"
-	@echo "  make ingest       - Run ingestion pipeline (YouTube + web)"
+	@echo "  make ingest                 - Run ingestion pipeline (YouTube + web)"
+	@echo "  make ingest-report          - Summarise failures from latest ingest log"
 	@echo "  make purge                  - Delete Weaviate collection (irreversible)"
 	@echo "  make purge-source URL=...   - Delete chunks for one source URL"
 	@echo ""
@@ -129,6 +130,20 @@ n = store.delete_by_source('$(URL)'); \
 store.close(); \
 print(f'Deleted {n} chunks.')"
 	@echo -e "$(GREEN)✅ Source purged$(NC)"
+
+ingest-report:
+	@if [ -z "$$(ls -A logs/ 2>/dev/null)" ]; then \
+		echo -e "$(RED)❌ No log files found in logs/$(NC)"; exit 1; \
+	fi
+	@latest=$$(ls -t logs/ingest-*.log 2>/dev/null | head -1); \
+	echo -e "$(CYAN)📋 Ingest report: $$latest$(NC)"; \
+	echo ""; \
+	echo -e "$(YELLOW)--- Failures & warnings ---$(NC)"; \
+	grep -E "ERROR|failed, skipping|No chunks produced|IP blocked|not available" "$$latest" \
+		| grep -v "^$$" || echo "  None"; \
+	echo ""; \
+	echo -e "$(YELLOW)--- Summary ---$(NC)"; \
+	grep "Ingestion complete" "$$latest" || echo "  No summary line found"
 
 ingest:
 	@echo -e "$(BLUE)📥 Running ingestion pipeline...$(NC)"
