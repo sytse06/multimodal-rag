@@ -1,6 +1,6 @@
 """Tests for store module (embeddings + Weaviate store)."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from multimodal_rag.models.chunks import (
     SourceType,
@@ -9,6 +9,7 @@ from multimodal_rag.models.chunks import (
     WebChunk,
 )
 from multimodal_rag.store.embeddings import _MAX_WORDS, _RETRY_MAX_WORDS, embed_texts
+from multimodal_rag.store.weaviate import WeaviateStore
 
 
 class TestEmbedTexts:
@@ -65,6 +66,56 @@ class TestEmbedTexts:
             assert False, "Should have raised"
         except ConnectionError:
             pass
+
+
+class TestWeaviateStoreDeleteBySourceType:
+    def _make_store(self) -> tuple[WeaviateStore, MagicMock]:
+        mock_client = MagicMock()
+        mock_embeddings = MagicMock()
+        patch_target = "multimodal_rag.store.weaviate.weaviate.connect_to_local"
+        with patch(patch_target, return_value=mock_client):
+            store = WeaviateStore.__new__(WeaviateStore)
+            store._client = mock_client
+            store._embeddings = mock_embeddings
+        return store, mock_client
+
+    def test_delete_video_chunks(self) -> None:
+        store, mock_client = self._make_store()
+        mock_collection = MagicMock()
+        mock_client.collections.get.return_value = mock_collection
+        mock_result = MagicMock()
+        mock_result.successful = 7
+        mock_collection.data.delete_many.return_value = mock_result
+
+        n = store.delete_by_source_type("video")
+
+        assert n == 7
+        mock_collection.data.delete_many.assert_called_once()
+        call_kwargs = mock_collection.data.delete_many.call_args
+        # verify the filter targets source_type property
+        assert call_kwargs is not None
+
+    def test_delete_web_chunks(self) -> None:
+        store, mock_client = self._make_store()
+        mock_collection = MagicMock()
+        mock_client.collections.get.return_value = mock_collection
+        mock_result = MagicMock()
+        mock_result.successful = 3
+        mock_collection.data.delete_many.return_value = mock_result
+
+        n = store.delete_by_source_type("web")
+
+        assert n == 3
+
+    def test_returns_zero_when_result_is_none(self) -> None:
+        store, mock_client = self._make_store()
+        mock_collection = MagicMock()
+        mock_client.collections.get.return_value = mock_collection
+        mock_collection.data.delete_many.return_value = None
+
+        n = store.delete_by_source_type("video")
+
+        assert n == 0
 
 
 class TestSupportChunkConversion:

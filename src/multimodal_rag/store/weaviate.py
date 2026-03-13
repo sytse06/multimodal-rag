@@ -70,6 +70,16 @@ class WeaviateStore:
         logger.info("Deleted %d chunks for source: %s", deleted, source_url)
         return deleted
 
+    def delete_by_source_type(self, source_type: str) -> int:
+        """Delete all chunks matching source_type ('video' or 'web'). Returns count."""
+        collection = self._client.collections.get(COLLECTION_NAME)
+        result = collection.data.delete_many(
+            where=Filter.by_property("source_type").equal(source_type)
+        )
+        deleted = result.successful if result else 0
+        logger.info("Deleted %d chunks of source_type '%s'", deleted, source_type)
+        return deleted
+
     def delete_collection(self) -> None:
         """Delete the SupportChunk collection."""
         if self._client.collections.exists(COLLECTION_NAME):
