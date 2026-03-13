@@ -148,7 +148,9 @@ def fetch_transcript_chunks(
                 type(exc).__name__,
             )
             try:
-                segments = fetch_voxtral_transcript(video_url, mistral_api_key, cookies_file=cookies_file)
+                segments = fetch_voxtral_transcript(
+                    video_url, mistral_api_key, cookies_file=cookies_file
+                )
             except Exception:
                 logger.exception("Voxtral fallback failed for %s", video_url)
                 return []
