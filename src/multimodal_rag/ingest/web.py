@@ -22,6 +22,7 @@ def crawl_knowledge_base(
         root_url,
         limit=limit,
         max_concurrency=1,
+        include_paths=["/article/*"],
         scrape_options=ScrapeOptions(
             formats=["markdown"],
             only_main_content=True,

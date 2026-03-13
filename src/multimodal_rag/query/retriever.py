@@ -17,16 +17,9 @@ def _distance_to_score(distance: float | None) -> float:
     return max(0.0, 1.0 - distance)
 
 
-def retrieve(
-    query: str,
-    store: WeaviateStore,
-    top_k: int = 5,
-) -> list[SearchResult]:
-    """Embed query, search Weaviate, return ranked SearchResults."""
-    raw_results = store.search(query, top_k=top_k)
-
-    results: list[SearchResult] = []
-    for hit in raw_results:
+def _build_results(raw: list[dict]) -> list[SearchResult]:
+    results = []
+    for hit in raw:
         score = _distance_to_score(hit.get("_distance"))
         ts = hit.get("timestamp_seconds")
         results.append(
@@ -36,18 +29,45 @@ def retrieve(
                 source_url=str(hit.get("source_url", "")),
                 source_name=str(hit.get("source_name", "")),
                 timestamp_seconds=int(ts) if ts is not None else None,
-                section_heading=str(hit.get("section_heading") or "")
-                or None,
+                section_heading=str(hit.get("section_heading") or "") or None,
                 relevance_score=score,
             )
         )
+    return results
+
+
+def retrieve(
+    query: str,
+    store: WeaviateStore,
+    top_k: int = 5,
+) -> list[SearchResult]:
+    """Embed query, search Weaviate, return ranked SearchResults.
+
+    Fetches a larger candidate pool and guarantees at least half the results
+    are video chunks, so video content is not crowded out by web chunks.
+    """
+    pool = _build_results(store.search(query, top_k=top_k * 4))
+
+    videos = [r for r in pool if r.source_type == SourceType.VIDEO]
+    web = [r for r in pool if r.source_type != SourceType.VIDEO]
+
+    n_video = min(len(videos), (top_k + 1) // 2)
+    n_web = min(len(web), top_k - n_video)
+
+    selected = sorted(
+        videos[:n_video] + web[:n_web],
+        key=lambda r: r.relevance_score,
+        reverse=True,
+    )
 
     logger.info(
-        "Retrieved %d results for query: %.60s...",
-        len(results),
+        "Retrieved %d results (%d video, %d web) for query: %.60s...",
+        len(selected),
+        n_video,
+        n_web,
         query,
     )
-    return results
+    return selected
 
 
 def format_context(results: list[SearchResult]) -> str:

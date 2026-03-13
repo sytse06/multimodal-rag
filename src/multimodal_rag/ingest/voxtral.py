@@ -5,12 +5,12 @@ import tempfile
 from pathlib import Path
 
 import yt_dlp
-from mistralai import Mistral
+from mistralai.client.sdk import Mistral
 
 logger = logging.getLogger(__name__)
 
 
-def download_audio(video_url: str, output_dir: Path) -> Path:
+def download_audio(video_url: str, output_dir: Path, cookies_file: str = "") -> Path:
     """Download best available audio from a YouTube URL to output_dir.
 
     Returns the path to the downloaded file.
@@ -21,7 +21,10 @@ def download_audio(video_url: str, output_dir: Path) -> Path:
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
+        "remote_components": "ejs:github",
     }
+    if cookies_file:
+        ydl_opts["cookiefile"] = cookies_file
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
 
@@ -72,12 +75,12 @@ def transcribe_with_voxtral(
 
 
 def fetch_voxtral_transcript(
-    video_url: str, api_key: str
+    video_url: str, api_key: str, cookies_file: str = ""
 ) -> list[dict[str, float | str]]:
     """Download audio and transcribe via Voxtral. Cleans up temp files on exit."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         logger.info("Downloading audio for Voxtral transcription: %s", video_url)
-        audio_path = download_audio(video_url, tmp_path)
+        audio_path = download_audio(video_url, tmp_path, cookies_file=cookies_file)
         logger.info("Transcribing %s with Voxtral", audio_path.name)
         return transcribe_with_voxtral(audio_path, api_key)

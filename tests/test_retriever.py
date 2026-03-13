@@ -51,7 +51,7 @@ class TestRetrieve:
         assert results[0].source_type == SourceType.VIDEO
         assert results[0].timestamp_seconds == 42
         assert results[0].relevance_score == 0.7
-        store.search.assert_called_once_with("how to configure", top_k=5)
+        store.search.assert_called_once_with("how to configure", top_k=20)
 
     def test_web_result(self) -> None:
         store = self._mock_store([
@@ -79,7 +79,7 @@ class TestRetrieve:
     def test_respects_top_k(self) -> None:
         store = self._mock_store([])
         retrieve("q", store, top_k=3)
-        store.search.assert_called_once_with("q", top_k=3)
+        store.search.assert_called_once_with("q", top_k=12)
 
 
 class TestFormatContext:

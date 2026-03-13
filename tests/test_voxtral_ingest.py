@@ -173,7 +173,7 @@ class TestFetchVoxtralTranscript:
     ) -> None:
         captured_tmpdir: list[Path] = []
 
-        def fake_download(url: str, output_dir: Path) -> Path:
+        def fake_download(url: str, output_dir: Path, cookies_file: str = "") -> Path:
             captured_tmpdir.append(output_dir)
             f = output_dir / "audio.m4a"
             f.write_bytes(b"fake")
@@ -231,7 +231,7 @@ class TestFetchTranscriptChunksFallback:
         )
 
         mock_voxtral.assert_called_once_with(
-            "https://www.youtube.com/watch?v=abc12345678", "fake-key"
+            "https://www.youtube.com/watch?v=abc12345678", "fake-key", cookies_file=""
         )
         assert len(chunks) == 1
         assert "Hello from audio" in chunks[0].text
