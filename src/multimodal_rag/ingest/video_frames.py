@@ -28,6 +28,7 @@ def download_video(
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
+        "remote_components": "ejs:github",
     }
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
