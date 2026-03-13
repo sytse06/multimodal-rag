@@ -377,6 +377,41 @@ class TestSupportChunk:
             SupportChunk.from_screenshot_chunk(wc)
 
 
+class TestFromFusedChunk:
+    def _make_chunk(self, start: int = 0) -> TranscriptChunk:
+        return TranscriptChunk(
+            text="[Transcript] hello\n[Visual] screen",
+            source_url="https://youtu.be/abc",
+            source_name="Test",
+            start_seconds=start,
+            end_seconds=start + 30,
+        )
+
+    def test_chunk_id_is_stable(self) -> None:
+        chunk = self._make_chunk()
+        id1 = SupportChunk.from_fused_chunk(chunk).chunk_id
+        id2 = SupportChunk.from_fused_chunk(chunk).chunk_id
+        assert id1 == id2
+
+    def test_chunk_id_differs_from_transcript_and_frame(self) -> None:
+        chunk = self._make_chunk()
+        fused_id = SupportChunk.from_fused_chunk(chunk).chunk_id
+        transcript_id = SupportChunk.from_transcript_chunk(chunk).chunk_id
+        frame_id = SupportChunk.from_frame_chunk(chunk).chunk_id
+        assert fused_id != transcript_id
+        assert fused_id != frame_id
+
+    def test_source_type_is_video(self) -> None:
+        chunk = self._make_chunk()
+        sc = SupportChunk.from_fused_chunk(chunk)
+        assert sc.source_type == SourceType.VIDEO
+
+    def test_timestamp_seconds_matches_start(self) -> None:
+        chunk = self._make_chunk(start=90)
+        sc = SupportChunk.from_fused_chunk(chunk)
+        assert sc.timestamp_seconds == 90
+
+
 class TestSearchResult:
     def test_video_citation_markdown(self) -> None:
         result = SearchResult(

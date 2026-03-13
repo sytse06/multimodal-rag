@@ -10,6 +10,7 @@ import yt_dlp
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
+from multimodal_rag.ingest.voxtral import transcribe_with_voxtral
 from multimodal_rag.models.chunks import TranscriptChunk
 
 logger = logging.getLogger(__name__)
@@ -161,5 +162,96 @@ def fetch_frame_chunks(
                     video_title,
                     exc_info=True,
                 )
+
+    return chunks
+
+
+def fetch_fused_chunks(
+    video_url: str,
+    source_name: str,
+    mistral_api_key: str,
+    vision_llm: BaseChatModel | None,
+    cookies_file: str = "",
+    window_seconds: int = 30,
+) -> list[TranscriptChunk]:
+    """Download video once, transcribe with Voxtral, describe keyframes, merge per window."""  # noqa: E501
+    chunks: list[TranscriptChunk] = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        video_dir = tmp_path / "video"
+        frame_dir = tmp_path / "frames"
+        video_dir.mkdir()
+        frame_dir.mkdir()
+
+        logger.info("Downloading video for fusion: %s", source_name)
+        video_path = download_video(video_url, video_dir, cookies_file=cookies_file)
+
+        logger.info("Transcribing with Voxtral: %s", source_name)
+        segments = transcribe_with_voxtral(video_path, mistral_api_key)
+
+        frames: list[tuple[Path, int]] = []
+        if vision_llm is not None:
+            frames = extract_keyframes(
+                video_path, frame_dir, interval_seconds=window_seconds
+            )
+            logger.info("Extracted %d keyframes from %s", len(frames), source_name)
+
+        if frames:
+            window_starts = [ts for _, ts in frames]
+        else:
+            max_t = max(
+                (float(s["start"]) + float(s["duration"]) for s in segments),
+                default=0.0,
+            )
+            window_starts = list(
+                range(0, int(max_t) + window_seconds, window_seconds)
+            )
+
+        for i, window_start in enumerate(window_starts):
+            window_end = window_start + window_seconds
+
+            window_segs = [
+                s
+                for s in segments
+                if float(s["start"]) >= window_start
+                and float(s["start"]) < window_end
+            ]
+            speech_text = " ".join(
+                str(s["text"]).strip() for s in window_segs
+            ).strip()
+
+            frame_description: str | None = None
+            if vision_llm is not None and i < len(frames):
+                frame_path, _ = frames[i]
+                try:
+                    frame_description = describe_frame(frame_path, vision_llm)
+                except Exception:
+                    logger.warning(
+                        "Failed to describe frame at %ds for %s, skipping visual",
+                        window_start,
+                        source_name,
+                        exc_info=True,
+                    )
+
+            if not speech_text and frame_description is None:
+                continue
+
+            if speech_text and frame_description:
+                text = f"[Transcript] {speech_text}\n[Visual] {frame_description}"
+            elif speech_text:
+                text = speech_text
+            else:
+                text = f"[Visual] {frame_description}"
+
+            chunks.append(
+                TranscriptChunk(
+                    text=text,
+                    source_url=video_url,
+                    source_name=source_name,
+                    start_seconds=window_start,
+                    end_seconds=window_end,
+                )
+            )
 
     return chunks
