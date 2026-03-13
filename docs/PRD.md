@@ -245,7 +245,7 @@ knowledge_bases:
 | VOXTRAL-002 | Voxtral transcription | Mistral Voxtral Mini Transcribe API produces segment-level timestamps from audio |
 | VOXTRAL-003 | Fallback integration | `fetch_transcript_chunks` catches `TranscriptsDisabled`/`NoTranscriptFound` and invokes Voxtral; `IpBlocked` is not retried |
 
-**Epic 5: Visual Grounding** (planned)
+**Epic 5: Visual Grounding** (completed)
 
 | Feature | Branch | Description |
 |---------|--------|-------------|
@@ -254,6 +254,13 @@ knowledge_bases:
 | VIS-003 | Vision LLM factory and config | `create_vision_llm()` factory in `models/llm.py`; `VISION_MODEL` env var in `AppSettings` |
 | VIS-004 | Stable chunk ID for frame and screenshot chunks | Chunk ID keyed on frame identity (`hash(source_url + timestamp_seconds)` or `hash(image_url)`) — not on non-deterministic LLM text output |
 | VIS-005 | Ingestion orchestrator wiring and tests | Wire both new paths in `ingest/__main__.py`; all vision LLM, ffmpeg, and download calls fully mocked in tests |
+
+**Epic 6: Multimodal Chunk Fusion** (completed)
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| FUSION-001 | Combined audio + visual chunks | Align Voxtral transcript segments with frame intervals; merge `[Transcript]` + `[Visual]` text into one chunk per time window; stable chunk ID on `hash(source_url + window_start_seconds)` |
+| FUSION-002 | Purge by source type | `WeaviateStore.delete_by_source_type()`; `make purge-video` and `make purge-web` Makefile targets with confirmation prompts |
 
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
