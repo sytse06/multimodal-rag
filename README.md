@@ -4,22 +4,25 @@ A RAG pipeline that turns YouTube tutorials and web documentation into a
 searchable, cited support tool. Ask a question in plain English; get an answer
 with clickable video timestamp links and source page references.
 
-Handles caption-disabled YouTube videos automatically via Mistral Voxtral audio
-transcription — no manual intervention needed.
+All YouTube videos are transcribed via Mistral Voxtral audio transcription and
+optionally combined with vision LLM frame descriptions — producing fused chunks
+that capture both what was said and what was shown on screen.
 
 ## How It Works
 
 ```
-YouTube URLs  ──→ captions available? ──yes──→ youtube-transcript-api ──→ chunks
-                                      └─no───→ yt-dlp + Voxtral Mini  ──→ chunks
-                                                                            │
-Web KB URLs   ──→ Firecrawl crawl ──→ markdown split ──────────────────→ chunks
-                                                                            │
-                                      embed ──→ Weaviate ←─────────────────┘
-                                                  │
+YouTube URLs  ──→ yt-dlp download ──→ Voxtral Mini (audio) ──→ transcript segments ──┐
+                                  └──→ ffmpeg keyframes ──→ Vision LLM (optional) ──→ fused chunks per 30s window
+                                                                                        │
+Web KB URLs   ──→ Firecrawl crawl ──→ markdown split ──────────────────────────→ chunks
+                                                                                        │
+                                        embed ──→ Weaviate ←────────────────────────────┘
+                                                    │
 User question ──→ embed ──→ similarity search ──→ top-k chunks ──→ LLM ──→ cited answer
 ```
 
+Each video chunk combines `[Transcript] what was said` with `[Visual] what was shown`
+in a single 30-second window, keeping related audio and visual context together.
 Answers include clickable `Video Title @ 02:15` timestamp links and KB page links
 with section headings.
 
@@ -28,7 +31,7 @@ with section headings.
 - Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker
 - [OpenRouter](https://openrouter.ai/) API key (LLM + embeddings)
 - [Firecrawl](https://firecrawl.dev/) API key (web crawling)
-- [Mistral](https://console.mistral.ai/) API key (optional — Voxtral fallback for caption-disabled videos)
+- [Mistral](https://console.mistral.ai/) API key (required for video transcription via Voxtral)
 
 ## Quick Start
 
@@ -37,6 +40,7 @@ make install      # install dependencies
 make docker-up    # start Weaviate
 # edit .env with your API keys, config/sources.yaml with your sources
 make ingest       # index YouTube + web sources
+make purge-video  # remove all video chunks (re-ingest after pipeline changes)
 make run          # launch Gradio chat interface
 ```
 
@@ -50,7 +54,8 @@ make run          # launch Gradio chat interface
 | `EMBEDDING_MODEL` | Embedding model | `nomic-embed-text` |
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |
 | `FIRECRAWL_API_KEY` | Web crawling | — |
-| `MISTRAL_API_KEY` | Voxtral audio transcription fallback | — |
+| `MISTRAL_API_KEY` | Voxtral audio transcription (required for video ingest) | — |
+| `VISION_MODEL` | Vision LLM for frame descriptions (e.g. `openai/gpt-4o-mini`) | disabled |
 
 ## Tech Stack
 
@@ -61,8 +66,9 @@ make run          # launch Gradio chat interface
 | RAG framework | LangChain |
 | Vector store | Weaviate |
 | LLM + embeddings | OpenRouter / Ollama |
-| Transcripts | youtube-transcript-api + Mistral Voxtral |
-| Audio download | yt-dlp |
+| Transcription | Mistral Voxtral Mini (all videos) |
+| Visual grounding | Vision LLM via OpenRouter (optional) |
+| Video download | yt-dlp + ffmpeg |
 | Web crawling | Firecrawl |
 | Data validation | Pydantic + BaseSettings |
 | UI | Gradio |
