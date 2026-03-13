@@ -275,6 +275,44 @@ Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM 
 
 ---
 
+## Epic 6: Multimodal Chunk Fusion (planned)
+
+Combines audio transcript and visual frame description into a single chunk per time window, producing richer embeddings that capture both what was said and what was shown. Adds per-source-type purge tooling to support selective reingest without wiping the entire vector store.
+
+### FUSION-001 — Combined Audio + Visual Chunks
+
+**Branch:** `feature/FUSION-001-combined-chunks`
+
+Currently, transcript chunks (from `youtube-transcript-api` or Voxtral) and frame description chunks (from the vision LLM) are stored as separate, competing objects. For a narrated tutorial, a chunk at ts=0–30s exists twice: once as a transcript fragment and once as a generic frame description like "This video frame displays the HydroSym interface." These compete in retrieval and the frame descriptions dilute result quality.
+
+This story merges them into one chunk per time window:
+
+- All YouTube videos are transcribed via Voxtral as standard — `youtube-transcript-api` captions are no longer used
+- Align Voxtral segments to the frame extraction interval (e.g. 30s windows)
+- For each window: concatenate transcript text for that interval with the vision LLM description of the corresponding keyframe
+- Combined chunk format: `"[Transcript] {speech_text}\n[Visual] {frame_description}"`
+- If no transcript is available for a window (silence), store visual-only
+- If no vision LLM is configured, store transcript-only (Voxtral text only)
+- Stable chunk ID keyed on `hash(source_url + window_start_seconds)` — same as current frame chunk ID scheme, ensuring idempotent reingest
+- `transcribe_with_voxtral()` is wrapped with `tenacity.retry` (exponential backoff, max 3 attempts, wait 2→60s) — Mistral API rate limits and transient 5xx errors trigger retry; `MistralAPIException` with 4xx status codes are not retried
+
+**Scope:** `src/multimodal_rag/ingest/video_frames.py`, `src/multimodal_rag/ingest/voxtral.py`, `src/multimodal_rag/ingest/youtube.py`, `src/multimodal_rag/ingest/__main__.py`
+
+### FUSION-002 — Purge by Source Type
+
+**Branch:** `feature/FUSION-002-purge-source-type`
+
+Currently the only purge options are `make purge` (wipes the entire collection) and `make purge-source URL=...` (removes one video or page by URL). There is no way to remove all video chunks while keeping web KB chunks, or vice versa — forcing a full purge and full reingest when only the video pipeline changes.
+
+- Add `delete_by_source_type(source_type: str) -> int` to `WeaviateStore` — filters on the `source_type` property (`"video"` or `"web"`)
+- Add `make purge-video` Makefile target — calls `delete_by_source_type("video")` with a confirmation prompt
+- Add `make purge-web` Makefile target — calls `delete_by_source_type("web")` with a confirmation prompt
+- Log count of deleted objects
+
+**Scope:** `src/multimodal_rag/store/weaviate.py`, `Makefile`
+
+---
+
 ## Summary
 
 | Epic | Features | Total Tests |
@@ -284,4 +322,5 @@ Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM 
 | 3 — Per-source Ingest | 3 | 8 |
 | 4 — Voxtral Fallback | 3 | 13 |
 | 5 — Visual Grounding | 5 | planned |
-| **Total** | **20** | **93+ planned** |
+| 6 — Multimodal Chunk Fusion | 2 | planned |
+| **Total** | **22** | **93+ planned** |

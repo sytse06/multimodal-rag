@@ -20,6 +20,7 @@ dependencies = [
     "langchain-weaviate>=0.0.6",
     "mistralai>=1.12.3",
     "yt-dlp>=2026.3.13",
+    "tenacity>=9.1.4",
 ]
 
 [build-system]

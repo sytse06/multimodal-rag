@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report purge purge-source dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report purge purge-source purge-video purge-web dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -35,6 +35,8 @@ help:
 	@echo "  make ingest-report          - Summarise failures from latest ingest log"
 	@echo "  make purge                  - Delete Weaviate collection (irreversible)"
 	@echo "  make purge-source URL=...   - Delete chunks for one source URL"
+	@echo "  make purge-video            - Delete all video chunks"
+	@echo "  make purge-web              - Delete all web chunks"
 	@echo ""
 	@echo "Application:"
 	@echo "  make run          - Start Gradio chat interface"
@@ -130,6 +132,36 @@ n = store.delete_by_source('$(URL)'); \
 store.close(); \
 print(f'Deleted {n} chunks.')"
 	@echo -e "$(GREEN)✅ Source purged$(NC)"
+
+purge-video:
+	@echo -e "$(RED)⚠️  Deleting all video chunks from Weaviate...$(NC)"
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ]
+	@uv run python -c "\
+from multimodal_rag.store.weaviate import WeaviateStore; \
+from multimodal_rag.models.config import AppSettings; \
+from multimodal_rag.models.llm import create_embeddings; \
+settings = AppSettings(); \
+embeddings = create_embeddings(settings); \
+store = WeaviateStore(weaviate_url=settings.weaviate_url, embeddings=embeddings); \
+n = store.delete_by_source_type('video'); \
+store.close(); \
+print(f'Deleted {n} video chunks.')"
+	@echo -e "$(GREEN)✅ Video chunks purged$(NC)"
+
+purge-web:
+	@echo -e "$(RED)⚠️  Deleting all web chunks from Weaviate...$(NC)"
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ]
+	@uv run python -c "\
+from multimodal_rag.store.weaviate import WeaviateStore; \
+from multimodal_rag.models.config import AppSettings; \
+from multimodal_rag.models.llm import create_embeddings; \
+settings = AppSettings(); \
+embeddings = create_embeddings(settings); \
+store = WeaviateStore(weaviate_url=settings.weaviate_url, embeddings=embeddings); \
+n = store.delete_by_source_type('web'); \
+store.close(); \
+print(f'Deleted {n} web chunks.')"
+	@echo -e "$(GREEN)✅ Web chunks purged$(NC)"
 
 ingest-report:
 	@if [ -z "$$(ls -A logs/ 2>/dev/null)" ]; then \
