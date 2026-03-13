@@ -5,7 +5,15 @@ import tempfile
 from pathlib import Path
 
 import yt_dlp
+from mistralai.client.errors import MistralError
 from mistralai.client.sdk import Mistral
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +48,31 @@ def download_audio(video_url: str, output_dir: Path, cookies_file: str = "") -> 
     return audio_path
 
 
+def _is_retryable_mistral_error(exc: BaseException) -> bool:
+    if isinstance(exc, MistralError):
+        return exc.status_code == 429 or exc.status_code >= 500
+    return False
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable_mistral_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 def transcribe_with_voxtral(
-    audio_path: Path, api_key: str
+    media_path: Path, api_key: str
 ) -> list[dict[str, float | str]]:
-    """Transcribe an audio file using Mistral Voxtral Mini.
+    """Transcribe an audio or video file using Mistral Voxtral Mini.
 
     Returns a list of segment dicts with keys: text, start, duration.
     """
     client = Mistral(api_key=api_key)
-    with open(audio_path, "rb") as f:
+    with open(media_path, "rb") as f:
         response = client.audio.transcriptions.complete(
             model="voxtral-mini-latest",
-            file={"file_name": audio_path.name, "content": f},
+            file={"file_name": media_path.name, "content": f},
             timestamp_granularities=["segment"],
         )
 
@@ -59,7 +80,7 @@ def transcribe_with_voxtral(
         text_preview = (response.text or "")[:120]
         logger.warning(
             "Voxtral returned no segments for %s (text: %r)",
-            audio_path.name,
+            media_path.name,
             text_preview,
         )
         return []
@@ -81,6 +102,6 @@ def fetch_voxtral_transcript(
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         logger.info("Downloading audio for Voxtral transcription: %s", video_url)
-        audio_path = download_audio(video_url, tmp_path, cookies_file=cookies_file)
-        logger.info("Transcribing %s with Voxtral", audio_path.name)
-        return transcribe_with_voxtral(audio_path, api_key)
+        media_path = download_audio(video_url, tmp_path, cookies_file=cookies_file)
+        logger.info("Transcribing %s with Voxtral", media_path.name)
+        return transcribe_with_voxtral(media_path, api_key)

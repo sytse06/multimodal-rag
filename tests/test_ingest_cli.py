@@ -276,23 +276,28 @@ class TestRun:
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_not_called()
 
+    @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
+    @patch("multimodal_rag.ingest.__main__.create_vision_llm")
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
     @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
-    def test_skip_voxtral_passes_empty_mistral_key(
+    def test_skip_voxtral_uses_vision_only_path(
         self,
         mock_settings_cls: MagicMock,
         mock_load: MagicMock,
         mock_yt: MagicMock,
         mock_create_emb: MagicMock,
         mock_store_cls: MagicMock,
+        mock_create_vision: MagicMock,
+        mock_fetch_frames: MagicMock,
     ) -> None:
-        settings = _make_settings()
+        settings = _make_settings(vision_model="google/gemini-flash-1.5")
         settings.mistral_api_key = "real-key"
         mock_settings_cls.return_value = settings
         mock_create_emb.return_value = MagicMock()
+        mock_create_vision.return_value = MagicMock()
 
         from multimodal_rag.models.sources import SourceConfig, YouTubeSource
 
@@ -305,20 +310,16 @@ class TestRun:
                 )
             ]
         )
-        mock_yt.return_value = []
+        mock_fetch_frames.return_value = []
 
         mock_store = _make_store()
         _setup_store_cls(mock_store_cls, mock_store)
 
         run()
 
-        mock_yt.assert_called_once_with(
-            video_url="https://www.youtube.com/watch?v=abc",
-            source_name="Silent Video",
-            target_tokens=400,
-            mistral_api_key="",
-            cookies_file="",
-        )
+        # skip_voxtral uses vision-only path — fetch_transcript_chunks not called
+        mock_yt.assert_not_called()
+        mock_fetch_frames.assert_called_once()
 
     @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
     @patch("multimodal_rag.ingest.__main__.create_vision_llm")
@@ -355,7 +356,7 @@ class TestRun:
         mock_create_vision.assert_not_called()
         mock_fetch_frames.assert_not_called()
 
-    @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
+    @patch("multimodal_rag.ingest.__main__.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.create_vision_llm")
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
@@ -370,11 +371,11 @@ class TestRun:
         mock_create_emb: MagicMock,
         mock_store_cls: MagicMock,
         mock_create_vision: MagicMock,
-        mock_fetch_frames: MagicMock,
+        mock_fetch_fused: MagicMock,
     ) -> None:
-        mock_settings_cls.return_value = _make_settings(
-            vision_model="google/gemini-flash-1.5"
-        )
+        settings = _make_settings(vision_model="google/gemini-flash-1.5")
+        settings.mistral_api_key = "real-key"
+        mock_settings_cls.return_value = settings
         mock_create_emb.return_value = MagicMock()
         mock_create_vision.return_value = MagicMock()
 
@@ -384,9 +385,9 @@ class TestRun:
             youtube=[YouTubeSource(url="https://youtube.com/watch?v=abc", name="Vid")]
         )
         mock_yt.return_value = []
-        mock_fetch_frames.return_value = [
+        mock_fetch_fused.return_value = [
             TranscriptChunk(
-                text="A menu is visible",
+                text="[Transcript] hello\n[Visual] A menu is visible",
                 source_url="https://youtube.com/watch?v=abc",
                 source_name="Vid",
                 start_seconds=0,
@@ -400,6 +401,6 @@ class TestRun:
         run()
 
         mock_create_vision.assert_called_once()
-        mock_fetch_frames.assert_called_once()
-        # add_chunks called for the frame chunk
+        mock_fetch_fused.assert_called_once()
+        # add_chunks called for the fused chunk
         mock_store.add_chunks.assert_called_once()

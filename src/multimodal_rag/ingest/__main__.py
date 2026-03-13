@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from multimodal_rag.ingest.video_frames import fetch_frame_chunks
+from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
 from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
 from multimodal_rag.ingest.web_images import fetch_image_chunks
 from multimodal_rag.ingest.youtube import fetch_transcript_chunks
@@ -79,43 +79,67 @@ def run() -> None:
                 time.sleep(2)
             label = f"youtube:{yt.name}"
             logger.info("Processing %s", label)
-            if yt.skip_voxtral:
-                logger.info("[%s] skip_voxtral=true — Voxtral bypassed", label)
+
             try:
-                tc = fetch_transcript_chunks(
-                    video_url=str(yt.url),
-                    source_name=yt.name,
-                    target_tokens=settings.chunk_size,
-                    mistral_api_key=(
-                        "" if yt.skip_voxtral else settings.mistral_api_key
-                    ),
-                    cookies_file=settings.youtube_cookies_file,
-                )
-                chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
-                total_added += _ingest_chunks(store, chunks, label)
+                if yt.skip_voxtral:
+                    # Silent screen recording: vision-only path, dense frames
+                    logger.info(
+                        "[%s] skip_voxtral=true — using vision-only path", label
+                    )
+                    if vision_llm is not None:
+                        frame_chunks = fetch_frame_chunks(
+                            str(yt.url),
+                            yt.name,
+                            vision_llm,
+                            interval_seconds=5,
+                            cookies_file=settings.youtube_cookies_file,
+                            transcribe_mode=True,
+                        )
+                        support_chunks = [
+                            SupportChunk.from_frame_chunk(c) for c in frame_chunks
+                        ]
+                        total_added += _ingest_chunks(
+                            store, support_chunks, f"{label} [frames]"
+                        )
+                    else:
+                        logger.warning(
+                            "[%s] skip_voxtral=true but VISION_MODEL not set, skipping",
+                            label,
+                        )
+
+                elif settings.mistral_api_key:
+                    # Standard spoken video: fused Voxtral + optional vision
+                    tc = fetch_fused_chunks(
+                        video_url=str(yt.url),
+                        source_name=yt.name,
+                        mistral_api_key=settings.mistral_api_key,
+                        vision_llm=vision_llm,
+                        cookies_file=settings.youtube_cookies_file,
+                        window_seconds=30,
+                    )
+                    chunks = [SupportChunk.from_fused_chunk(c) for c in tc]
+                    total_added += _ingest_chunks(store, chunks, label)
+
+                else:
+                    # No Mistral key: fall back to youtube-transcript-api captions
+                    logger.warning(
+                        "[%s] MISTRAL_API_KEY not set — falling back to"
+                        " youtube-transcript-api",
+                        label,
+                    )
+                    tc = fetch_transcript_chunks(
+                        video_url=str(yt.url),
+                        source_name=yt.name,
+                        target_tokens=settings.chunk_size,
+                        mistral_api_key="",
+                        cookies_file=settings.youtube_cookies_file,
+                    )
+                    chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
+                    total_added += _ingest_chunks(store, chunks, label)
+
             except Exception:
                 logger.exception("[%s] Failed, skipping", label)
                 total_failed += 1
-
-            if vision_llm is not None:
-                try:
-                    frame_chunks = fetch_frame_chunks(
-                        str(yt.url),
-                        yt.name,
-                        vision_llm,
-                        interval_seconds=5 if yt.skip_voxtral else 30,
-                        cookies_file=settings.youtube_cookies_file,
-                        transcribe_mode=yt.skip_voxtral,
-                    )
-                    support_chunks = [
-                        SupportChunk.from_frame_chunk(c) for c in frame_chunks
-                    ]
-                    total_added += _ingest_chunks(
-                        store, support_chunks, f"{label} [frames]"
-                    )
-                except Exception:
-                    logger.exception("[%s] Frame extraction failed, skipping", label)
-                    total_failed += 1
 
         # Web knowledge base sources
         for i, kb in enumerate(sources.kb_sources):
