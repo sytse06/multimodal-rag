@@ -121,6 +121,25 @@ class SupportChunk(BaseModel):
         )
 
     @classmethod
+    def from_fused_chunk(cls, chunk: TranscriptChunk) -> "SupportChunk":
+        """Create a SupportChunk from a combined audio+visual fused chunk.
+
+        chunk_id is stable: keyed on source_url + window timestamp.
+        """
+        stable_id = uuid5(
+            NAMESPACE_URL,
+            chunk.source_url + "|fused|" + str(chunk.start_seconds),
+        )
+        return cls(
+            chunk_id=stable_id,
+            text=chunk.text,
+            source_type=SourceType.VIDEO,
+            source_url=chunk.source_url,
+            source_name=chunk.source_name,
+            timestamp_seconds=chunk.start_seconds,
+        )
+
+    @classmethod
     def from_screenshot_chunk(cls, chunk: WebChunk) -> "SupportChunk":
         """Create a SupportChunk from a visual screenshot description.
 

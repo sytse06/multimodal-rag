@@ -82,8 +82,8 @@ class TestTranscribeWithVoxtral:
     def test_converts_segments_to_correct_format(
         self, mock_mistral_cls: MagicMock, tmp_path: Path
     ) -> None:
-        audio_file = tmp_path / "audio.m4a"
-        audio_file.write_bytes(b"fake")
+        media_file = tmp_path / "audio.m4a"
+        media_file.write_bytes(b"fake")
 
         mock_client = MagicMock()
         mock_mistral_cls.return_value = mock_client
@@ -95,7 +95,7 @@ class TestTranscribeWithVoxtral:
         ]
         mock_client.audio.transcriptions.complete.return_value = response
 
-        result = transcribe_with_voxtral(audio_file, "fake-key")
+        result = transcribe_with_voxtral(media_file, "fake-key")
 
         assert len(result) == 2
         assert result[0] == {"text": "Hello world", "start": 0.0, "duration": 2.5}
@@ -105,8 +105,8 @@ class TestTranscribeWithVoxtral:
     def test_duration_equals_end_minus_start(
         self, mock_mistral_cls: MagicMock, tmp_path: Path
     ) -> None:
-        audio_file = tmp_path / "audio.m4a"
-        audio_file.write_bytes(b"fake")
+        media_file = tmp_path / "audio.m4a"
+        media_file.write_bytes(b"fake")
 
         mock_client = MagicMock()
         mock_mistral_cls.return_value = mock_client
@@ -115,7 +115,7 @@ class TestTranscribeWithVoxtral:
         response.segments = [self._make_segment("Test", 10.0, 13.7)]
         mock_client.audio.transcriptions.complete.return_value = response
 
-        result = transcribe_with_voxtral(audio_file, "fake-key")
+        result = transcribe_with_voxtral(media_file, "fake-key")
 
         assert pytest.approx(result[0]["duration"]) == 3.7
 
@@ -123,8 +123,8 @@ class TestTranscribeWithVoxtral:
     def test_empty_segments_returns_empty_list(
         self, mock_mistral_cls: MagicMock, tmp_path: Path
     ) -> None:
-        audio_file = tmp_path / "audio.m4a"
-        audio_file.write_bytes(b"fake")
+        media_file = tmp_path / "audio.m4a"
+        media_file.write_bytes(b"fake")
 
         mock_client = MagicMock()
         mock_mistral_cls.return_value = mock_client
@@ -133,7 +133,7 @@ class TestTranscribeWithVoxtral:
         response.segments = []
         mock_client.audio.transcriptions.complete.return_value = response
 
-        result = transcribe_with_voxtral(audio_file, "fake-key")
+        result = transcribe_with_voxtral(media_file, "fake-key")
 
         assert result == []
 
@@ -141,8 +141,8 @@ class TestTranscribeWithVoxtral:
     def test_passes_segment_timestamp_granularity(
         self, mock_mistral_cls: MagicMock, tmp_path: Path
     ) -> None:
-        audio_file = tmp_path / "audio.m4a"
-        audio_file.write_bytes(b"fake")
+        media_file = tmp_path / "audio.m4a"
+        media_file.write_bytes(b"fake")
 
         mock_client = MagicMock()
         mock_mistral_cls.return_value = mock_client
@@ -151,11 +151,83 @@ class TestTranscribeWithVoxtral:
         response.segments = [self._make_segment("Hi", 0.0, 1.0)]
         mock_client.audio.transcriptions.complete.return_value = response
 
-        transcribe_with_voxtral(audio_file, "fake-key")
+        transcribe_with_voxtral(media_file, "fake-key")
 
         call_kwargs = mock_client.audio.transcriptions.complete.call_args.kwargs
         assert call_kwargs["timestamp_granularities"] == ["segment"]
         assert call_kwargs["model"] == "voxtral-mini-latest"
+
+    def test_retries_on_429_then_succeeds(self, tmp_path: Path) -> None:
+        import httpx
+        from mistralai.client.errors import MistralError
+        from tenacity import wait_none
+
+        fake_response = httpx.Response(429, text="rate limited")
+        fake_seg = MagicMock()
+        fake_seg.text = "retry success"
+        fake_seg.start = 0.0
+        fake_seg.end = 5.0
+
+        mock_result = MagicMock()
+        mock_result.segments = [fake_seg]
+        mock_result.text = "retry success"
+
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.complete.side_effect = [
+            MistralError("rate limited", raw_response=fake_response),
+            mock_result,
+        ]
+
+        media_file = tmp_path / "audio.mp3"
+        media_file.write_bytes(b"fake")
+
+        with patch("multimodal_rag.ingest.voxtral.Mistral", return_value=mock_client):
+            # Patch wait to avoid sleeping in tests
+            transcribe_with_voxtral.retry.wait = wait_none()
+            result = transcribe_with_voxtral(media_file, "key")
+
+        assert len(result) == 1
+        assert mock_client.audio.transcriptions.complete.call_count == 2
+
+    def test_does_not_retry_on_400(self, tmp_path: Path) -> None:
+        import httpx
+        from mistralai.client.errors import MistralError
+
+        fake_response = httpx.Response(400, text="bad request")
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.complete.side_effect = MistralError(
+            "bad request", raw_response=fake_response
+        )
+
+        media_file = tmp_path / "audio.mp3"
+        media_file.write_bytes(b"fake")
+
+        with patch("multimodal_rag.ingest.voxtral.Mistral", return_value=mock_client):
+            with pytest.raises(MistralError):
+                transcribe_with_voxtral(media_file, "key")
+
+        assert mock_client.audio.transcriptions.complete.call_count == 1
+
+    def test_retries_exhausted_raises(self, tmp_path: Path) -> None:
+        import httpx
+        from mistralai.client.errors import MistralError
+        from tenacity import wait_none
+
+        fake_response = httpx.Response(503, text="service unavailable")
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.complete.side_effect = MistralError(
+            "unavailable", raw_response=fake_response
+        )
+
+        media_file = tmp_path / "audio.mp3"
+        media_file.write_bytes(b"fake")
+
+        with patch("multimodal_rag.ingest.voxtral.Mistral", return_value=mock_client):
+            transcribe_with_voxtral.retry.wait = wait_none()
+            with pytest.raises(MistralError):
+                transcribe_with_voxtral(media_file, "key")
+
+        assert mock_client.audio.transcriptions.complete.call_count == 3
 
 
 # ---------------------------------------------------------------------------
