@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 import yt_dlp
-from mistralai import Mistral
+from mistralai.client.sdk import Mistral
 
 logger = logging.getLogger(__name__)
 

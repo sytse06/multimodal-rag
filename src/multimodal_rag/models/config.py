@@ -21,7 +21,7 @@ class AppSettings(BaseSettings):
 
     # Models
     llm_model: str = "google/gemini-3-flash-preview"
-    embedding_model: str = "nomic-embed-text-16k"
+    embedding_model: str = "nomic-embed-text"
 
     # Weaviate
     weaviate_url: str = "http://localhost:8080"
@@ -41,7 +41,7 @@ class AppSettings(BaseSettings):
     # Ingestion
     chunk_size: int = 400
     chunk_overlap: int = 50
-    top_k: int = 5
+    top_k: int = 10
 
     # App
     app_env: str = "development"
