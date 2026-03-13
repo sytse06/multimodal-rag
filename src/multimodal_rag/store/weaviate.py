@@ -84,7 +84,7 @@ class WeaviateStore:
         if not chunks:
             return 0
 
-        texts = [c.text for c in chunks]
+        texts = [f"{c.source_name}: {c.text}" for c in chunks]
         vectors = self._embed(texts)
 
         collection = self._client.collections.get(COLLECTION_NAME)
