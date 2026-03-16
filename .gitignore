@@ -4,6 +4,7 @@ config/development.env
 .venv/
 *.code-workspace
 *.txt
+*.pem
 __pycache__/
 .pytest_cache/
 .mypy_cache/

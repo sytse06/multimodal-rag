@@ -45,4 +45,4 @@ class AppSettings(BaseSettings):
 
     # App
     app_env: str = "development"
-    log_level: str = "DEBUG"
+    log_level: str = "INFO"

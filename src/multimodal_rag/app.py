@@ -91,9 +91,14 @@ def save_kb_article(
     return str(path)
 
 
+def _is_ollama_model(model_name: str) -> bool:
+    """Ollama models are bare names (e.g. 'llama3.2'); OpenRouter uses 'provider/model'."""  # noqa: E501
+    return "/" not in model_name
+
+
 def _make_llm(model_name: str, settings: AppSettings) -> BaseChatModel:
-    """Create a chat model for the given model name and provider."""
-    if settings.llm_provider == "ollama":
+    """Route to Ollama or OpenRouter based on model name format."""
+    if _is_ollama_model(model_name):
         from langchain_ollama import ChatOllama
 
         return ChatOllama(
@@ -143,44 +148,50 @@ def main() -> None:
         )
         return _format_citations_block(answer), answer, results
 
-    with gr.Blocks(title="Paro Support KB") as demo:
+    _css = ".align-bottom { align-self: flex-end; }"
+    with gr.Blocks(title="Paro Support KB", css=_css) as demo:
         gr.Markdown("# Paro Support Knowledge Base")
         gr.Markdown(
             "Ask questions about Paro software products."
-            " Answers include cited sources with clickable links."
+            "Answers include cited sources with clickable links."
+            "Workflow to generate knowledge base articles based on the sources."
         )
 
-        if settings.llm_provider == "openrouter":
-            model_dropdown = gr.Dropdown(
-                choices=OPENROUTER_MODELS,
-                value=settings.llm_model,
-                label="Model",
-                interactive=True,
-            )
-        else:
-            model_dropdown = gr.Dropdown(
-                choices=[settings.llm_model],
-                value=settings.llm_model,
-                label="Model (Ollama)",
-                interactive=False,
-            )
+        ollama_models = [
+            m for m in [settings.llm_model] if _is_ollama_model(m)
+        ]
+        all_models = ollama_models + OPENROUTER_MODELS
+        default_model = settings.llm_model
+        if default_model not in all_models:
+            default_model = all_models[0]
+        model_dropdown = gr.Dropdown(
+            choices=all_models,
+            value=default_model,
+            label="Model",
+            interactive=True,
+        )
 
         last_answer_state: gr.State = gr.State(None)
         last_results_state: gr.State = gr.State([])
 
         chatbot = gr.Chatbot(label="Chat", height=500)
 
-        with gr.Row(visible=True) as input_row:
-            msg = gr.Textbox(
-                placeholder="Ask a support question...",
-                label="Question",
-                show_label=False,
-                scale=4,
-            )
-            gr.ClearButton([msg, chatbot], value="Clear conversation")
-            review_btn = gr.Button(
-                "Review & save as article", variant="secondary"
-            )
+        with gr.Column(visible=True) as input_row:
+            with gr.Row():
+                msg = gr.Textbox(
+                    placeholder="Ask a support question...",
+                    label="Question",
+                    show_label=False,
+                    scale=4,
+                )
+                submit_btn = gr.Button(
+                    "Submit", variant="primary", scale=1, elem_classes=["align-bottom"]
+                )
+            with gr.Row():
+                gr.ClearButton([msg, chatbot], value="Clear conversation")
+                review_btn = gr.Button(
+                    "Review & save as article", variant="secondary"
+                )
 
         with gr.Column(visible=False) as walkthrough_col:
             with gr.Walkthrough(selected=1) as walkthrough:
@@ -242,12 +253,16 @@ def main() -> None:
             inputs=[msg, chatbot, model_dropdown],
             outputs=[msg, chatbot, last_answer_state, last_results_state],
         )
+        submit_btn.click(
+            user_submit,
+            inputs=[msg, chatbot, model_dropdown],
+            outputs=[msg, chatbot, last_answer_state, last_results_state],
+        )
 
         # --- Review workflow ---
 
         def enter_review(
             answer: CitedAnswer | None,
-            results: list[SearchResult],
         ) -> tuple:
             if answer is None:
                 return (
@@ -259,26 +274,25 @@ def main() -> None:
                     gr.update(),
                 )
             a_text, c_text = _format_step1(answer)
-            s_text = _format_step2(results)
             return (
                 gr.update(visible=False),
                 gr.update(visible=True),
                 gr.update(height=300),
+                gr.Walkthrough(selected=1),
                 a_text,
                 c_text,
-                s_text,
             )
 
         review_btn.click(
             enter_review,
-            inputs=[last_answer_state, last_results_state],
+            inputs=[last_answer_state],
             outputs=[
                 input_row,
                 walkthrough_col,
                 chatbot,
+                walkthrough,
                 step1_answer,
                 step1_citations,
-                step2_sources,
             ],
         )
 
@@ -294,8 +308,15 @@ def main() -> None:
             outputs=[input_row, walkthrough_col, chatbot],
         )
 
-        # Step navigation
-        next1_btn.click(lambda: gr.Walkthrough(selected=2), outputs=walkthrough)
+        # Step navigation — Step 2 sources loaded lazily on first visit
+        def go_to_step2(results: list[SearchResult]) -> tuple[object, str]:
+            return gr.Walkthrough(selected=2), _format_step2(results)
+
+        next1_btn.click(
+            go_to_step2,
+            inputs=[last_results_state],
+            outputs=[walkthrough, step2_sources],
+        )
         back2_btn.click(lambda: gr.Walkthrough(selected=1), outputs=walkthrough)
 
         def go_to_step3(
@@ -329,7 +350,7 @@ def main() -> None:
             outputs=[save_msg],
         )
 
-    demo.launch()
+    demo.launch(share=True)
 
 
 if __name__ == "__main__":
