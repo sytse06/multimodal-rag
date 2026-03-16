@@ -17,15 +17,25 @@ logger = logging.getLogger(__name__)
 
 
 def download_video(
-    video_url: str, output_dir: Path, cookies_file: str = ""
+    video_url: str,
+    output_dir: Path,
+    cookies_file: str = "",
+    include_audio: bool = False,
 ) -> Path:
     """Download best available video from a YouTube URL to output_dir.
 
+    Set include_audio=True to download a merged video+audio stream
+    (required when the file will be passed to Voxtral for transcription).
     Returns the path to the downloaded file.
     Raises yt_dlp.utils.DownloadError on failure.
     """
+    fmt = (
+        "bestvideo+bestaudio/best"
+        if include_audio
+        else "bestvideo[vcodec!=images]/best[vcodec!=images]/best"
+    )
     ydl_opts: dict = {
-        "format": "bestvideo[vcodec!=images]/best[vcodec!=images]/best",
+        "format": fmt,
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
@@ -76,9 +86,15 @@ def extract_keyframes(
 
 
 _PROMPT_DESCRIBE = (
-    "Describe what is shown in this video frame in detail. "
-    "Focus on any UI elements, text, menus, buttons, or actions visible. "
-    "Be specific and concise."
+    "This is a frame from a software tutorial video. "
+    "Describe ONLY what is actively happening or being demonstrated: "
+    "what action is being performed, what dialog or panel is open, "
+    "what specific settings, values, or fields are visible in the active area, "
+    "and what step in a workflow this appears to represent. "
+    "Do NOT describe static UI chrome: title bar, menu bar, toolbar icons, "
+    "sidebar tool palettes, or window controls — these are the same in every frame "
+    "and add no value. "
+    "Keep the description under 80 words."
 )
 
 _PROMPT_TRANSCRIBE = (
@@ -114,20 +130,20 @@ def describe_frame(
 
 
 def extract_audio(video_path: Path, output_dir: Path) -> Path:
-    """Extract audio track from a video file to an m4a file via ffmpeg.
+    """Extract and re-encode audio from a video file to mp3 via ffmpeg.
 
     Returns the path to the extracted audio file.
     Raises subprocess.CalledProcessError on ffmpeg failure.
     """
-    audio_path = output_dir / (video_path.stem + ".m4a")
+    audio_path = output_dir / (video_path.stem + ".mp3")
     subprocess.run(
         [
             "ffmpeg",
             "-i",
             str(video_path),
             "-vn",
-            "-acodec",
-            "copy",
+            "-q:a",
+            "4",
             str(audio_path),
         ],
         check=True,
@@ -208,7 +224,9 @@ def fetch_fused_chunks(
         frame_dir.mkdir()
 
         logger.info("Downloading video for fusion: %s", source_name)
-        video_path = download_video(video_url, video_dir, cookies_file=cookies_file)
+        video_path = download_video(
+            video_url, video_dir, cookies_file=cookies_file, include_audio=True
+        )
 
         logger.info("Extracting audio for Voxtral: %s", source_name)
         audio_path = extract_audio(video_path, tmp_path)

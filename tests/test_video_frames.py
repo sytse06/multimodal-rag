@@ -142,7 +142,7 @@ class TestExtractAudio:
         args = mock_run.call_args[0][0]
         assert "ffmpeg" in args
         assert "-vn" in args
-        assert result.suffix == ".m4a"
+        assert result.suffix == ".mp3"
         assert result.stem == video_path.stem
 
     @patch("multimodal_rag.ingest.video_frames.subprocess.run")
@@ -321,7 +321,7 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
-        audio_file = tmp_path / "video.m4a"
+        audio_file = tmp_path / "video.mp3"
         audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
         mock_extract_audio.return_value = audio_file
@@ -360,7 +360,7 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
-        audio_file = tmp_path / "video.m4a"
+        audio_file = tmp_path / "video.mp3"
         audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
         mock_extract_audio.return_value = audio_file
@@ -392,7 +392,7 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
-        audio_file = tmp_path / "video.m4a"
+        audio_file = tmp_path / "video.mp3"
         audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
         mock_extract_audio.return_value = audio_file
@@ -426,7 +426,7 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
-        audio_file = tmp_path / "video.m4a"
+        audio_file = tmp_path / "video.mp3"
         audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
         mock_extract_audio.return_value = audio_file
@@ -455,7 +455,7 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
-        audio_file = tmp_path / "video.m4a"
+        audio_file = tmp_path / "video.mp3"
         audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
         mock_extract_audio.return_value = audio_file

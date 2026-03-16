@@ -194,9 +194,18 @@ knowledge_bases:
 
 - Top: model selector dropdown + clear conversation button
 - Center: scrollable chat history with markdown rendering
-- Bottom: text input with send button
+- Bottom: text input with send button + "Review & save as article" button
 - Citations rendered inline in assistant messages as clickable markdown links
 - Relevance scores shown as percentage badges next to each citation
+
+### Key Screen: Editorial Workflow (Epic 7)
+
+- Triggered by "Review & save as article" button from the chat interface
+- Chat history remains visible above (height capped) for reference
+- Chat input row hidden; replaced by `gr.Walkthrough` panel below
+- Four steps: Review answer → Inspect sources → Edit draft → Save
+- "Cancel — back to chat" escape hatch on Step 1
+- On save: article written to `kb_output/`, confirmation shown in UI
 
 ## 7. Security Considerations
 
@@ -245,7 +254,7 @@ knowledge_bases:
 | VOXTRAL-002 | Voxtral transcription | Mistral Voxtral Mini Transcribe API produces segment-level timestamps from audio |
 | VOXTRAL-003 | Fallback integration | `fetch_transcript_chunks` catches `TranscriptsDisabled`/`NoTranscriptFound` and invokes Voxtral; `IpBlocked` is not retried |
 
-**Epic 5: Visual Grounding** (planned)
+**Epic 5: Visual Grounding** (completed)
 
 | Feature | Branch | Description |
 |---------|--------|-------------|
@@ -255,8 +264,38 @@ knowledge_bases:
 | VIS-004 | Stable chunk ID for frame and screenshot chunks | Chunk ID keyed on frame identity (`hash(source_url + timestamp_seconds)` or `hash(image_url)`) — not on non-deterministic LLM text output |
 | VIS-005 | Ingestion orchestrator wiring and tests | Wire both new paths in `ingest/__main__.py`; all vision LLM, ffmpeg, and download calls fully mocked in tests |
 
+**Epic 6: Multimodal Chunk Fusion** (completed)
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| FUSION-001 | Combined audio + visual chunks | Align Voxtral transcript segments with frame intervals; merge `[Transcript]` + `[Visual]` text into one chunk per time window; stable chunk ID on `hash(source_url + window_start_seconds)` |
+| FUSION-002 | Purge by source type | `WeaviateStore.delete_by_source_type()`; `make purge-video` and `make purge-web` Makefile targets with confirmation prompts |
+
+**Epic 7: Answer-to-Knowledge-Base Pipeline** (planned)
+
+Closes the loop between retrieval quality and knowledge base growth. A "Review & save as article" button in the chat UI opens an in-page editorial workflow that lets support staff validate a RAG answer against its source chunks, polish it, and export it as a markdown KB article.
+
+| Feature | Branch | Description |
+|---------|--------|-------------|
+| WALK-001 | Answer review UI | `gr.Walkthrough` panel with 4 steps (Review → Inspect sources → Edit draft → Save); triggered by "Review & save as article" button; chat stays visible above for reference; input row hidden during workflow |
+| WALK-002 | KB article generation | Structured markdown draft from RAG answer + citation metadata; optional LLM reformatting pass |
+| WALK-003 | KB article export | Write approved article to `kb_output/{slug}-{timestamp}.md`; confirmation shown in UI |
+
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
+
+## 9. Risks and Mitigations
+
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| YouTube transcript quality (auto-generated) | Medium | Medium | Verified: test video has clean captions. Flag low-quality transcripts during ingestion |
+| Caption-disabled YouTube videos | Medium | Medium | Mitigated: Voxtral fallback handles `TranscriptsDisabled` and `NoTranscriptFound` automatically when `MISTRAL_API_KEY` is set |
+| Weaviate Docker overhead for local dev | Low | Low | Single container, minimal resources for dozens of videos |
+| OpenRouter rate limits | Medium | Low | Implement retry logic with exponential backoff via tenacity |
+| Chunking too coarse or too fine | High | Medium | Start with 300-500 tokens, tune based on retrieval quality |
+| Citation hallucination (LLM invents sources) | High | Medium | Strict prompt template: only cite from provided chunks. Validate citations against retrieved metadata |
+
+## 10. Future Expansion
 
 ### Phase 2: Enhancement
 
@@ -273,18 +312,7 @@ linking to specific video timestamps and knowledge base pages.
 - Multi-language support (Dutch/English)
 - FastAPI layer for API access by other systems
 
-## 9. Risks and Mitigations
-
-| Risk | Impact | Likelihood | Mitigation |
-|------|--------|------------|------------|
-| YouTube transcript quality (auto-generated) | Medium | Medium | Verified: test video has clean captions. Flag low-quality transcripts during ingestion |
-| Caption-disabled YouTube videos | Medium | Medium | Mitigated: Voxtral fallback handles `TranscriptsDisabled` and `NoTranscriptFound` automatically when `MISTRAL_API_KEY` is set |
-| Weaviate Docker overhead for local dev | Low | Low | Single container, minimal resources for dozens of videos |
-| OpenRouter rate limits | Medium | Low | Implement retry logic with exponential backoff via tenacity |
-| Chunking too coarse or too fine | High | Medium | Start with 300-500 tokens, tune based on retrieval quality |
-| Citation hallucination (LLM invents sources) | High | Medium | Strict prompt template: only cite from provided chunks. Validate citations against retrieved metadata |
-
-## 10. Future Expansion
+### Long-term
 
 - **PDF ingestion** — HydroSym manuals and release notes
 - **Multi-language** — Dutch support content
