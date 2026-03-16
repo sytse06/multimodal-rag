@@ -82,3 +82,51 @@ def _replace_refs_with_links(
         link = f"[{r.citation_label}]({r.citation_url}) ({score_pct}%)"
         text = text.replace(f"[{i}]", link)
     return text
+
+
+KB_ARTICLE_PROMPT = """\
+You are a technical writer for Paro Software.
+Write a comprehensive, standalone knowledge base article based on the source \
+material below.
+
+Rules:
+1. Write for support staff who may not have seen the original question.
+2. Open with a short summary sentence stating what the article covers.
+3. Use markdown: headers, bullet points, numbered steps where appropriate.
+4. Draw on ALL details in the source material — include specific steps, settings, \
+menu paths, keyboard shortcuts, and field names. Do not summarise away detail.
+5. Do not invent information that is not present in the sources.
+6. End with a "Sources" section listing the references."""
+
+
+def generate_kb_article(
+    answer: CitedAnswer,
+    llm: BaseChatModel,
+    results: list[SearchResult] | None = None,
+) -> str:
+    """Generate a comprehensive KB article from a cited answer and its source chunks."""
+    source_blocks: list[str] = []
+    if results:
+        for i, r in enumerate(results, 1):
+            source_blocks.append(
+                f"### Source [{i}]: {r.citation_label}\n\n{r.text}"
+            )
+
+    parts = ["## Source Material\n"]
+    if source_blocks:
+        parts.append("\n\n".join(source_blocks))
+    else:
+        parts.append(answer.answer)
+
+    if answer.citations:
+        refs = "\n".join(
+            f"- [{c.label}]({c.url})" for c in answer.citations
+        )
+        parts.append(f"\n\n## References\n\n{refs}")
+
+    user_message = "\n".join(parts)
+    response = llm.invoke([
+        SystemMessage(content=KB_ARTICLE_PROMPT),
+        HumanMessage(content=user_message),
+    ])
+    return str(response.content) if response.content else ""
