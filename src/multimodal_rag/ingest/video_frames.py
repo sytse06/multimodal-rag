@@ -86,9 +86,15 @@ def extract_keyframes(
 
 
 _PROMPT_DESCRIBE = (
-    "Describe what is shown in this video frame in detail. "
-    "Focus on any UI elements, text, menus, buttons, or actions visible. "
-    "Be specific and concise."
+    "This is a frame from a software tutorial video. "
+    "Describe ONLY what is actively happening or being demonstrated: "
+    "what action is being performed, what dialog or panel is open, "
+    "what specific settings, values, or fields are visible in the active area, "
+    "and what step in a workflow this appears to represent. "
+    "Do NOT describe static UI chrome: title bar, menu bar, toolbar icons, "
+    "sidebar tool palettes, or window controls — these are the same in every frame "
+    "and add no value. "
+    "Keep the description under 80 words."
 )
 
 _PROMPT_TRANSCRIBE = (

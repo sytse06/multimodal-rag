@@ -5,12 +5,14 @@ from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage
 
 from multimodal_rag.models.chunks import SourceType
-from multimodal_rag.models.query import SearchResult
+from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 from multimodal_rag.query.generator import (
+    KB_ARTICLE_PROMPT,
     SYSTEM_PROMPT,
     _build_citations,
     _replace_refs_with_links,
     generate_cited_answer,
+    generate_kb_article,
 )
 
 
@@ -114,3 +116,59 @@ class TestGenerateCitedAnswer:
         assert messages[0].content == SYSTEM_PROMPT
         assert "## Sources" in messages[1].content
         assert "## Question" in messages[1].content
+
+
+class TestGenerateKbArticle:
+    def _answer(self) -> CitedAnswer:
+        return CitedAnswer(
+            answer="Use File > New to create a project. See [1].",
+            citations=[
+                Citation(
+                    label="Quickstart @ 00:42",
+                    url="https://yt.com/watch?v=abc&t=42s",
+                    relevance_score=0.9,
+                    source_type=SourceType.VIDEO,
+                )
+            ],
+        )
+
+    def test_calls_llm(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="# Article\n\nBody text.")
+        generate_kb_article(self._answer(), llm=mock_llm)
+        mock_llm.invoke.assert_called_once()
+
+    def test_uses_kb_article_prompt(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="Draft.")
+        generate_kb_article(self._answer(), llm=mock_llm)
+        messages = mock_llm.invoke.call_args[0][0]
+        assert messages[0].content == KB_ARTICLE_PROMPT
+
+    def test_includes_citation_label_in_user_message(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="Draft.")
+        generate_kb_article(self._answer(), llm=mock_llm)
+        messages = mock_llm.invoke.call_args[0][0]
+        assert "Quickstart @ 00:42" in messages[1].content
+
+    def test_source_chunk_text_included_when_results_provided(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="Draft.")
+        generate_kb_article(self._answer(), llm=mock_llm, results=[_video_result()])
+        messages = mock_llm.invoke.call_args[0][0]
+        assert "Click File > New to create a project" in messages[1].content
+
+    def test_returns_llm_content(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="# KB Article\n\nDetails.")
+        result = generate_kb_article(self._answer(), llm=mock_llm)
+        assert result == "# KB Article\n\nDetails."
+
+    def test_no_citations(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="Draft.")
+        answer = CitedAnswer(answer="Simple answer.", citations=[])
+        result = generate_kb_article(answer, llm=mock_llm)
+        assert result == "Draft."
+        mock_llm.invoke.assert_called_once()

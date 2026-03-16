@@ -16,3 +16,4 @@ dist/
 config/sources.yaml
 config/sources_original.yaml
 logs/
+kb_output/
