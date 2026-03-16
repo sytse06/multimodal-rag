@@ -114,20 +114,20 @@ def describe_frame(
 
 
 def extract_audio(video_path: Path, output_dir: Path) -> Path:
-    """Extract audio track from a video file to an m4a file via ffmpeg.
+    """Extract and re-encode audio from a video file to mp3 via ffmpeg.
 
     Returns the path to the extracted audio file.
     Raises subprocess.CalledProcessError on ffmpeg failure.
     """
-    audio_path = output_dir / (video_path.stem + ".m4a")
+    audio_path = output_dir / (video_path.stem + ".mp3")
     subprocess.run(
         [
             "ffmpeg",
             "-i",
             str(video_path),
             "-vn",
-            "-acodec",
-            "copy",
+            "-q:a",
+            "4",
             str(audio_path),
         ],
         check=True,
