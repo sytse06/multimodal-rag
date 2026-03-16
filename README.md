@@ -12,7 +12,7 @@ that capture both what was said and what was shown on screen.
 
 ```
 YouTube URLs  ──→ yt-dlp download ──→ Voxtral Mini (audio) ──→ transcript segments ──┐
-                                  └──→ ffmpeg keyframes ──→ Vision LLM (optional) ──→ fused chunks per 30s window
+                                  └──→ ffmpeg keyframes ──→ Vision LLM (recommended) ──→ fused chunks per 30s window
                                                                                         │
 Web KB URLs   ──→ Firecrawl crawl ──→ markdown split ──────────────────────────→ chunks
                                                                                         │
