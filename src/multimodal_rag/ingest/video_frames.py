@@ -17,15 +17,25 @@ logger = logging.getLogger(__name__)
 
 
 def download_video(
-    video_url: str, output_dir: Path, cookies_file: str = ""
+    video_url: str,
+    output_dir: Path,
+    cookies_file: str = "",
+    include_audio: bool = False,
 ) -> Path:
     """Download best available video from a YouTube URL to output_dir.
 
+    Set include_audio=True to download a merged video+audio stream
+    (required when the file will be passed to Voxtral for transcription).
     Returns the path to the downloaded file.
     Raises yt_dlp.utils.DownloadError on failure.
     """
+    fmt = (
+        "bestvideo+bestaudio/best"
+        if include_audio
+        else "bestvideo[vcodec!=images]/best[vcodec!=images]/best"
+    )
     ydl_opts: dict = {
-        "format": "bestvideo[vcodec!=images]/best[vcodec!=images]/best",
+        "format": fmt,
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
@@ -208,7 +218,9 @@ def fetch_fused_chunks(
         frame_dir.mkdir()
 
         logger.info("Downloading video for fusion: %s", source_name)
-        video_path = download_video(video_url, video_dir, cookies_file=cookies_file)
+        video_path = download_video(
+            video_url, video_dir, cookies_file=cookies_file, include_audio=True
+        )
 
         logger.info("Extracting audio for Voxtral: %s", source_name)
         audio_path = extract_audio(video_path, tmp_path)
