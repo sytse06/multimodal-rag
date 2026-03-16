@@ -313,6 +313,83 @@ Currently the only purge options are `make purge` (wipes the entire collection) 
 
 ---
 
+## Epic 7: Answer-to-Knowledge-Base Pipeline (planned)
+
+Closes the loop between retrieval quality and knowledge base growth. After the RAG system generates an answer, a structured review workflow lets a support engineer validate the answer against its source chunks, polish it, and promote it directly into the knowledge base as a new article. This serves two purposes: it surfaces retrieval gaps (a bad answer flags missing or low-quality source material) and it turns good answers into reusable, citable KB content.
+
+### WALK-001 — Answer Review UI
+
+**Branch:** `feature/WALK-001-answer-review`
+
+**Starting point:** The existing chat UI (`make run`) has a text input "Ask a support question", a "Clear conversation" button, and a new **"Review & save as article"** button alongside it. Clicking "Review & save as article" triggers a layout transition:
+
+- The chat history stays visible above as a fixed reference (height capped via `gr.Chatbot(max_height=...)` so it doesn't dominate the viewport)
+- The chat input row (text input + "Clear conversation" + "Review & save as article") disappears
+- The `gr.Walkthrough` panel appears directly below the chat history
+- A **"Cancel — back to chat"** button is visible in Step 1 as an escape hatch; it reverses the transition
+
+The walkthrough has four steps, pre-populated from the most recent chat answer and its retrieved source chunks:
+
+1. **Review answer** — display the generated answer alongside its source citations; user assesses quality; Cancel button present
+2. **Inspect sources** — show full text of each retrieved chunk with relevance score; cross-reference against the answer above
+3. **Edit draft** — editable text area pre-filled with the generated answer; user polishes into a standalone KB article
+4. **Save** — user assigns a title and confirms; triggers WALK-003 file export; success message shown
+
+Step navigation driven by Next/Back buttons returning `gr.Walkthrough(selected=N)`:
+
+```python
+with gr.Walkthrough(selected=1) as walkthrough:
+    with gr.Step("Review answer", id=1): ...
+    with gr.Step("Inspect sources", id=2): ...
+    with gr.Step("Edit draft", id=3): ...
+    with gr.Step("Save", id=4): ...
+```
+
+**Layout note:** The combined chat + walkthrough takes significant vertical space but is scrollable. Validate with a realistic 3–4 exchange chat history before finalising layout constants.
+
+**Scope:** `src/multimodal_rag/app.py`
+
+### WALK-002 — KB Article Generation
+
+**Branch:** `feature/WALK-002-kb-article-generation`
+
+Generates a structured KB article draft from the RAG answer and its source chunks. The existing `SYSTEM_PROMPT` in `generator.py` is unchanged — it is fit for purpose for the chat pipeline. WALK-002 adds a separate prompt used only in the editorial workflow:
+
+```
+You are a technical writer for Paro Software.
+Rewrite the following support answer into a clear, standalone knowledge base article.
+
+Rules:
+1. Write for support staff who may not have seen the original question.
+2. Open with a short summary sentence stating what the article covers.
+3. Use markdown: headers, bullet points, numbered steps where appropriate.
+4. Preserve all factual content from the answer — do not add information.
+5. End with a "Sources" section listing the references.
+```
+
+Input to this prompt: `CitedAnswer.answer` text + citation list — both already available in Gradio state after a chat turn. No changes to the retrieval or chat pipeline required.
+
+- Article format: summary sentence, body (headers + bullets/steps), Sources section with citation URLs
+- Pre-populated into the Step 3 edit text area; user can edit freely before saving
+
+**Scope:** `src/multimodal_rag/query/generator.py` (new `generate_kb_article()` function)
+
+### WALK-003 — KB Article Export
+
+**Branch:** `feature/WALK-003-kb-article-export`
+
+Saves the approved article as a markdown file in `kb_output/`:
+
+- Write `kb_output/{slug}-{timestamp}.md` with title, body, and source references section
+- Show a confirmation message in the UI with the saved file path
+- Log saved articles with timestamp, title, and originating query
+
+**Out of scope for this iteration:** re-ingest hook, Firecrawl POST, external KB integration — these are future work once article quality is validated.
+
+**Scope:** `src/multimodal_rag/app.py`, `kb_output/` directory (gitignored)
+
+---
+
 ## Summary
 
 | Epic | Features | Total Tests |
@@ -323,4 +400,5 @@ Currently the only purge options are `make purge` (wipes the entire collection) 
 | 4 — Voxtral Fallback | 3 | 13 |
 | 5 — Visual Grounding | 5 | planned |
 | 6 — Multimodal Chunk Fusion | 2 | planned |
-| **Total** | **22** | **93+ planned** |
+| 7 — Answer-to-KB Pipeline | 3 | planned |
+| **Total** | **25** | **93+ planned** |
