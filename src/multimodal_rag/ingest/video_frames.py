@@ -113,6 +113,29 @@ def describe_frame(
     return str(response.content)
 
 
+def extract_audio(video_path: Path, output_dir: Path) -> Path:
+    """Extract audio track from a video file to an m4a file via ffmpeg.
+
+    Returns the path to the extracted audio file.
+    Raises subprocess.CalledProcessError on ffmpeg failure.
+    """
+    audio_path = output_dir / (video_path.stem + ".m4a")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-i",
+            str(video_path),
+            "-vn",
+            "-acodec",
+            "copy",
+            str(audio_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return audio_path
+
+
 def fetch_frame_chunks(
     video_url: str,
     video_title: str,
@@ -187,8 +210,10 @@ def fetch_fused_chunks(
         logger.info("Downloading video for fusion: %s", source_name)
         video_path = download_video(video_url, video_dir, cookies_file=cookies_file)
 
+        logger.info("Extracting audio for Voxtral: %s", source_name)
+        audio_path = extract_audio(video_path, tmp_path)
         logger.info("Transcribing with Voxtral: %s", source_name)
-        segments = transcribe_with_voxtral(video_path, mistral_api_key)
+        segments = transcribe_with_voxtral(audio_path, mistral_api_key)
 
         frames: list[tuple[Path, int]] = []
         if vision_llm is not None:

@@ -8,6 +8,7 @@ import pytest
 from multimodal_rag.ingest.video_frames import (
     describe_frame,
     download_video,
+    extract_audio,
     extract_keyframes,
     fetch_frame_chunks,
     fetch_fused_chunks,
@@ -125,6 +126,37 @@ class TestExtractKeyframes:
 
         with pytest.raises(subprocess.CalledProcessError):
             extract_keyframes(video_path, frame_dir)
+
+
+class TestExtractAudio:
+    @patch("multimodal_rag.ingest.video_frames.subprocess.run")
+    def test_calls_ffmpeg_with_vn_flag(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        video_path = tmp_path / "video.mp4"
+        video_path.write_bytes(b"fake")
+        mock_run.return_value = MagicMock(returncode=0)
+
+        result = extract_audio(video_path, tmp_path)
+
+        args = mock_run.call_args[0][0]
+        assert "ffmpeg" in args
+        assert "-vn" in args
+        assert result.suffix == ".m4a"
+        assert result.stem == video_path.stem
+
+    @patch("multimodal_rag.ingest.video_frames.subprocess.run")
+    def test_raises_on_ffmpeg_failure(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "ffmpeg")
+        video_path = tmp_path / "video.mp4"
+        video_path.write_bytes(b"fake")
+
+        with pytest.raises(subprocess.CalledProcessError):
+            extract_audio(video_path, tmp_path)
 
 
 class TestDescribeFrame:
@@ -276,10 +308,12 @@ class TestFetchFusedChunks:
     @patch("multimodal_rag.ingest.video_frames.describe_frame")
     @patch("multimodal_rag.ingest.video_frames.extract_keyframes")
     @patch("multimodal_rag.ingest.video_frames.transcribe_with_voxtral")
+    @patch("multimodal_rag.ingest.video_frames.extract_audio")
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_combined_text_when_transcript_and_vision(
         self,
         mock_download: MagicMock,
+        mock_extract_audio: MagicMock,
         mock_transcribe: MagicMock,
         mock_keyframes: MagicMock,
         mock_describe: MagicMock,
@@ -287,7 +321,10 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
+        audio_file = tmp_path / "video.m4a"
+        audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
+        mock_extract_audio.return_value = audio_file
 
         mock_transcribe.return_value = [
             self._make_segment("Hello world", 0.0),
@@ -312,16 +349,21 @@ class TestFetchFusedChunks:
         assert result[1].start_seconds == 30
 
     @patch("multimodal_rag.ingest.video_frames.transcribe_with_voxtral")
+    @patch("multimodal_rag.ingest.video_frames.extract_audio")
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_transcript_only_when_no_vision_llm(
         self,
         mock_download: MagicMock,
+        mock_extract_audio: MagicMock,
         mock_transcribe: MagicMock,
         tmp_path: Path,
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
+        audio_file = tmp_path / "video.m4a"
+        audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
+        mock_extract_audio.return_value = audio_file
         mock_transcribe.return_value = [
             self._make_segment("Just audio", 0.0),
         ]
@@ -337,10 +379,12 @@ class TestFetchFusedChunks:
     @patch("multimodal_rag.ingest.video_frames.describe_frame")
     @patch("multimodal_rag.ingest.video_frames.extract_keyframes")
     @patch("multimodal_rag.ingest.video_frames.transcribe_with_voxtral")
+    @patch("multimodal_rag.ingest.video_frames.extract_audio")
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_visual_only_for_silent_window(
         self,
         mock_download: MagicMock,
+        mock_extract_audio: MagicMock,
         mock_transcribe: MagicMock,
         mock_keyframes: MagicMock,
         mock_describe: MagicMock,
@@ -348,7 +392,10 @@ class TestFetchFusedChunks:
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
+        audio_file = tmp_path / "video.m4a"
+        audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
+        mock_extract_audio.return_value = audio_file
         # Only segment in window 0; window 1 is silent
         mock_transcribe.return_value = [self._make_segment("Hello", 0.0)]
         frame0 = tmp_path / "f0.jpg"
@@ -368,16 +415,21 @@ class TestFetchFusedChunks:
         assert result[1].text == "[Visual] Window 1 desc"
 
     @patch("multimodal_rag.ingest.video_frames.transcribe_with_voxtral")
+    @patch("multimodal_rag.ingest.video_frames.extract_audio")
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_skips_empty_window_when_no_vision(
         self,
         mock_download: MagicMock,
+        mock_extract_audio: MagicMock,
         mock_transcribe: MagicMock,
         tmp_path: Path,
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
+        audio_file = tmp_path / "video.m4a"
+        audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
+        mock_extract_audio.return_value = audio_file
         # Single segment in window 0 only; window 1 and 2 are silent
         mock_transcribe.return_value = [
             self._make_segment("Only here", 5.0, duration=5.0)
@@ -392,18 +444,24 @@ class TestFetchFusedChunks:
         assert result[0].text == "Only here"
 
     @patch("multimodal_rag.ingest.video_frames.transcribe_with_voxtral")
+    @patch("multimodal_rag.ingest.video_frames.extract_audio")
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_single_download_call(
         self,
         mock_download: MagicMock,
+        mock_extract_audio: MagicMock,
         mock_transcribe: MagicMock,
         tmp_path: Path,
     ) -> None:
         video_file = tmp_path / "video.mp4"
         video_file.write_bytes(b"fake")
+        audio_file = tmp_path / "video.m4a"
+        audio_file.write_bytes(b"fake audio")
         mock_download.return_value = video_file
+        mock_extract_audio.return_value = audio_file
         mock_transcribe.return_value = []
 
         fetch_fused_chunks(self.VIDEO_URL, self.SOURCE_NAME, "key", None)
 
         assert mock_download.call_count == 1
+        assert mock_extract_audio.call_count == 1
