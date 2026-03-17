@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS = [
     "google/gemini-3-flash-preview",
+    "qwen/qwen3.5-35b-a3b",
     "deepseek/deepseek-v3.2",
     "mistralai/ministral-14b-2512",
-    "qwen/qwen3-32b",
 ]
 
 KB_OUTPUT_DIR = Path("kb_output")
