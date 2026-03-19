@@ -19,7 +19,8 @@ class SearchResult(BaseModel):
     @property
     def citation_url(self) -> str:
         if self.source_type == SourceType.VIDEO and self.timestamp_seconds is not None:
-            return f"{self.source_url}&t={self.timestamp_seconds}s"
+            sep = "&" if "?" in self.source_url else "?"
+            return f"{self.source_url}{sep}t={self.timestamp_seconds}s"
         return self.source_url
 
     @property

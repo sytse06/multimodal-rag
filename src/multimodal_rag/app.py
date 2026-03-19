@@ -21,7 +21,7 @@ from multimodal_rag.store.weaviate import WeaviateStore
 logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS = [
-    "google/gemini-3-flash-preview",
+    "openai/gpt-5.4-mini",
     "qwen/qwen3.5-35b-a3b",
     "deepseek/deepseek-v3.2",
     "mistralai/ministral-14b-2512",
@@ -173,6 +173,7 @@ def main() -> None:
 
         last_answer_state: gr.State = gr.State(None)
         last_results_state: gr.State = gr.State([])
+        last_question_state: gr.State = gr.State("")
 
         chatbot = gr.Chatbot(label="Chat", height=500)
 
@@ -185,7 +186,7 @@ def main() -> None:
                     scale=4,
                 )
                 submit_btn = gr.Button(
-                    "Submit", variant="primary", scale=1, elem_classes=["align-bottom"]
+                    "Submit", variant="primary", scale=1, elem_classes=["align-center"]
                 )
             with gr.Row():
                 gr.ClearButton([msg, chatbot], value="Clear conversation")
@@ -240,23 +241,27 @@ def main() -> None:
             message: str,
             history: list[dict[str, str]],
             model: str,
-        ) -> tuple[str, list[dict[str, str]], CitedAnswer | None, list[SearchResult]]:
+        ) -> tuple[str, list[dict[str, str]], CitedAnswer | None, list[SearchResult], str]:  # noqa: E501
             if not message.strip():
-                return "", history, None, []
+                return "", history, None, [], ""
+            question = message
             history = history + [{"role": "user", "content": message}]
             formatted, answer, results = _respond(message, model)
             history = history + [{"role": "assistant", "content": formatted}]
-            return "", history, answer, results
+            return "", history, answer, results, question
 
+        outputs_submit = [
+            msg, chatbot, last_answer_state, last_results_state, last_question_state
+        ]
         msg.submit(
             user_submit,
             inputs=[msg, chatbot, model_dropdown],
-            outputs=[msg, chatbot, last_answer_state, last_results_state],
+            outputs=outputs_submit,
         )
         submit_btn.click(
             user_submit,
             inputs=[msg, chatbot, model_dropdown],
-            outputs=[msg, chatbot, last_answer_state, last_results_state],
+            outputs=outputs_submit,
         )
 
         # --- Review workflow ---
@@ -294,6 +299,7 @@ def main() -> None:
                 step1_answer,
                 step1_citations,
             ],
+            queue=False,
         )
 
         def cancel_review() -> tuple:
@@ -306,6 +312,7 @@ def main() -> None:
         cancel_btn.click(
             cancel_review,
             outputs=[input_row, walkthrough_col, chatbot],
+            queue=False,
         )
 
         # Step navigation — Step 2 sources loaded lazily on first visit
@@ -316,29 +323,54 @@ def main() -> None:
             go_to_step2,
             inputs=[last_results_state],
             outputs=[walkthrough, step2_sources],
+            queue=False,
         )
-        back2_btn.click(lambda: gr.Walkthrough(selected=1), outputs=walkthrough)
+        back2_btn.click(
+            lambda: gr.Walkthrough(selected=1), outputs=walkthrough, queue=False
+        )
 
         def go_to_step3(
             answer: CitedAnswer | None,
             results: list[SearchResult],
             model: str,
+            question: str,
         ) -> tuple[object, str]:
             if answer is None:
                 return gr.Walkthrough(selected=3), ""
             llm = _make_llm(model, settings)
-            draft = generate_kb_article(answer, llm, results=results)
+            draft = generate_kb_article(answer, llm, results=results, question=question)
             return gr.Walkthrough(selected=3), draft
 
         next2_btn.click(
             go_to_step3,
-            inputs=[last_answer_state, last_results_state, model_dropdown],
+            inputs=[
+                last_answer_state,
+                last_results_state,
+                model_dropdown,
+                last_question_state,
+            ],
             outputs=[walkthrough, article_editor],
         )
 
-        back3_btn.click(lambda: gr.Walkthrough(selected=2), outputs=walkthrough)
-        next3_btn.click(lambda: gr.Walkthrough(selected=4), outputs=walkthrough)
-        back4_btn.click(lambda: gr.Walkthrough(selected=3), outputs=walkthrough)
+        back3_btn.click(
+            lambda: gr.Walkthrough(selected=2), outputs=walkthrough, queue=False
+        )
+
+        def go_to_step4(article: str) -> tuple[object, str]:
+            h1 = next(
+                (ln for ln in article.splitlines() if ln.startswith("# ")), ""
+            )
+            return gr.Walkthrough(selected=4), h1[2:].strip()
+
+        next3_btn.click(
+            go_to_step4,
+            inputs=[article_editor],
+            outputs=[walkthrough, title_input],
+            queue=False,
+        )
+        back4_btn.click(
+            lambda: gr.Walkthrough(selected=3), outputs=walkthrough, queue=False
+        )
 
         def do_save(title: str, body: str) -> str:
             path = save_kb_article(title, body)

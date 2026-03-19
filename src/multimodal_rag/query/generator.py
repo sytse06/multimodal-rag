@@ -96,13 +96,27 @@ Rules:
 4. Draw on ALL details in the source material — include specific steps, settings, \
 menu paths, keyboard shortcuts, and field names. Do not summarise away detail.
 5. Do not invent information that is not present in the sources.
-6. End with a "Sources" section listing the references."""
+6. Output raw markdown directly. Do NOT wrap the response in a code block \
+or any other container."""
+
+
+def _strip_code_fence(text: str) -> str:
+    """Remove wrapping markdown code fences that some LLMs add to their output."""
+    text = text.strip()
+    if text.startswith("```"):
+        # Drop the opening fence line (e.g. ```markdown or just ```)
+        text = text[text.index("\n") + 1:] if "\n" in text else ""
+        # Drop the closing fence
+        if text.endswith("```"):
+            text = text[: text.rfind("```")].rstrip()
+    return text
 
 
 def generate_kb_article(
     answer: CitedAnswer,
     llm: BaseChatModel,
     results: list[SearchResult] | None = None,
+    question: str = "",
 ) -> str:
     """Generate a comprehensive KB article from a cited answer and its source chunks."""
     source_blocks: list[str] = []
@@ -112,21 +126,25 @@ def generate_kb_article(
                 f"### Source [{i}]: {r.citation_label}\n\n{r.text}"
             )
 
-    parts = ["## Source Material\n"]
+    parts: list[str] = []
+    if question:
+        parts.append(f"## Question\n\n{question}\n\n")
+
+    parts.append("## Source Material\n")
     if source_blocks:
         parts.append("\n\n".join(source_blocks))
     else:
         parts.append(answer.answer)
-
-    if answer.citations:
-        refs = "\n".join(
-            f"- [{c.label}]({c.url})" for c in answer.citations
-        )
-        parts.append(f"\n\n## References\n\n{refs}")
 
     user_message = "\n".join(parts)
     response = llm.invoke([
         SystemMessage(content=KB_ARTICLE_PROMPT),
         HumanMessage(content=user_message),
     ])
-    return str(response.content) if response.content else ""
+    raw = str(response.content) if response.content else ""
+    article = _strip_code_fence(raw)
+
+    if answer.citations:
+        source_lines = "\n".join(f"- [{c.label}]({c.url})" for c in answer.citations)
+        article = article.rstrip() + f"\n\n## Sources\n\n{source_lines}"
+    return article

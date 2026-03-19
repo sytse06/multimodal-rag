@@ -104,8 +104,8 @@ Retrieval-augmented generation chain with a chat interface for support staff.
 
 **Branch:** `feature/QUERY-003-gradio-ui`
 
-- `gr.Blocks` layout: title, model selector dropdown, chat area, text input, clear button
-- Model selector: OpenRouter models (gpt-4o-mini, gpt-4o, claude-3.5-sonnet, gemini-pro-1.5)
+- `gr.Blocks` layout: title, model selector dropdown, chat area, text input, Submit button, Clear + Review buttons
+- Model selector: unified dropdown — Ollama models (bare names, e.g. `llama3.2`) listed first, then OpenRouter models (`openai/gpt-5.4-mini`, `qwen/qwen3.5-35b-a3b`, `deepseek/deepseek-v3.2`, `mistralai/ministral-14b-2512`)
 - `_format_citations_block()` — appends a "Sources" section below each answer with source type icons and relevance percentages
 - Messages rendered as markdown — citation links are clickable natively in Gradio
 - Runnable via `make run` or `uv run python -m multimodal_rag.app`
@@ -113,23 +113,20 @@ Retrieval-augmented generation chain with a chat interface for support staff.
 **Files:** `src/multimodal_rag/app.py`
 **Tests:** 5
 
-### QUERY-004 — LangChain Model Client (pending)
+### QUERY-004 — LangChain Model Client (completed)
 
 **Branch:** `feature/QUERY-004-langchain-model-client`
 
-Replace direct `openai` SDK usage with LangChain's `BaseChatModel` and `Embeddings` interfaces. This removes the hard lock-in to OpenRouter and enables provider diversity.
+Replaced direct `openai` SDK usage with LangChain's `BaseChatModel` and `Embeddings` interfaces.
 
-**Scope:**
-- Create a model client factory (`src/multimodal_rag/models/llm.py`) that returns LangChain model instances based on config
-- Support at minimum: OpenRouter (via `ChatOpenAI`), Ollama (via `ChatOllama` / `OllamaEmbeddings`)
-- New env vars: `LLM_PROVIDER` (openrouter|ollama), `EMBEDDING_PROVIDER` (openrouter|ollama), `OLLAMA_BASE_URL`
-- Refactor `store/embeddings.py` to use LangChain `Embeddings` interface instead of `openai.OpenAI`
-- Refactor `query/generator.py` to use LangChain `BaseChatModel` instead of `openai.OpenAI`
-- Refactor `store/weaviate.py` to accept a LangChain `Embeddings` instance instead of embedding internally
-- Update Gradio app model selector to work with LangChain model switching
-- Add `langchain-ollama` to dependencies
+- `create_chat_model()` and `create_embeddings()` factory functions in `models/llm.py`
+- `_make_llm()` in `app.py` routes by model name format: bare name (no `/`) → `ChatOllama`, `provider/model` format → `ChatOpenAI` pointed at OpenRouter
+- Supports mixing Ollama and OpenRouter models in the same session via the dropdown — no restart required
+- `store/embeddings.py` uses LangChain `Embeddings` interface
+- `query/generator.py` accepts `BaseChatModel`
+- Env vars: `LLM_PROVIDER`, `EMBEDDING_PROVIDER`, `OLLAMA_BASE_URL`
 
-**Why:** Never lock into a single provider. LangChain's abstraction lets you swap OpenRouter for Ollama (local, free, private) by changing an env var. Nomic embed models via Ollama are not on OpenRouter — this unblocks local embedding workflows.
+**Files:** `src/multimodal_rag/models/llm.py`, `src/multimodal_rag/app.py`, `src/multimodal_rag/store/embeddings.py`, `src/multimodal_rag/query/generator.py`
 
 ---
 
@@ -313,7 +310,7 @@ Currently the only purge options are `make purge` (wipes the entire collection) 
 
 ---
 
-## Epic 7: Answer-to-Knowledge-Base Pipeline (planned)
+## Epic 7: Answer-to-Knowledge-Base Pipeline (completed)
 
 Closes the loop between retrieval quality and knowledge base growth. After the RAG system generates an answer, a structured review workflow lets a support engineer validate the answer against its source chunks, polish it, and promote it directly into the knowledge base as a new article. This serves two purposes: it surfaces retrieval gaps (a bad answer flags missing or low-quality source material) and it turns good answers into reusable, citable KB content.
 
@@ -353,26 +350,18 @@ with gr.Walkthrough(selected=1) as walkthrough:
 
 **Branch:** `feature/WALK-002-kb-article-generation`
 
-Generates a structured KB article draft from the RAG answer and its source chunks. The existing `SYSTEM_PROMPT` in `generator.py` is unchanged — it is fit for purpose for the chat pipeline. WALK-002 adds a separate prompt used only in the editorial workflow:
+Generates a structured KB article draft from the original question, RAG answer, and full source chunks. The existing `SYSTEM_PROMPT` is unchanged — WALK-002 adds a separate `KB_ARTICLE_PROMPT` used only in the editorial workflow.
 
-```
-You are a technical writer for Paro Software.
-Rewrite the following support answer into a clear, standalone knowledge base article.
+**`generate_kb_article(answer, llm, results, question)`** — key design decisions:
 
-Rules:
-1. Write for support staff who may not have seen the original question.
-2. Open with a short summary sentence stating what the article covers.
-3. Use markdown: headers, bullet points, numbered steps where appropriate.
-4. Preserve all factual content from the answer — do not add information.
-5. End with a "Sources" section listing the references.
-```
+- `question` is prepended as `## Question` in the user message so the LLM stays scoped to what was asked, not what the sources happen to emphasise
+- Full source chunk texts (`r.text`) are included as `### Source [N]: label` blocks — the LLM writes from the raw material, not just the already-summarised answer
+- `KB_ARTICLE_PROMPT` instructs a technical writer persona: open with a summary sentence, use markdown structure, draw on ALL source detail, output raw markdown
+- `_strip_code_fence()` defensive post-processing removes ` ```markdown ``` ` wrappers that some models add despite the prompt instruction
+- **Sources section is appended programmatically** from `answer.citations` after the LLM response — never generated by the LLM. This preserves exact URLs; LLM-generated sources sections drop the URLs.
 
-Input to this prompt: `CitedAnswer.answer` text + citation list — both already available in Gradio state after a chat turn. No changes to the retrieval or chat pipeline required.
-
-- Article format: summary sentence, body (headers + bullets/steps), Sources section with citation URLs
-- Pre-populated into the Step 3 edit text area; user can edit freely before saving
-
-**Scope:** `src/multimodal_rag/query/generator.py` (new `generate_kb_article()` function)
+**Files:** `src/multimodal_rag/query/generator.py`
+**Tests:** 12
 
 ### WALK-003 — KB Article Export
 
@@ -380,25 +369,27 @@ Input to this prompt: `CitedAnswer.answer` text + citation list — both already
 
 Saves the approved article as a markdown file in `kb_output/`:
 
-- Write `kb_output/{slug}-{timestamp}.md` with title, body, and source references section
-- Show a confirmation message in the UI with the saved file path
-- Log saved articles with timestamp, title, and originating query
+- `save_kb_article(title, body)` — writes `kb_output/{slug}-{timestamp}.md`; `_slugify()` lowercases, strips special chars, truncates to 60 chars
+- Step 4 auto-suggests a filename by extracting the first `# ` heading from the draft (`go_to_step4`)
+- Confirmation message shown in UI with the saved file path
+- `kb_output/` is gitignored
 
-**Out of scope for this iteration:** re-ingest hook, Firecrawl POST, external KB integration — these are future work once article quality is validated.
+**Out of scope for this iteration:** re-ingest hook, Firecrawl POST, external KB integration.
 
-**Scope:** `src/multimodal_rag/app.py`, `kb_output/` directory (gitignored)
+**Files:** `src/multimodal_rag/app.py`, `kb_output/` (gitignored)
+**Tests:** 10
 
 ---
 
 ## Summary
 
-| Epic | Features | Total Tests |
-|------|----------|-------------|
-| 1 — Ingestion Pipeline | 5 | 51 |
-| 2 — Query + UI | 4 | 80+ (after QUERY-004) |
-| 3 — Per-source Ingest | 3 | 8 |
-| 4 — Voxtral Fallback | 3 | 13 |
-| 5 — Visual Grounding | 5 | planned |
-| 6 — Multimodal Chunk Fusion | 2 | planned |
-| 7 — Answer-to-KB Pipeline | 3 | planned |
-| **Total** | **25** | **93+ planned** |
+| Epic | Features | Status | Tests |
+|------|----------|--------|-------|
+| 1 — Ingestion Pipeline | 5 | completed | 51 |
+| 2 — Query + UI | 4 | completed | ~80 |
+| 3 — Per-source Ingest | 3 | completed | 8 |
+| 4 — Voxtral Fallback | 3 | completed | 13 |
+| 5 — Visual Grounding | 5 | completed | ~15 |
+| 6 — Multimodal Chunk Fusion | 2 | completed | ~8 |
+| 7 — Answer-to-KB Pipeline | 3 | completed | 22 |
+| **Total** | **25** | **all completed** | **187** |

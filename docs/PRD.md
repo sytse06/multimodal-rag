@@ -229,14 +229,14 @@ knowledge_bases:
 | CORE-004 | Weaviate store | Collection management, OpenRouter embedding, vector storage + search |
 | CORE-005 | Ingest CLI | Orchestrator reading sources.yaml, runnable via `make ingest` |
 
-**Epic 2: Query Pipeline + Gradio UI**
+**Epic 2: Query Pipeline + Gradio UI** (completed)
 
 | Feature | Branch | Description |
 |---------|--------|-------------|
 | QUERY-001 | Retrieval chain | Embed question → Weaviate top-k search → format context |
 | QUERY-002 | Cited answer generation | Prompt template + LLM call producing CitedAnswer with structured citations |
 | QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, model selector, clear button |
-| QUERY-004 | LangChain model client | Replace direct openai SDK with LangChain BaseChatModel/Embeddings, support OpenRouter + Ollama |
+| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` factory; routes by model name format (bare = Ollama, `provider/model` = OpenRouter); Ollama + OpenRouter models mix-and-match in single dropdown |
 
 **Epic 3: Per-source Ingestion Pipeline** (completed)
 
@@ -271,15 +271,15 @@ knowledge_bases:
 | FUSION-001 | Combined audio + visual chunks | Align Voxtral transcript segments with frame intervals; merge `[Transcript]` + `[Visual]` text into one chunk per time window; stable chunk ID on `hash(source_url + window_start_seconds)` |
 | FUSION-002 | Purge by source type | `WeaviateStore.delete_by_source_type()`; `make purge-video` and `make purge-web` Makefile targets with confirmation prompts |
 
-**Epic 7: Answer-to-Knowledge-Base Pipeline** (planned)
+**Epic 7: Answer-to-Knowledge-Base Pipeline** (completed)
 
 Closes the loop between retrieval quality and knowledge base growth. A "Review & save as article" button in the chat UI opens an in-page editorial workflow that lets support staff validate a RAG answer against its source chunks, polish it, and export it as a markdown KB article.
 
 | Feature | Branch | Description |
 |---------|--------|-------------|
-| WALK-001 | Answer review UI | `gr.Walkthrough` panel with 4 steps (Review → Inspect sources → Edit draft → Save); triggered by "Review & save as article" button; chat stays visible above for reference; input row hidden during workflow |
-| WALK-002 | KB article generation | Structured markdown draft from RAG answer + citation metadata; optional LLM reformatting pass |
-| WALK-003 | KB article export | Write approved article to `kb_output/{slug}-{timestamp}.md`; confirmation shown in UI |
+| WALK-001 | Answer review UI | `gr.Walkthrough` panel with 4 steps (Review → Inspect sources → Edit draft → Save); triggered by "Review & save as article" button; chat stays visible above for reference; input row hidden during workflow; navigation handlers use `queue=False` for immediate response |
+| WALK-002 | KB article generation | `generate_kb_article()` with `KB_ARTICLE_PROMPT` (technical writer persona); passes original question + full source chunk texts to LLM; Sources section appended programmatically to preserve URLs |
+| WALK-003 | KB article export | Write approved article to `kb_output/{slug}-{timestamp}.md`; Step 4 auto-suggests filename from article H1; confirmation shown in UI |
 
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.

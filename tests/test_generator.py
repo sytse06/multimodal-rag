@@ -11,6 +11,7 @@ from multimodal_rag.query.generator import (
     SYSTEM_PROMPT,
     _build_citations,
     _replace_refs_with_links,
+    _strip_code_fence,
     generate_cited_answer,
     generate_kb_article,
 )
@@ -45,6 +46,18 @@ class TestBuildCitations:
         assert citations[0].source_type == SourceType.VIDEO
         assert "&t=42s" in citations[0].url
         assert "00:42" in citations[0].label
+
+    def test_short_url_uses_question_mark(self) -> None:
+        result = SearchResult(
+            text="clip",
+            source_type=SourceType.VIDEO,
+            source_url="https://youtu.be/abc123",
+            source_name="Short",
+            timestamp_seconds=60,
+            relevance_score=0.9,
+        )
+        citations = _build_citations([result])
+        assert citations[0].url == "https://youtu.be/abc123?t=60s"
 
     def test_web_citation(self) -> None:
         citations = _build_citations([_web_result()])
@@ -148,7 +161,7 @@ class TestGenerateKbArticle:
     def test_includes_citation_label_in_user_message(self) -> None:
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = AIMessage(content="Draft.")
-        generate_kb_article(self._answer(), llm=mock_llm)
+        generate_kb_article(self._answer(), llm=mock_llm, results=[_video_result()])
         messages = mock_llm.invoke.call_args[0][0]
         assert "Quickstart @ 00:42" in messages[1].content
 
@@ -163,7 +176,9 @@ class TestGenerateKbArticle:
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = AIMessage(content="# KB Article\n\nDetails.")
         result = generate_kb_article(self._answer(), llm=mock_llm)
-        assert result == "# KB Article\n\nDetails."
+        assert result.startswith("# KB Article\n\nDetails.")
+        assert "## Sources" in result
+        assert "https://yt.com/watch?v=abc&t=42s" in result
 
     def test_no_citations(self) -> None:
         mock_llm = MagicMock()
@@ -172,3 +187,42 @@ class TestGenerateKbArticle:
         result = generate_kb_article(answer, llm=mock_llm)
         assert result == "Draft."
         mock_llm.invoke.assert_called_once()
+
+    def test_strips_code_fence_from_output(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(
+            content="```markdown\n# Article\n\nBody.\n```"
+        )
+        result = generate_kb_article(self._answer(), llm=mock_llm)
+        assert "```" not in result
+        assert "# Article" in result
+        assert "## Sources" in result
+
+    def test_question_included_in_user_message(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="Draft.")
+        generate_kb_article(self._answer(), llm=mock_llm, question="How do I export?")
+        messages = mock_llm.invoke.call_args[0][0]
+        assert "## Question" in messages[1].content
+        assert "How do I export?" in messages[1].content
+
+    def test_sources_appended_programmatically(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="# Article\n\nBody.")
+        result = generate_kb_article(self._answer(), llm=mock_llm)
+        assert "## Sources" in result
+        assert "https://yt.com/watch?v=abc&t=42s" in result
+
+
+class TestStripCodeFence:
+    def test_strips_markdown_fence(self) -> None:
+        assert _strip_code_fence("```markdown\n# Hi\n```") == "# Hi"
+
+    def test_strips_plain_fence(self) -> None:
+        assert _strip_code_fence("```\n# Hi\n```") == "# Hi"
+
+    def test_no_fence_unchanged(self) -> None:
+        assert _strip_code_fence("# Hi\n\nBody.") == "# Hi\n\nBody."
+
+    def test_strips_surrounding_whitespace(self) -> None:
+        assert _strip_code_fence("  ```markdown\n# Hi\n```  ") == "# Hi"
