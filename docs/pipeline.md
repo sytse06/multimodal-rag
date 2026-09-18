@@ -9,6 +9,25 @@ The query pipeline converts a natural language support question into a cited ans
 
 The KB article editorial workflow is a downstream extension of phase 2: the same `CitedAnswer` and `list[SearchResult]` from state are fed to a second LLM call that generates a structured article.
 
+## Target Architecture for Epic 8
+
+The pipeline is being migrated from UI-owned, blocking model calls to a provider-neutral
+inference boundary. Gradio should select a validated chat provider and model, while the
+application layer constructs the LangChain `BaseChatModel` through one centralized
+factory. Embeddings remain independently configured so changing the chat provider never
+changes the vectors already stored in Weaviate.
+
+The target generation path exposes streaming progress and completion events. Gradio
+adapts those events into cumulative chatbot and article-draft updates; it does not
+construct provider clients or contain provider-specific routing. Citation links are
+constructed only after the final response has been accumulated, because partial chunks
+cannot be reliably rewritten.
+
+This document currently describes the implementation being migrated. References to
+`_make_llm`, model-name routing, blocking `invoke()`, and final-only state updates are
+legacy behavior and must not be extended. The exact typed settings, provider registry,
+event models, and callback signatures will be finalized in INFER-001 through INFER-005.
+
 ---
 
 ## Data Models (`models/query.py`)
@@ -45,7 +64,8 @@ This is the unit passed through Gradio state between the chat pipeline and the r
 
 ### 1. User submits a question
 
-`user_submit` in `app.py` is triggered by the textbox submit or the Submit button. It calls `_respond(message, model)` which orchestrates the full pipeline:
+The current `user_submit` handler in `app.py` is triggered by the textbox submit or the
+Submit button. It calls `_respond(message, model)` and owns the full pipeline:
 
 ```python
 def _respond(message, model):
@@ -55,10 +75,19 @@ def _respond(message, model):
     return _format_citations_block(answer), answer, results
 ```
 
-After `user_submit` completes, three items are written to Gradio state:
+This is the legacy blocking path. The Epic 8 target replaces `_make_llm` with the
+central provider factory and replaces the final-only return value with streamed
+inference events. Keep the retrieval and citation data contracts stable while that
+boundary changes.
+
+After the current `user_submit` completes, three items are written to Gradio state:
 - `last_answer_state` — the `CitedAnswer`
 - `last_results_state` — the `list[SearchResult]`
 - `last_question_state` — the raw question string
+
+The target path should retain these final state values while also yielding cumulative
+progress during retrieval and generation. Provider, model, completion status, and safe
+error context belong in typed inference events rather than in Gradio component logic.
 
 ### 2. Retrieval (`retriever.py`)
 
@@ -69,6 +98,11 @@ After `user_submit` completes, three items are written to Gradio state:
 - The final `top_k` list is re-sorted by `relevance_score` descending.
 
 Weaviate returns cosine distance (0 = identical, 2 = opposite). `_distance_to_score` converts this to a 0–1 relevance score via `max(0.0, 1.0 - distance)`.
+
+When `SupportChunk` is restored from the fixed Weaviate snapshot described in Epic 9,
+the query embedding provider, model, and vector dimension must remain compatible with
+the snapshot. Snapshot creation and restoration are operational concerns documented
+outside this pipeline; this compatibility rule is the pipeline-level dependency.
 
 ### 3. Context formatting (`retriever.py`)
 
@@ -164,13 +198,17 @@ Sources are loaded lazily here on first visit from `last_results_state` — they
 **Handler:** `go_to_step3(answer, results, model, question)` (called by `next2_btn.click`)
 **Queue:** `True` (default — not set to `False`)
 
-This step makes an LLM call. `generate_kb_article` is called with:
+This step currently makes a blocking LLM call. `generate_kb_article` is called with:
 - `answer` — the `CitedAnswer` from state (for citations and fallback text)
 - `llm` — a fresh instance from `_make_llm(model, settings)`
 - `results` — the `list[SearchResult]` from state (for full source chunk text)
 - `question` — the original question string from state
 
 The generated draft is placed into `article_editor`, a 20-line `gr.Textbox` the user can edit freely before proceeding.
+
+During Epic 8 this handler will consume the same provider-neutral streaming boundary as
+the chat response and progressively update the draft. The final article remains the
+editable value used by Step 4.
 
 ---
 
@@ -271,12 +309,12 @@ Gradio queues handlers by default. Handlers that do no I/O should bypass the que
 
 | Handler | Queue | Reason |
 |---|---|---|
-| `user_submit` | `True` (default) | LLM call — can be slow |
+| `user_submit` | `True` (default) | Legacy blocking LLM call — can be slow |
 | `enter_review` | `False` | Pure state read + UI update |
 | `cancel_review` | `False` | Pure UI update |
 | `go_to_step2` | `False` | Formats already-fetched state |
 | `back2_btn` lambda | `False` | Step navigation only |
-| `go_to_step3` | `True` (default) | LLM call — can be slow |
+| `go_to_step3` | `True` (default) | Legacy blocking LLM call — can be slow |
 | `back3_btn` lambda | `False` | Step navigation only |
 | `go_to_step4` | `False` | H1 extraction from string |
 | `back4_btn` lambda | `False` | Step navigation only |
@@ -284,9 +322,14 @@ Gradio queues handlers by default. Handlers that do no I/O should bypass the que
 
 Without `queue=False` on navigation handlers, clicking "Next" or "Back" while an LLM call is in progress would queue behind it, producing a multi-second delay on what should be an instant UI update.
 
+The Epic 8 target keeps non-I/O navigation handlers outside the queue and changes the
+I/O handlers to consume streaming generators or async generators. Final citation
+construction and state persistence happen when the stream completes; provider errors
+must produce a safe user-facing event and retain diagnostic context for logs.
+
 ---
 
-## Model Routing
+## Legacy Model Routing
 
 `_make_llm(model_name, settings)` routes based on name format:
 
@@ -296,3 +339,8 @@ Without `queue=False` on navigation handlers, clicking "Next" or "Back" while an
 Both are configured at `temperature=0.3`. The same routing is used for both `generate_cited_answer` and `generate_kb_article` calls — they use whichever model is selected in the dropdown at call time.
 
 The model dropdown is populated at startup by combining any Ollama model found in `settings.llm_model` with the hardcoded `OPENROUTER_MODELS` list. The configured `settings.llm_model` is used as the default selection if it appears in the list.
+
+This routing is retained here only as a migration reference. Epic 8 replaces name-based
+routing and the hardcoded model list with validated provider/model registry entries for
+OpenRouter, OpenAI, Gemini, and Ollama. Gradio receives only combinations that are
+configured and usable; it does not infer a provider from the model name.
