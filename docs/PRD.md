@@ -68,14 +68,16 @@ and receive an accurate answer with links to the source material.
 *Acceptance criteria:*
 - Embeds user question via same embedding model as ingestion
 - Performs similarity search against Weaviate, retrieves top-k chunks (default k=10) with at least half the available slots reserved for video results
-- Passes retrieved chunks + user question to the configured OpenRouter or Ollama LLM
+- Passes retrieved chunks + user question to the configured OpenRouter, OpenAI, Gemini, or Ollama LLM
 - LLM generates a synthesized answer with inline citations
 - Each citation includes: source title, clickable URL (with `&t=Ns` for videos), relevance score
 - Displays conversation history within a session; each question is currently retrieved and generated independently
 
 *Technical considerations:*
 - Use LangChain `BaseChatModel` and `Embeddings` interfaces for all model access — never call provider SDKs directly
-- LangChain model client factory: configure provider (OpenRouter, Ollama) via env vars, swap without code changes
+- LangChain model factory: configure the provider and model via validated settings, then switch providers without changing application code
+- Chat inference and embeddings are configured independently; changing the chat provider does not change the Weaviate vector space
+- Supported providers expose a common streaming interface so answers can appear progressively
 - Prompt template must instruct LLM to cite sources using retrieved chunk metadata
 - Relevance score: cosine similarity from Weaviate, passed through to UI
 
@@ -95,7 +97,8 @@ questions and see answers with clickable source links.
 - Web citations formatted as: `[Page Title](https://url)`
 - Relevance scores displayed per citation (e.g. percentage or bar)
 - Source type indicator (video icon vs page icon) per citation
-- Model selector dropdown (OpenRouter models)
+- Provider and model selectors showing only configured, usable combinations (OpenRouter, OpenAI, Gemini, and Ollama)
+- Progressive answer updates while retrieval and generation are running
 - Clear conversation button
 
 *Technical considerations:*
@@ -144,10 +147,10 @@ knowledge_bases:
 | Language | Python >=3.12 | Standard, ecosystem support |
 | Package manager | uv | Project convention |
 | RAG framework | LangChain | Mature RAG tooling, provider-agnostic model abstraction |
-| Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers (OpenRouter, Ollama, etc.) without code changes |
-| Embeddings | Configurable through OpenRouter or Ollama (for example, `openai/text-embedding-3-small` or `nomic-embed-text`) | LangChain interface enables provider diversity |
+| Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers without code changes |
+| Embeddings | Configurable through OpenRouter or Ollama (for example, `openai/text-embedding-3-small` or `nomic-embed-text`) | LangChain interface enables provider diversity; independent from chat provider |
 | Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
-| LLM gateway | Configurable (default: OpenRouter, local: Ollama) | LangChain abstraction — never lock into a single provider |
+| LLM providers | OpenRouter, OpenAI, Gemini, and Ollama | Dedicated LangChain integrations behind one provider-neutral factory |
 | Primary video transcription | Mistral Voxtral Mini + yt-dlp/ffmpeg | Segment-level audio transcription for the fused video pipeline |
 | Caption fallback | youtube-transcript-api | Used when `MISTRAL_API_KEY` is absent |
 | Visual understanding | Vision LLM via OpenRouter (e.g. GPT-4V / Gemini Flash) | Describes keyframes and web screenshots as text; uses existing OpenRouter config, no new API keys |
@@ -182,7 +185,7 @@ knowledge_bases:
 | `WebChunk` | Web page segment with URL and section metadata |
 | `SearchResult` | Retrieved chunk + relevance score |
 | `CitedAnswer` | LLM response with structured citations |
-| `AppSettings` | BaseSettings for API keys, model config (LLM, embedding, vision model), Weaviate connection |
+| `AppSettings` | Pydantic settings for provider credentials, chat and embedding models, vision model, Weaviate connection, and runtime options |
 
 ## 6. UI/UX Design Principles
 
@@ -194,7 +197,7 @@ knowledge_bases:
 
 ### Key Screen: Chat Interface
 
-- Top: model selector dropdown + clear conversation button
+- Top: provider selector, model selector, and clear conversation button
 - Center: scrollable chat history with markdown rendering
 - Bottom: text input with send button + "Review & save as article" button
 - Citations rendered inline in assistant messages as clickable markdown links
@@ -211,7 +214,7 @@ knowledge_bases:
 
 ## 7. Security Considerations
 
-- **API keys** — OpenRouter, Firecrawl, and Mistral keys stored in `.env`, never committed
+- **API keys** — OpenRouter, OpenAI, Gemini, Firecrawl, and Mistral keys stored in `.env`, never committed; secrets are not shown in logs or serialized settings
 - **Weaviate** — local Docker instance, no authentication needed for v1
 - **Source content** — all sources are already public (YouTube, published knowledge bases)
 - **No user auth in v1** — internal tool, network-level access control assumed
@@ -237,8 +240,8 @@ knowledge_bases:
 |---------|--------|-------------|
 | QUERY-001 | Retrieval chain | Embed question → Weaviate top-k search → format context |
 | QUERY-002 | Cited answer generation | Prompt template + LLM call producing CitedAnswer with structured citations |
-| QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, model selector, clear button |
-| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` factory; routes by model name format (bare = Ollama, `provider/model` = OpenRouter); Ollama + OpenRouter models mix-and-match in single dropdown |
+| QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, provider/model selectors, streaming output, and clear button |
+| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` interfaces with provider-neutral configuration; current providers are OpenRouter and Ollama |
 
 **Epic 3: Per-source Ingestion Pipeline** (completed)
 
@@ -285,6 +288,24 @@ Closes the loop between retrieval quality and knowledge base growth. A "Review &
 
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
+
+**Epic 8: Production-ready, Configurable AI Inference Experience** (planned)
+
+Makes provider selection, configuration, and streamed inference understandable and
+safe for colleagues who did not build the project. The epic adds typed Pydantic
+configuration, qualified LangChain and Gradio dependencies, OpenAI and Gemini support,
+provider/model selection in Gradio, and a common streaming experience. It keeps chat
+inference independent from the embedding provider and requires an actionable
+`.env.example`-based onboarding path.
+
+**Epic 9: Shareable Weaviate Collection Snapshot** (planned)
+
+Provides the simplest MVP way to share a fixed `SupportChunk` dataset. The project will
+create a collection-scoped Weaviate filesystem backup, package it with a checksum and
+compatibility manifest, and place it in an approved shared artifact location outside
+Git. Colleagues restore the immutable snapshot into the matching single-node Docker
+setup. Live synchronization, shared writes, cloud hosting, and automatic re-ingestion
+remain out of scope.
 
 ## 9. Risks and Mitigations
 
