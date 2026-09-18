@@ -92,10 +92,9 @@ src/multimodal_rag/
 
 ## Git Workflow
 
-- **Branches:** `main` ← `develop` ← `feature/*`
-- **Code changes:** always on a feature branch off develop. Never commit code directly to develop or main.
-- **Docs-only changes:** commit directly on develop, then merge to main.
-- **Merge flow:** feature → develop (--no-ff) → main (--no-ff)
+- **Branches:** `main` ← `feature/*`
+- **All changes:** create a feature branch directly from main. Never commit directly to main.
+- **Merge flow:** feature → main (`--no-ff`)
 - **Commit format:** `type(scope): description` (conventional commits)
 - **Types:** feat, fix, docs, style, refactor, test, chore
 - **Quality gate:** run `make quality` and `make test` before every commit. All tests must pass.

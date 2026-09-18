@@ -38,14 +38,16 @@ YouTube videos and knowledge base URLs so the support chatbot has up-to-date con
 
 *Acceptance criteria:*
 - Reads source URLs from a YAML config file (`config/sources.yaml`)
-- YouTube: fetches timestamped transcripts via `youtube-transcript-api`; if captions are disabled or not found, automatically falls back to Voxtral Mini audio transcription (requires `MISTRAL_API_KEY`)
-- Web: crawls 3 root URLs and all child pages via Firecrawl
-- Chunks text into ~300-500 token segments preserving source metadata
+- YouTube spoken-video path: downloads video, transcribes audio with Voxtral, and optionally fuses 30-second transcript windows with vision descriptions when `MISTRAL_API_KEY` is configured
+- YouTube fallback path: uses timestamped `youtube-transcript-api` captions when `MISTRAL_API_KEY` is absent
+- YouTube silent-video path: sources with `skip_voxtral: true` use dense vision-only frame extraction and require `VISION_MODEL`
+- Web: crawls each configured root URL and its child pages via Firecrawl
+- Caption and web text are chunked into ~300-500 token segments; fused videos use fixed 30-second windows
 - Video chunks: video title, video URL, start timestamp (seconds), chunk text
 - Web chunks: page title, page URL, section heading (if available), chunk text
-- Embeds chunks via configurable OpenRouter embedding model (default: `openai/text-embedding-3-small`)
+- Embeds chunks through the configured LangChain embedding provider and model
 - Stores embeddings + metadata in Weaviate
-- Idempotent: re-running skips already-processed sources (keyed on URL hash)
+- Stable chunk UUIDs make chunk identity deterministic across re-ingestion; unchanged chunks are still re-embedded until the content-hash optimisation in Section 11 is implemented
 - Triggered via `make ingest` or `uv run python -m multimodal_rag.ingest`
 
 *Technical considerations:*
@@ -65,11 +67,11 @@ and receive an accurate answer with links to the source material.
 
 *Acceptance criteria:*
 - Embeds user question via same embedding model as ingestion
-- Performs similarity search against Weaviate, retrieves top-k chunks (default k=5)
-- Passes retrieved chunks + user question to LLM via OpenRouter
+- Performs similarity search against Weaviate, retrieves top-k chunks (default k=10) with at least half the available slots reserved for video results
+- Passes retrieved chunks + user question to the configured OpenRouter or Ollama LLM
 - LLM generates a synthesized answer with inline citations
 - Each citation includes: source title, clickable URL (with `&t=Ns` for videos), relevance score
-- Maintains conversation history within a session for follow-up questions
+- Displays conversation history within a session; each question is currently retrieved and generated independently
 
 *Technical considerations:*
 - Use LangChain `BaseChatModel` and `Embeddings` interfaces for all model access — never call provider SDKs directly
@@ -143,11 +145,11 @@ knowledge_bases:
 | Package manager | uv | Project convention |
 | RAG framework | LangChain | Mature RAG tooling, provider-agnostic model abstraction |
 | Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers (OpenRouter, Ollama, etc.) without code changes |
-| Embeddings | Configurable (default: OpenRouter openai/text-embedding-3-small, local: Ollama nomic-embed-text) | LangChain interface enables provider diversity |
+| Embeddings | Configurable through OpenRouter or Ollama (for example, `openai/text-embedding-3-small` or `nomic-embed-text`) | LangChain interface enables provider diversity |
 | Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
 | LLM gateway | Configurable (default: OpenRouter, local: Ollama) | LangChain abstraction — never lock into a single provider |
-| Transcript extraction | youtube-transcript-api | Timestamped segments, no compute needed |
-| Transcript fallback | Mistral Voxtral Mini + yt-dlp | Audio transcription for caption-disabled videos; segment-level timestamps |
+| Primary video transcription | Mistral Voxtral Mini + yt-dlp/ffmpeg | Segment-level audio transcription for the fused video pipeline |
+| Caption fallback | youtube-transcript-api | Used when `MISTRAL_API_KEY` is absent |
 | Visual understanding | Vision LLM via OpenRouter (e.g. GPT-4V / Gemini Flash) | Describes keyframes and web screenshots as text; uses existing OpenRouter config, no new API keys |
 | Frame extraction | yt-dlp + ffmpeg | yt-dlp already a dependency; ffmpeg is the standard tool for keyframe extraction |
 | Web crawling | Firecrawl | Handles full-site crawling from root URL |
@@ -168,7 +170,7 @@ knowledge_bases:
 | SupportChunk | source_title | string | Video/page title |
 | SupportChunk | timestamp_seconds | int | Start time (video only, nullable) |
 | SupportChunk | section_heading | string | Section header (web only, nullable) |
-| SupportChunk | url_hash | string | SHA256 of source URL, for idempotency |
+| SupportChunk | url_hash | string | SHA256 source fingerprint used for source grouping and lookup |
 | SupportChunk | ingested_at | datetime | Processing timestamp |
 
 ### Pydantic Models
@@ -209,7 +211,7 @@ knowledge_bases:
 
 ## 7. Security Considerations
 
-- **API keys** — OpenRouter and OpenAI keys stored in `.env`, never committed
+- **API keys** — OpenRouter, Firecrawl, and Mistral keys stored in `.env`, never committed
 - **Weaviate** — local Docker instance, no authentication needed for v1
 - **Source content** — all sources are already public (YouTube, published knowledge bases)
 - **No user auth in v1** — internal tool, network-level access control assumed
@@ -221,8 +223,8 @@ knowledge_bases:
 
 **Epic 1: Ingestion Pipeline** (completed)
 
-| Feature | Branch | Description |
-|---------|--------|-------------|
+| Feature | Name | Description |
+|---------|------|-------------|
 | CORE-001 | Data models | Pydantic models for chunks, sources, config, query results |
 | CORE-002 | YouTube ingest | Transcript fetching + timestamp-preserving chunking |
 | CORE-003 | Web ingest | Firecrawl crawling + header-based markdown chunking |
@@ -289,7 +291,7 @@ linking to specific video timestamps and knowledge base pages.
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | YouTube transcript quality (auto-generated) | Medium | Medium | Verified: test video has clean captions. Flag low-quality transcripts during ingestion |
-| Caption-disabled YouTube videos | Medium | Medium | Mitigated: Voxtral fallback handles `TranscriptsDisabled` and `NoTranscriptFound` automatically when `MISTRAL_API_KEY` is set |
+| YouTube download or transcription failure | Medium | Medium | Per-source error isolation, cookie support, yt-dlp fallbacks, and Voxtral retry handling keep the remaining ingest running |
 | Weaviate Docker overhead for local dev | Low | Low | Single container, minimal resources for dozens of videos |
 | OpenRouter rate limits | Medium | Low | Implement retry logic with exponential backoff via tenacity |
 | Chunking too coarse or too fine | High | Medium | Start with 300-500 tokens, tune based on retrieval quality |
@@ -299,7 +301,7 @@ linking to specific video timestamps and knowledge base pages.
 
 ### Phase 2: Enhancement
 
-- Conversation memory / follow-up question handling
+- Context-aware follow-up questions that pass relevant conversation history into retrieval and generation
 - Source freshness detection (re-ingest changed content)
 - Analytics: most asked questions, most cited sources
 - Feedback mechanism (thumbs up/down on answers)
@@ -333,7 +335,7 @@ that embedding API calls and wall-clock time are not wasted on unchanged materia
 - The ingestion pipeline already assigns stable chunk IDs: `source_url + timestamp_seconds`
   for transcript chunks, `source_url + chunk_index` for web chunks, `image_url` for
   screenshot chunks, and `source_url + timestamp_seconds` for frame chunks
-- Weaviate upserts on these stable IDs, so re-ingest is always correct and duplicate-free
+- Stable IDs let the pipeline address the same logical chunks on subsequent runs, but all chunks are currently re-embedded
 - However, every re-ingest currently re-embeds all chunks unconditionally, even when the
   underlying text is identical to what is already stored — this costs embedding API calls
   and time proportional to the full corpus size
@@ -355,8 +357,8 @@ that embedding API calls and wall-clock time are not wasted on unchanged materia
   batch in one or a small number of requests before deciding what to embed
 - The hash must be computed from normalised text (e.g. stripped whitespace) so that purely
   cosmetic differences in source formatting do not cause unnecessary re-embedding
-- Existing upsert logic remains unchanged for the chunks that do need embedding; only the
-  pre-embedding filter step is new
+- Existing write logic remains unchanged for chunks that need embedding; only the pre-embedding
+  filter step is new
 - The optimisation is transparently bypassed if `content_hash` is absent on a stored object
   (i.e. objects created before this feature are always re-embedded once, then hashed)
 
