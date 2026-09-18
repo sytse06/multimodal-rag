@@ -213,9 +213,9 @@ Automatic fallback to Mistral Voxtral Mini audio transcription when `youtube-tra
 
 ---
 
-## Epic 5: Visual Grounding (planned)
+## Epic 5: Visual Grounding (completed)
 
-Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM converts images to text descriptions that are embedded with the existing `nomic-embed-text` model — no embedding model change required. This makes the project genuinely multimodal: it indexes not just what was said or written, but what was shown on screen.
+Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM converts images to text descriptions that are embedded with the configured embedding model — no embedding model change is required. This makes the project genuinely multimodal: it indexes not just what was said or written, but what was shown on screen.
 
 ### VIS-001 — Video Frame Extraction and Description
 
@@ -241,7 +241,7 @@ Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM 
 
 **Branch:** `feature/VIS-003-vision-llm-factory`
 
-- `create_vision_llm()` — returns a LangChain-compatible vision model instance configured from `AppSettings`; defaults to an OpenRouter model (e.g. GPT-4V or Gemini Flash) — no new API keys required
+- `create_vision_llm()` — returns a LangChain-compatible OpenRouter vision model configured from `AppSettings`; visual grounding is disabled when `VISION_MODEL` is empty
 - `AppSettings.vision_model` — new `VISION_MODEL` env var; consistent with existing `LLM_MODEL` / `EMBEDDING_MODEL` pattern
 
 **Files:** `src/multimodal_rag/models/llm.py`, `src/multimodal_rag/models/config.py`
@@ -250,8 +250,8 @@ Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM 
 
 **Branch:** `feature/VIS-004-chunk-id-stability`
 
-- Override chunk ID generation in `TranscriptChunk` for frame chunks: ID is `hash(source_url + timestamp_seconds)`, not derived from vision LLM output text (which is non-deterministic)
-- Override chunk ID generation in `WebChunk` for screenshot chunks: ID is `hash(image_url)`
+- `SupportChunk.from_frame_chunk()` generates frame IDs from `source_url + timestamp_seconds`, not non-deterministic LLM output
+- `SupportChunk.from_screenshot_chunk()` generates screenshot IDs from `image_url`
 - Ensures idempotent re-ingestion — re-running `make ingest` does not accumulate duplicate visual chunks
 
 **Files:** `src/multimodal_rag/models/chunks.py`
@@ -261,18 +261,18 @@ Adds a "describe-then-retrieve" ingestion path for visual content. A vision LLM 
 **Branch:** `feature/VIS-005-ingest-wiring`
 
 - `ingest/__main__.py` wires both new ingestion paths alongside existing YouTube and web paths
-- Frame chunk path: `fetch_frame_chunks()` → `SupportChunk.from_transcript_chunk()` → `store.add_chunks()`
-- Screenshot chunk path: `fetch_image_chunks()` → `SupportChunk.from_web_chunk()` → `store.add_chunks()`
+- Frame chunk path: `fetch_frame_chunks()` → `SupportChunk.from_frame_chunk()` → `store.add_chunks()`
+- Screenshot chunk path: `fetch_image_chunks()` → `SupportChunk.from_screenshot_chunk()` → `store.add_chunks()`
 - Tests for all new code — vision LLM calls, `ffmpeg`/`yt-dlp` invocations, and image downloads are fully mocked
 
 **Files:** `src/multimodal_rag/ingest/__main__.py`
-**Tests:** target coverage for all five VIS stories
+**Tests:** approximately 15 across the five VIS stories
 
 **Not modified:** `store/`, `query/`, `app.py`, embedding pipeline
 
 ---
 
-## Epic 6: Multimodal Chunk Fusion (planned)
+## Epic 6: Multimodal Chunk Fusion (completed)
 
 Combines audio transcript and visual frame description into a single chunk per time window, producing richer embeddings that capture both what was said and what was shown. Adds per-source-type purge tooling to support selective reingest without wiping the entire vector store.
 
@@ -280,11 +280,11 @@ Combines audio transcript and visual frame description into a single chunk per t
 
 **Branch:** `feature/FUSION-001-combined-chunks`
 
-Currently, transcript chunks (from `youtube-transcript-api` or Voxtral) and frame description chunks (from the vision LLM) are stored as separate, competing objects. For a narrated tutorial, a chunk at ts=0–30s exists twice: once as a transcript fragment and once as a generic frame description like "This video frame displays the HydroSym interface." These compete in retrieval and the frame descriptions dilute result quality.
+Before this story, transcript chunks and frame descriptions were stored as separate, competing objects. For a narrated tutorial, the same time window could exist twice: once as a transcript fragment and once as a generic frame description. The completed fusion path replaces those competing objects with one combined chunk per window.
 
 This story merges them into one chunk per time window:
 
-- All YouTube videos are transcribed via Voxtral as standard — `youtube-transcript-api` captions are no longer used
+- Spoken videos use Voxtral when `MISTRAL_API_KEY` is configured; `youtube-transcript-api` remains the fallback when it is absent
 - Align Voxtral segments to the frame extraction interval (e.g. 30s windows)
 - For each window: concatenate transcript text for that interval with the vision LLM description of the corresponding keyframe
 - Combined chunk format: `"[Transcript] {speech_text}\n[Visual] {frame_description}"`
@@ -299,7 +299,7 @@ This story merges them into one chunk per time window:
 
 **Branch:** `feature/FUSION-002-purge-source-type`
 
-Currently the only purge options are `make purge` (wipes the entire collection) and `make purge-source URL=...` (removes one video or page by URL). There is no way to remove all video chunks while keeping web KB chunks, or vice versa — forcing a full purge and full reingest when only the video pipeline changes.
+Before this story, the only purge options were `make purge` (the entire collection) and `make purge-source URL=...` (one video or page). The completed source-type targets allow video and web chunks to be purged independently.
 
 - Add `delete_by_source_type(source_type: str) -> int` to `WeaviateStore` — filters on the `source_type` property (`"video"` or `"web"`)
 - Add `make purge-video` Makefile target — calls `delete_by_source_type("video")` with a confirmation prompt
@@ -381,6 +381,198 @@ Saves the approved article as a markdown file in `kb_output/`:
 
 ---
 
+## Epic 8: Production-ready, Configurable AI Inference Experience (planned)
+
+Makes the application dependable and self-explanatory for colleagues who did not
+build it. A colleague can clone the repository, configure credentials safely, start
+the application predictably, select an available AI provider and model, and receive
+streamed cited answers without editing source code or understanding provider-specific
+implementation details.
+
+**Primary user story:**
+
+> As a colleague using or developing the project, I can configure the application
+> safely, start it predictably, select an available AI provider and model, and receive
+> streamed cited answers without modifying source code or understanding
+> provider-specific implementation details.
+
+**End-to-end acceptance criteria:**
+
+- A fresh clone can be installed with `uv sync`, configured from `.env.example`, and
+  started using the documented Make targets
+- Missing or invalid configuration produces an actionable error naming the affected
+  setting and provider; secrets are never printed or serialized
+- Gradio lists only providers and models that are usable with the current configuration
+- A colleague can switch chat provider and model without restarting the application
+- OpenRouter, OpenAI, Gemini, and Ollama use the same cited-answer workflow
+- Answers and article drafts appear progressively while generation is running
+- Changing the chat provider never changes the embedding provider or invalidates the
+  vectors already stored in Weaviate
+- Provider, model, completion status, token usage, and safe error context are available
+  for operational logging
+
+### INFER-001 — Typed Configuration and Colleague Onboarding
+
+**Branch:** `feature/INFER-001-typed-configuration`
+
+- Replace the flat settings collection with explicit Pydantic settings and data models
+  for secrets, infrastructure, chat inference, embeddings, ingestion, and application
+  runtime configuration
+- Use `SecretStr` for credentials and exclude secrets from serialization and logs
+- Represent provider-specific configuration as a discriminated union with an explicit
+  provider field; never infer the provider from model-name formatting
+- Validate provider, model, credentials, endpoint, timeout, retry, and temperature
+  combinations at startup
+- Add a complete `.env.example` containing safe placeholders and documented defaults
+- Define and document configuration precedence and environment-variable naming
+- Make public Gradio sharing an explicit opt-in setting; it must be disabled by default
+- Clean up existing Pydantic models: use explicit default factories, remove false
+  non-null annotations and related type ignores, and normalize validation behaviour
+- Use Pydantic models whenever this work introduces data or configuration classes;
+  keep stateless orchestration as functions rather than unnecessary service classes
+
+**Scope:** `src/multimodal_rag/models/config.py`,
+`src/multimodal_rag/models/chunks.py`, `src/multimodal_rag/models/sources.py`,
+`.env.example`, configuration tests and setup documentation
+
+### INFER-002 — Qualified Dependency and Runtime Refresh
+
+**Branch:** `feature/INFER-002-dependency-refresh`
+
+- Refresh LangChain, provider integrations, Gradio, Pydantic, and Pydantic Settings to
+  qualified stable releases; regenerate `uv.lock`
+- Add the dedicated Gemini and OpenRouter LangChain integrations
+- Remove unused or obsolete dependencies, including the archived
+  `langchain-community`, unused `langchain-weaviate`, and redundant `python-dotenv`
+- Retain the top-level `langchain` package only if the final implementation imports it
+  directly; otherwise depend on `langchain-core` and the provider packages explicitly
+- Replace historical `>=0.3` dependency floors with ranges representing versions the
+  project actually tests and supports
+- Qualify the supported Python range on Python 3.12, 3.13, and 3.14 rather than leaving
+  `requires-python` open-ended
+- Run dependency upgrades in isolated steps so LangChain, Pydantic, and Gradio
+  regressions can be attributed to the package that caused them
+
+**Scope:** `pyproject.toml`, `uv.lock`, imports affected by upstream API changes,
+dependency and Python-version documentation
+
+### INFER-003 — Provider Registry and Model Factory
+
+**Branch:** `feature/INFER-003-provider-registry`
+
+- Add typed provider and model registry entries for OpenRouter, OpenAI, Gemini, and
+  Ollama, including display name and streaming, vision, and reasoning capabilities
+- Centralize chat-model construction in one factory returning LangChain's
+  `BaseChatModel`
+- Use the dedicated provider integrations (`ChatOpenRouter`, `ChatOpenAI`,
+  `ChatGoogleGenerativeAI`, and `ChatOllama`) behind the shared factory
+- Remove `_make_llm()` and the hardcoded `OPENROUTER_MODELS` list from `app.py`
+- Determine provider availability from validated configuration without exposing keys
+- Keep chat inference and embedding configuration independent; provider switching in
+  Gradio affects chat inference only
+- Make adding a model a configuration change and adding a provider a contained factory
+  extension, not a Gradio rewrite
+
+**Scope:** `src/multimodal_rag/models/config.py`,
+`src/multimodal_rag/models/llm.py`, provider-registry models and factory tests
+
+### INFER-004 — Provider-neutral Streaming Inference
+
+**Branch:** `feature/INFER-004-streaming-inference`
+
+- Add provider-neutral streaming APIs for cited answers and KB article drafts using
+  LangChain `stream()`/`astream()` semantics and `AIMessageChunk` accumulation
+- Emit typed Pydantic progress and completion events containing cumulative text and
+  safe response metadata
+- Build the final message by combining chunks so completion metadata and token usage
+  are retained
+- Stream numbered citation references during generation, then perform citation-link
+  replacement once on the completed answer; never rewrite partial token chunks
+- Preserve blocking `invoke()` where progressive output provides no user benefit, such
+  as offline vision-description ingestion
+- Normalize provider errors into safe, actionable application errors without hiding
+  the original cause from logs
+- Test multi-chunk responses, empty streams, interrupted streams, provider errors,
+  usage metadata, and final citation construction without network calls
+
+**Scope:** `src/multimodal_rag/query/generator.py`, inference event models,
+streaming and error-handling tests
+
+### INFER-005 — Gradio Provider Selection and Streaming UX
+
+**Branch:** `feature/INFER-005-gradio-provider-streaming`
+
+- Add separate provider and model selectors; changing the provider filters the model
+  choices to compatible configured entries
+- Clearly explain unavailable providers instead of allowing a request that is known to
+  fail
+- Adapt streaming inference events into cumulative Gradio chatbot and walkthrough
+  updates using generator callbacks
+- Show immediate progress while retrieval and generation are running
+- Preserve the final `CitedAnswer`, retrieved chunks, question, selected provider, and
+  selected model in state for the review-and-save workflow
+- Keep provider construction, routing, inference orchestration, and article persistence
+  outside the Gradio component definitions
+- Preserve clickable citations and the existing answer-to-KB walkthrough across all
+  supported providers
+
+**Scope:** `src/multimodal_rag/app.py`, Gradio adapter helpers and UI tests
+
+### INFER-006 — Team Qualification and Operating Documentation
+
+**Branch:** `feature/INFER-006-team-qualification`
+
+- Document first-time setup, configuration, provider credentials, local Ollama use,
+  ingestion prerequisites, startup, and common failure recovery
+- Document how to add a model and how to implement another provider
+- Add mocked contract tests proving each provider satisfies the same streaming and
+  metadata behaviour
+- Add startup tests for configured, unavailable, and misconfigured providers
+- Run the full quality and test suite across the supported Python versions
+- Manually smoke-test OpenRouter, OpenAI, Gemini, and Ollama through Gradio, including
+  provider switching, streaming, citations, article drafting, and safe failures
+- Verify a colleague can complete the documented fresh-clone workflow without
+  undocumented local knowledge
+
+**Scope:** `README.md`, `CLAUDE.md`, `.env.example`, test configuration, provider
+contract tests and release checklist
+
+**Out of scope:** changing embedding providers from the Gradio interface, migrating the
+existing Weaviate collection to a different embedding model, adding agent/tool-calling
+workflows, or replacing Gradio with another frontend.
+
+---
+
+## Epic 9: Shareable Weaviate Collection Snapshot (planned)
+
+Provides the simplest MVP way for colleagues to use the same fixed support-content
+dataset. Create an immutable, collection-scoped Weaviate filesystem backup of
+`SupportChunk`, package it with a checksum and compatibility manifest, and place it in
+an approved shared artifact location outside Git. A colleague restores that snapshot
+into the matching single-node Docker setup and uses the documented embedding model and
+configuration. This epic intentionally excludes live synchronization, shared writes,
+cloud-hosted Weaviate, and automatic re-ingestion; a new snapshot is created when the
+content needs to change.
+
+### DATA-001 — Backup and Restore the Fixed Collection
+
+**Branch:** `feature/DATA-001-weaviate-snapshot`
+
+- Enable Weaviate's local filesystem backup module and bind-mount a host backup path
+- Back up only the `SupportChunk` collection
+- Produce a manifest containing the Weaviate image, collection name, object count,
+  embedding provider/model, vector dimension, snapshot date, source commit and SHA-256
+  checksum
+- Document where the artifact is stored and how colleagues restore it into a clean
+  matching instance
+- Verify restoration with collection count and a known retrieval query
+- Keep the backup and support content outside Git and restrict access appropriately
+
+**Out of scope:** live shared databases, incremental synchronization, schema migration,
+embedding-model migration, and cloud backup automation.
+
+---
+
 ## Summary
 
 | Epic | Features | Status | Tests |
@@ -392,4 +584,9 @@ Saves the approved article as a markdown file in `kb_output/`:
 | 5 — Visual Grounding | 5 | completed | ~15 |
 | 6 — Multimodal Chunk Fusion | 2 | completed | ~8 |
 | 7 — Answer-to-KB Pipeline | 3 | completed | 22 |
-| **Total** | **25** | **all completed** | **187** |
+| 8 — Configurable AI Inference | 6 | planned | TBD |
+| 9 — Shareable Weaviate Snapshot | 1 | planned | TBD |
+| **Total** | **32** | **7 completed, 2 planned** | **187 current** |
+
+Per-epic test counts are approximate and overlap where later epics extend earlier modules.
+The total is the current non-integration test count, not the sum of the rows.

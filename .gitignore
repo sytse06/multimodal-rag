@@ -18,3 +18,8 @@ config/sources.yaml
 config/sources_original.yaml
 logs/
 kb_output/
+
+# Graphify outputs stay local; only curated query memory may be tracked.
+graphify-out/*
+!graphify-out/memory/
+!graphify-out/memory/*.md

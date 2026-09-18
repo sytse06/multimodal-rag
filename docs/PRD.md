@@ -38,14 +38,16 @@ YouTube videos and knowledge base URLs so the support chatbot has up-to-date con
 
 *Acceptance criteria:*
 - Reads source URLs from a YAML config file (`config/sources.yaml`)
-- YouTube: fetches timestamped transcripts via `youtube-transcript-api`; if captions are disabled or not found, automatically falls back to Voxtral Mini audio transcription (requires `MISTRAL_API_KEY`)
-- Web: crawls 3 root URLs and all child pages via Firecrawl
-- Chunks text into ~300-500 token segments preserving source metadata
+- YouTube spoken-video path: downloads video, transcribes audio with Voxtral, and optionally fuses 30-second transcript windows with vision descriptions when `MISTRAL_API_KEY` is configured
+- YouTube fallback path: uses timestamped `youtube-transcript-api` captions when `MISTRAL_API_KEY` is absent
+- YouTube silent-video path: sources with `skip_voxtral: true` use dense vision-only frame extraction and require `VISION_MODEL`
+- Web: crawls each configured root URL and its child pages via Firecrawl
+- Caption and web text are chunked into ~300-500 token segments; fused videos use fixed 30-second windows
 - Video chunks: video title, video URL, start timestamp (seconds), chunk text
 - Web chunks: page title, page URL, section heading (if available), chunk text
-- Embeds chunks via configurable OpenRouter embedding model (default: `openai/text-embedding-3-small`)
+- Embeds chunks through the configured LangChain embedding provider and model
 - Stores embeddings + metadata in Weaviate
-- Idempotent: re-running skips already-processed sources (keyed on URL hash)
+- Stable chunk UUIDs make chunk identity deterministic across re-ingestion; unchanged chunks are still re-embedded until the content-hash optimisation in Section 11 is implemented
 - Triggered via `make ingest` or `uv run python -m multimodal_rag.ingest`
 
 *Technical considerations:*
@@ -65,15 +67,17 @@ and receive an accurate answer with links to the source material.
 
 *Acceptance criteria:*
 - Embeds user question via same embedding model as ingestion
-- Performs similarity search against Weaviate, retrieves top-k chunks (default k=5)
-- Passes retrieved chunks + user question to LLM via OpenRouter
+- Performs similarity search against Weaviate, retrieves top-k chunks (default k=10) with at least half the available slots reserved for video results
+- Passes retrieved chunks + user question to the configured OpenRouter, OpenAI, Gemini, or Ollama LLM
 - LLM generates a synthesized answer with inline citations
 - Each citation includes: source title, clickable URL (with `&t=Ns` for videos), relevance score
-- Maintains conversation history within a session for follow-up questions
+- Displays conversation history within a session; each question is currently retrieved and generated independently
 
 *Technical considerations:*
 - Use LangChain `BaseChatModel` and `Embeddings` interfaces for all model access — never call provider SDKs directly
-- LangChain model client factory: configure provider (OpenRouter, Ollama) via env vars, swap without code changes
+- LangChain model factory: configure the provider and model via validated settings, then switch providers without changing application code
+- Chat inference and embeddings are configured independently; changing the chat provider does not change the Weaviate vector space
+- Supported providers expose a common streaming interface so answers can appear progressively
 - Prompt template must instruct LLM to cite sources using retrieved chunk metadata
 - Relevance score: cosine similarity from Weaviate, passed through to UI
 
@@ -93,7 +97,8 @@ questions and see answers with clickable source links.
 - Web citations formatted as: `[Page Title](https://url)`
 - Relevance scores displayed per citation (e.g. percentage or bar)
 - Source type indicator (video icon vs page icon) per citation
-- Model selector dropdown (OpenRouter models)
+- Provider and model selectors showing only configured, usable combinations (OpenRouter, OpenAI, Gemini, and Ollama)
+- Progressive answer updates while retrieval and generation are running
 - Clear conversation button
 
 *Technical considerations:*
@@ -142,12 +147,12 @@ knowledge_bases:
 | Language | Python >=3.12 | Standard, ecosystem support |
 | Package manager | uv | Project convention |
 | RAG framework | LangChain | Mature RAG tooling, provider-agnostic model abstraction |
-| Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers (OpenRouter, Ollama, etc.) without code changes |
-| Embeddings | Configurable (default: OpenRouter openai/text-embedding-3-small, local: Ollama nomic-embed-text) | LangChain interface enables provider diversity |
+| Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers without code changes |
+| Embeddings | Configurable through OpenRouter or Ollama (for example, `openai/text-embedding-3-small` or `nomic-embed-text`) | LangChain interface enables provider diversity; independent from chat provider |
 | Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
-| LLM gateway | Configurable (default: OpenRouter, local: Ollama) | LangChain abstraction — never lock into a single provider |
-| Transcript extraction | youtube-transcript-api | Timestamped segments, no compute needed |
-| Transcript fallback | Mistral Voxtral Mini + yt-dlp | Audio transcription for caption-disabled videos; segment-level timestamps |
+| LLM providers | OpenRouter, OpenAI, Gemini, and Ollama | Dedicated LangChain integrations behind one provider-neutral factory |
+| Primary video transcription | Mistral Voxtral Mini + yt-dlp/ffmpeg | Segment-level audio transcription for the fused video pipeline |
+| Caption fallback | youtube-transcript-api | Used when `MISTRAL_API_KEY` is absent |
 | Visual understanding | Vision LLM via OpenRouter (e.g. GPT-4V / Gemini Flash) | Describes keyframes and web screenshots as text; uses existing OpenRouter config, no new API keys |
 | Frame extraction | yt-dlp + ffmpeg | yt-dlp already a dependency; ffmpeg is the standard tool for keyframe extraction |
 | Web crawling | Firecrawl | Handles full-site crawling from root URL |
@@ -168,7 +173,7 @@ knowledge_bases:
 | SupportChunk | source_title | string | Video/page title |
 | SupportChunk | timestamp_seconds | int | Start time (video only, nullable) |
 | SupportChunk | section_heading | string | Section header (web only, nullable) |
-| SupportChunk | url_hash | string | SHA256 of source URL, for idempotency |
+| SupportChunk | url_hash | string | SHA256 source fingerprint used for source grouping and lookup |
 | SupportChunk | ingested_at | datetime | Processing timestamp |
 
 ### Pydantic Models
@@ -180,7 +185,7 @@ knowledge_bases:
 | `WebChunk` | Web page segment with URL and section metadata |
 | `SearchResult` | Retrieved chunk + relevance score |
 | `CitedAnswer` | LLM response with structured citations |
-| `AppSettings` | BaseSettings for API keys, model config (LLM, embedding, vision model), Weaviate connection |
+| `AppSettings` | Pydantic settings for provider credentials, chat and embedding models, vision model, Weaviate connection, and runtime options |
 
 ## 6. UI/UX Design Principles
 
@@ -192,7 +197,7 @@ knowledge_bases:
 
 ### Key Screen: Chat Interface
 
-- Top: model selector dropdown + clear conversation button
+- Top: provider selector, model selector, and clear conversation button
 - Center: scrollable chat history with markdown rendering
 - Bottom: text input with send button + "Review & save as article" button
 - Citations rendered inline in assistant messages as clickable markdown links
@@ -209,7 +214,7 @@ knowledge_bases:
 
 ## 7. Security Considerations
 
-- **API keys** — OpenRouter and OpenAI keys stored in `.env`, never committed
+- **API keys** — OpenRouter, OpenAI, Gemini, Firecrawl, and Mistral keys stored in `.env`, never committed; secrets are not shown in logs or serialized settings
 - **Weaviate** — local Docker instance, no authentication needed for v1
 - **Source content** — all sources are already public (YouTube, published knowledge bases)
 - **No user auth in v1** — internal tool, network-level access control assumed
@@ -221,8 +226,8 @@ knowledge_bases:
 
 **Epic 1: Ingestion Pipeline** (completed)
 
-| Feature | Branch | Description |
-|---------|--------|-------------|
+| Feature | Name | Description |
+|---------|------|-------------|
 | CORE-001 | Data models | Pydantic models for chunks, sources, config, query results |
 | CORE-002 | YouTube ingest | Transcript fetching + timestamp-preserving chunking |
 | CORE-003 | Web ingest | Firecrawl crawling + header-based markdown chunking |
@@ -235,8 +240,8 @@ knowledge_bases:
 |---------|--------|-------------|
 | QUERY-001 | Retrieval chain | Embed question → Weaviate top-k search → format context |
 | QUERY-002 | Cited answer generation | Prompt template + LLM call producing CitedAnswer with structured citations |
-| QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, model selector, clear button |
-| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` factory; routes by model name format (bare = Ollama, `provider/model` = OpenRouter); Ollama + OpenRouter models mix-and-match in single dropdown |
+| QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, provider/model selectors, streaming output, and clear button |
+| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` interfaces with provider-neutral configuration; current providers are OpenRouter and Ollama |
 
 **Epic 3: Per-source Ingestion Pipeline** (completed)
 
@@ -284,12 +289,30 @@ Closes the loop between retrieval quality and knowledge base growth. A "Review &
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
 
+**Epic 8: Production-ready, Configurable AI Inference Experience** (planned)
+
+Makes provider selection, configuration, and streamed inference understandable and
+safe for colleagues who did not build the project. The epic adds typed Pydantic
+configuration, qualified LangChain and Gradio dependencies, OpenAI and Gemini support,
+provider/model selection in Gradio, and a common streaming experience. It keeps chat
+inference independent from the embedding provider and requires an actionable
+`.env.example`-based onboarding path.
+
+**Epic 9: Shareable Weaviate Collection Snapshot** (planned)
+
+Provides the simplest MVP way to share a fixed `SupportChunk` dataset. The project will
+create a collection-scoped Weaviate filesystem backup, package it with a checksum and
+compatibility manifest, and place it in an approved shared artifact location outside
+Git. Colleagues restore the immutable snapshot into the matching single-node Docker
+setup. Live synchronization, shared writes, cloud hosting, and automatic re-ingestion
+remain out of scope.
+
 ## 9. Risks and Mitigations
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | YouTube transcript quality (auto-generated) | Medium | Medium | Verified: test video has clean captions. Flag low-quality transcripts during ingestion |
-| Caption-disabled YouTube videos | Medium | Medium | Mitigated: Voxtral fallback handles `TranscriptsDisabled` and `NoTranscriptFound` automatically when `MISTRAL_API_KEY` is set |
+| YouTube download or transcription failure | Medium | Medium | Per-source error isolation, cookie support, yt-dlp fallbacks, and Voxtral retry handling keep the remaining ingest running |
 | Weaviate Docker overhead for local dev | Low | Low | Single container, minimal resources for dozens of videos |
 | OpenRouter rate limits | Medium | Low | Implement retry logic with exponential backoff via tenacity |
 | Chunking too coarse or too fine | High | Medium | Start with 300-500 tokens, tune based on retrieval quality |
@@ -299,7 +322,7 @@ linking to specific video timestamps and knowledge base pages.
 
 ### Phase 2: Enhancement
 
-- Conversation memory / follow-up question handling
+- Context-aware follow-up questions that pass relevant conversation history into retrieval and generation
 - Source freshness detection (re-ingest changed content)
 - Analytics: most asked questions, most cited sources
 - Feedback mechanism (thumbs up/down on answers)
@@ -333,7 +356,7 @@ that embedding API calls and wall-clock time are not wasted on unchanged materia
 - The ingestion pipeline already assigns stable chunk IDs: `source_url + timestamp_seconds`
   for transcript chunks, `source_url + chunk_index` for web chunks, `image_url` for
   screenshot chunks, and `source_url + timestamp_seconds` for frame chunks
-- Weaviate upserts on these stable IDs, so re-ingest is always correct and duplicate-free
+- Stable IDs let the pipeline address the same logical chunks on subsequent runs, but all chunks are currently re-embedded
 - However, every re-ingest currently re-embeds all chunks unconditionally, even when the
   underlying text is identical to what is already stored — this costs embedding API calls
   and time proportional to the full corpus size
@@ -355,8 +378,8 @@ that embedding API calls and wall-clock time are not wasted on unchanged materia
   batch in one or a small number of requests before deciding what to embed
 - The hash must be computed from normalised text (e.g. stripped whitespace) so that purely
   cosmetic differences in source formatting do not cause unnecessary re-embedding
-- Existing upsert logic remains unchanged for the chunks that do need embedding; only the
-  pre-embedding filter step is new
+- Existing write logic remains unchanged for chunks that need embedding; only the pre-embedding
+  filter step is new
 - The optimisation is transparently bypassed if `content_hash` is absent on a stored object
   (i.e. objects created before this feature are always re-embedded once, then hashed)
 
