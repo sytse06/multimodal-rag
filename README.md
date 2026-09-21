@@ -29,7 +29,9 @@ with section headings.
 ## Prerequisites
 
 - Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker
-- [OpenRouter](https://openrouter.ai/) API key (LLM + embeddings)
+- Credentials for the providers you plan to use: [OpenRouter](https://openrouter.ai/),
+  [OpenAI](https://platform.openai.com/), or [Gemini](https://ai.google.dev/); Ollama
+  can run locally without an API key
 - [Firecrawl](https://firecrawl.dev/) API key (web crawling)
 - [Mistral](https://console.mistral.ai/) API key (required for video transcription via Voxtral)
 
@@ -38,7 +40,8 @@ with section headings.
 ```bash
 make install      # install dependencies
 make docker-up    # start Weaviate
-# edit .env with your API keys, config/sources.yaml with your sources
+# copy .env.example to .env and add the credentials for the selected providers
+# edit config/sources.yaml with your sources
 make ingest       # index YouTube + web sources
 make purge-video  # remove all video chunks (re-ingest after pipeline changes)
 make run          # launch Gradio chat interface
@@ -46,16 +49,25 @@ make run          # launch Gradio chat interface
 
 ## Configuration
 
+Copy `.env.example` to `.env` and set credentials only for the providers you use.
+Configuration precedence is explicit: constructor values, then process environment,
+then `.env`, then typed defaults. `make dev` copies the safe development template from
+`config/development.env`.
+
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `OPENROUTER_API_KEY` | LLM + embedding access | — |
-| `LLM_PROVIDER` | Backend (`openrouter` / `ollama`) | `openrouter` |
+| `LLM_PROVIDER` | Chat backend (`openrouter` / `openai` / `gemini` / `ollama`) | `openrouter` |
+| `EMBEDDING_PROVIDER` | Embedding backend (`openrouter` / `ollama`) | `openrouter` |
+| `OPENROUTER_API_KEY` | OpenRouter access | — |
+| `OPENAI_API_KEY` | OpenAI chat access | — |
+| `GEMINI_API_KEY` | Gemini chat access | — |
 | `LLM_MODEL` | Chat model | `google/gemini-3-flash-preview` |
 | `EMBEDDING_MODEL` | Embedding model | `nomic-embed-text` |
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |
 | `FIRECRAWL_API_KEY` | Web crawling | — |
 | `MISTRAL_API_KEY` | Voxtral audio transcription (required for video ingest) | — |
-| `VISION_MODEL` | Vision LLM for frame descriptions (e.g. `openai/gpt-4o-mini`) | disabled |
+| `VISION_MODEL` | Vision LLM for frame descriptions | disabled |
+| `GRADIO_SHARE` | Enable a public Gradio share link | `false` |
 
 ## Tech Stack
 
@@ -65,7 +77,8 @@ make run          # launch Gradio chat interface
 | Package manager | uv |
 | RAG framework | LangChain |
 | Vector store | Weaviate |
-| LLM + embeddings | OpenRouter / Ollama |
+| LLM | OpenRouter / OpenAI / Gemini / Ollama |
+| Embeddings | OpenRouter / Ollama |
 | Transcription | Mistral Voxtral Mini (all videos) |
 | Visual grounding | Vision LLM via OpenRouter (optional) |
 | Video download | yt-dlp + ffmpeg |

@@ -2,6 +2,7 @@
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from multimodal_rag.models import (
     AppSettings,
@@ -12,6 +13,7 @@ from multimodal_rag.models import (
     SupportChunk,
     TranscriptChunk,
     WebChunk,
+    YouTubeSource,
 )
 from multimodal_rag.models.chunks import SourceType
 
@@ -36,6 +38,14 @@ class TestSourceConfig:
         config = SourceConfig()
         assert config.youtube == []
         assert config.kb_sources == []
+
+    def test_list_defaults_are_not_shared(self) -> None:
+        first = SourceConfig()
+        second = SourceConfig()
+        first.youtube.append(
+            YouTubeSource(url="https://youtube.com/watch?v=abc", name="Video")
+        )
+        assert second.youtube == []
 
     def test_sources_yaml_file(self) -> None:
         with open("config/sources.yaml") as f:
@@ -482,3 +492,56 @@ class TestAppSettings:
         assert settings.weaviate_url == "http://localhost:8080"
         assert settings.chunk_size == 400
         assert settings.top_k == 10
+
+    def test_nested_provider_settings_and_secret_redaction(self) -> None:
+        settings = AppSettings(
+            _env_file=None,
+            llm_provider="openai",
+            openai_api_key="openai-secret",
+            llm_model="gpt-test",
+            embedding_provider="ollama",
+            embedding_model="nomic-test",
+            gradio_share=False,
+        )
+
+        assert settings.chat.provider == "openai"
+        assert settings.chat.model == "gpt-test"
+        assert settings.chat.api_key.get_secret_value() == "openai-secret"
+        assert settings.embeddings.provider == "ollama"
+        assert settings.embeddings.model == "nomic-test"
+        assert settings.gradio_share is False
+        assert "openai-secret" not in settings.model_dump_json()
+
+    def test_provider_credentials_are_required(self) -> None:
+        with pytest.raises(ValidationError, match="chat.openai.api_key"):
+            AppSettings(_env_file=None, llm_provider="openai")
+
+    def test_environment_provider_values_are_loaded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("LLM_MODEL", "llama-test")
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "ollama")
+        monkeypatch.setenv("GRADIO_SHARE", "true")
+
+        settings = AppSettings(_env_file=None)
+
+        assert settings.chat.provider == "ollama"
+        assert settings.chat.model == "llama-test"
+        assert settings.embeddings.provider == "ollama"
+        assert settings.gradio_share is True
+
+    def test_invalid_runtime_values_are_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="temperature"):
+            AppSettings(
+                _env_file=None,
+                openrouter_api_key="test",
+                temperature=3,
+            )
+
+        with pytest.raises(ValidationError, match="timeout"):
+            AppSettings(
+                _env_file=None,
+                openrouter_api_key="test",
+                llm_timeout=0,
+            )

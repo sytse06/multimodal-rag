@@ -15,7 +15,11 @@ class TestCreateChatModel:
     def test_openrouter_returns_chatopenai(self) -> None:
         from langchain_openai import ChatOpenAI
 
-        settings = AppSettings(openrouter_api_key="test-key", llm_provider="openrouter")
+        settings = AppSettings(
+            _env_file=None,
+            openrouter_api_key="test-key",
+            llm_provider="openrouter",
+        )
         llm = create_chat_model(settings)
         assert isinstance(llm, ChatOpenAI)
 
@@ -27,7 +31,11 @@ class TestCreateChatModel:
     def test_ollama_returns_chatollama(self) -> None:
         from langchain_ollama import ChatOllama
 
-        settings = AppSettings(llm_provider="ollama")
+        settings = AppSettings(
+            _env_file=None,
+            llm_provider="ollama",
+            embedding_provider="ollama",
+        )
         llm = create_chat_model(settings)
         assert isinstance(llm, ChatOllama)
 
@@ -42,6 +50,7 @@ class TestCreateEmbeddings:
         from langchain_openai import OpenAIEmbeddings
 
         settings = AppSettings(
+            _env_file=None,
             openrouter_api_key="test-key", embedding_provider="openrouter"
         )
         emb = create_embeddings(settings)
@@ -55,6 +64,10 @@ class TestCreateEmbeddings:
     def test_ollama_returns_ollamaembeddings(self) -> None:
         from langchain_ollama import OllamaEmbeddings
 
-        settings = AppSettings(embedding_provider="ollama")
+        settings = AppSettings(
+            _env_file=None,
+            llm_provider="ollama",
+            embedding_provider="ollama",
+        )
         emb = create_embeddings(settings)
         assert isinstance(emb, OllamaEmbeddings)

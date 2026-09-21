@@ -8,7 +8,6 @@ from pathlib import Path
 
 import gradio as gr
 from langchain_core.language_models import BaseChatModel
-from pydantic import SecretStr
 
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.config import AppSettings
@@ -110,7 +109,7 @@ def _make_llm(model_name: str, settings: AppSettings) -> BaseChatModel:
 
     return ChatOpenAI(
         model=model_name,
-        api_key=SecretStr(settings.openrouter_api_key),
+        api_key=settings.chat.api_key,
         base_url=settings.openrouter_base_url,
         temperature=0.3,
     )
@@ -382,7 +381,7 @@ def main() -> None:
             outputs=[save_msg],
         )
 
-    demo.launch(share=True)
+    demo.launch(share=settings.gradio_share)
 
 
 if __name__ == "__main__":
