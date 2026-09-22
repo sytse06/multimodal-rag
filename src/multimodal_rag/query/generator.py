@@ -1,10 +1,14 @@
 """Cited answer generation via LangChain chat model."""
 
 import logging
+from asyncio import Event as AsyncEvent
+from collections.abc import AsyncIterator, Iterator, Mapping
+from threading import Event
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from multimodal_rag.models.inference import InferenceEvent, TokenUsage
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -48,6 +52,74 @@ def _content_to_text(content: object) -> str:
     return str(content) if content else ""
 
 
+def _format_context_budgeted(
+    results: list[SearchResult], max_context_tokens: int | None
+) -> str:
+    """Format source context without exceeding an approximate token budget."""
+    from multimodal_rag.query.retriever import format_context
+
+    context = format_context(results)
+    if max_context_tokens is None:
+        return context
+    if max_context_tokens <= 0:
+        raise ValueError("max_context_tokens must be greater than zero")
+
+    max_chars = max_context_tokens * 4
+    if len(context) <= max_chars:
+        return context
+    truncated = context[:max_chars].rsplit("\n\n", 1)[0].rstrip()
+    omission = "[Additional source context omitted to fit the context budget.]"
+    return f"{truncated}\n\n{omission}"
+
+
+def _usage_from_chunk(chunk: object) -> TokenUsage | None:
+    """Normalize LangChain/provider usage metadata when it is available."""
+    usage = getattr(chunk, "usage_metadata", None)
+    if not isinstance(usage, Mapping):
+        metadata = getattr(chunk, "response_metadata", None)
+        usage = metadata.get("token_usage") if isinstance(metadata, Mapping) else None
+    if not isinstance(usage, Mapping):
+        return None
+
+    def value(*names: str) -> int | None:
+        for name in names:
+            candidate = usage.get(name)
+            if isinstance(candidate, int):
+                return candidate
+        return None
+
+    return TokenUsage(
+        input_tokens=value("input_tokens", "prompt_tokens"),
+        output_tokens=value("output_tokens", "completion_tokens"),
+        total_tokens=value("total_tokens"),
+        reported=True,
+    )
+
+
+def _finish_reason(chunk: object) -> str | None:
+    metadata = getattr(chunk, "response_metadata", None)
+    if not isinstance(metadata, Mapping):
+        return None
+    reason = metadata.get("finish_reason")
+    return reason if isinstance(reason, str) else None
+
+
+def _safe_error(exc: Exception) -> str:
+    logger.exception("Streaming inference failed: %s", exc)
+    return "Model inference failed. Check the provider configuration and try again."
+
+
+def _answer_messages(
+    question: str, results: list[SearchResult], max_context_tokens: int | None
+) -> list[SystemMessage | HumanMessage]:
+    context = _format_context_budgeted(results, max_context_tokens)
+    user_message = USER_TEMPLATE.format(context=context, question=question)
+    return [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=user_message),
+    ]
+
+
 def generate_cited_answer(
     question: str,
     results: list[SearchResult],
@@ -77,6 +149,87 @@ def generate_cited_answer(
 
     logger.info("Generated answer with %d citations", len(citations))
     return CitedAnswer(answer=answer_with_links, citations=citations)
+
+
+def stream_cited_answer(
+    question: str,
+    results: list[SearchResult],
+    llm: BaseChatModel,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    max_context_tokens: int | None = None,
+    cancel_event: Event | None = None,
+) -> Iterator[InferenceEvent]:
+    """Stream a cited answer while emitting a finalized answer event."""
+    if not results:
+        answer = CitedAnswer(
+            answer="I couldn't find any relevant sources to answer your question.",
+            citations=[],
+        )
+        yield InferenceEvent(
+            event_type="complete",
+            text=answer.answer,
+            provider=provider,
+            model=model,
+            answer=answer,
+        )
+        return
+
+    parts: list[str] = []
+    usage: TokenUsage | None = None
+    finish_reason: str | None = None
+    try:
+        for chunk in llm.stream(
+            _answer_messages(question, results, max_context_tokens)
+        ):
+            if cancel_event is not None and cancel_event.is_set():
+                yield InferenceEvent(
+                    event_type="cancelled",
+                    text="".join(parts),
+                    provider=provider,
+                    model=model,
+                    usage=usage,
+                )
+                return
+            delta = _content_to_text(chunk.content)
+            if delta:
+                parts.append(delta)
+            usage = _usage_from_chunk(chunk) or usage
+            finish_reason = _finish_reason(chunk) or finish_reason
+            yield InferenceEvent(
+                event_type="progress",
+                delta=delta,
+                text="".join(parts),
+                provider=provider,
+                model=model,
+                usage=usage,
+            )
+    except Exception as exc:
+        yield InferenceEvent(
+            event_type="error",
+            text="".join(parts),
+            provider=provider,
+            model=model,
+            usage=usage,
+            error=_safe_error(exc),
+        )
+        return
+
+    raw_answer = "".join(parts)
+    answer = CitedAnswer(
+        answer=_replace_refs_with_links(raw_answer, results),
+        citations=_build_citations(results),
+    )
+    yield InferenceEvent(
+        event_type="complete",
+        text=answer.answer,
+        provider=provider,
+        model=model,
+        usage=usage,
+        finish_reason=finish_reason,
+        answer=answer,
+    )
 
 
 def _build_citations(results: list[SearchResult]) -> list[Citation]:
@@ -167,3 +320,239 @@ def generate_kb_article(
         source_lines = "\n".join(f"- [{c.label}]({c.url})" for c in answer.citations)
         article = article.rstrip() + f"\n\n## Sources\n\n{source_lines}"
     return article
+
+
+def _article_user_message(
+    answer: CitedAnswer,
+    results: list[SearchResult] | None,
+    question: str,
+) -> str:
+    source_blocks: list[str] = []
+    if results:
+        for i, result in enumerate(results, 1):
+            source_blocks.append(
+                f"### Source [{i}]: {result.citation_label}\n\n{result.text}"
+            )
+
+    parts: list[str] = []
+    if question:
+        parts.append(f"## Question\n\n{question}\n\n")
+    parts.append("## Source Material\n")
+    parts.append("\n\n".join(source_blocks) if source_blocks else answer.answer)
+    return "\n".join(parts)
+
+
+def stream_kb_article(
+    answer: CitedAnswer,
+    llm: BaseChatModel,
+    results: list[SearchResult] | None = None,
+    question: str = "",
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    cancel_event: Event | None = None,
+) -> Iterator[InferenceEvent]:
+    """Stream a knowledge-base article draft and append citations on completion."""
+    parts: list[str] = []
+    usage: TokenUsage | None = None
+    finish_reason: str | None = None
+    messages = [
+        SystemMessage(content=KB_ARTICLE_PROMPT),
+        HumanMessage(content=_article_user_message(answer, results, question)),
+    ]
+    try:
+        for chunk in llm.stream(messages):
+            if cancel_event is not None and cancel_event.is_set():
+                yield InferenceEvent(
+                    event_type="cancelled",
+                    text="".join(parts),
+                    provider=provider,
+                    model=model,
+                    usage=usage,
+                )
+                return
+            delta = _content_to_text(chunk.content)
+            if delta:
+                parts.append(delta)
+            usage = _usage_from_chunk(chunk) or usage
+            finish_reason = _finish_reason(chunk) or finish_reason
+            yield InferenceEvent(
+                event_type="progress",
+                delta=delta,
+                text="".join(parts),
+                provider=provider,
+                model=model,
+                usage=usage,
+            )
+    except Exception as exc:
+        yield InferenceEvent(
+            event_type="error",
+            text="".join(parts),
+            provider=provider,
+            model=model,
+            usage=usage,
+            error=_safe_error(exc),
+        )
+        return
+
+    article = _strip_code_fence("".join(parts))
+    if answer.citations:
+        source_lines = "\n".join(f"- [{c.label}]({c.url})" for c in answer.citations)
+        article = article.rstrip() + f"\n\n## Sources\n\n{source_lines}"
+    yield InferenceEvent(
+        event_type="complete",
+        text=article,
+        provider=provider,
+        model=model,
+        usage=usage,
+        finish_reason=finish_reason,
+        article=article,
+    )
+
+
+async def astream_cited_answer(
+    question: str,
+    results: list[SearchResult],
+    llm: BaseChatModel,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    max_context_tokens: int | None = None,
+    cancel_event: AsyncEvent | None = None,
+) -> AsyncIterator[InferenceEvent]:
+    """Asynchronously stream a cited answer with the same event contract."""
+    if not results:
+        answer = CitedAnswer(
+            answer="I couldn't find any relevant sources to answer your question.",
+            citations=[],
+        )
+        yield InferenceEvent(
+            event_type="complete",
+            text=answer.answer,
+            provider=provider,
+            model=model,
+            answer=answer,
+        )
+        return
+
+    parts: list[str] = []
+    usage: TokenUsage | None = None
+    finish_reason: str | None = None
+    try:
+        async for chunk in llm.astream(
+            _answer_messages(question, results, max_context_tokens)
+        ):
+            if cancel_event is not None and cancel_event.is_set():
+                yield InferenceEvent(
+                    event_type="cancelled",
+                    text="".join(parts),
+                    provider=provider,
+                    model=model,
+                    usage=usage,
+                )
+                return
+            delta = _content_to_text(chunk.content)
+            if delta:
+                parts.append(delta)
+            usage = _usage_from_chunk(chunk) or usage
+            finish_reason = _finish_reason(chunk) or finish_reason
+            yield InferenceEvent(
+                event_type="progress",
+                delta=delta,
+                text="".join(parts),
+                provider=provider,
+                model=model,
+                usage=usage,
+            )
+    except Exception as exc:
+        yield InferenceEvent(
+            event_type="error",
+            text="".join(parts),
+            provider=provider,
+            model=model,
+            usage=usage,
+            error=_safe_error(exc),
+        )
+        return
+
+    answer = CitedAnswer(
+        answer=_replace_refs_with_links("".join(parts), results),
+        citations=_build_citations(results),
+    )
+    yield InferenceEvent(
+        event_type="complete",
+        text=answer.answer,
+        provider=provider,
+        model=model,
+        usage=usage,
+        finish_reason=finish_reason,
+        answer=answer,
+    )
+
+
+async def astream_kb_article(
+    answer: CitedAnswer,
+    llm: BaseChatModel,
+    results: list[SearchResult] | None = None,
+    question: str = "",
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    cancel_event: AsyncEvent | None = None,
+) -> AsyncIterator[InferenceEvent]:
+    """Asynchronously stream a knowledge-base article draft."""
+    parts: list[str] = []
+    usage: TokenUsage | None = None
+    finish_reason: str | None = None
+    messages = [
+        SystemMessage(content=KB_ARTICLE_PROMPT),
+        HumanMessage(content=_article_user_message(answer, results, question)),
+    ]
+    try:
+        async for chunk in llm.astream(messages):
+            if cancel_event is not None and cancel_event.is_set():
+                yield InferenceEvent(
+                    event_type="cancelled",
+                    text="".join(parts),
+                    provider=provider,
+                    model=model,
+                    usage=usage,
+                )
+                return
+            delta = _content_to_text(chunk.content)
+            if delta:
+                parts.append(delta)
+            usage = _usage_from_chunk(chunk) or usage
+            finish_reason = _finish_reason(chunk) or finish_reason
+            yield InferenceEvent(
+                event_type="progress",
+                delta=delta,
+                text="".join(parts),
+                provider=provider,
+                model=model,
+                usage=usage,
+            )
+    except Exception as exc:
+        yield InferenceEvent(
+            event_type="error",
+            text="".join(parts),
+            provider=provider,
+            model=model,
+            usage=usage,
+            error=_safe_error(exc),
+        )
+        return
+
+    article = _strip_code_fence("".join(parts))
+    if answer.citations:
+        source_lines = "\n".join(f"- [{c.label}]({c.url})" for c in answer.citations)
+        article = article.rstrip() + f"\n\n## Sources\n\n{source_lines}"
+    yield InferenceEvent(
+        event_type="complete",
+        text=article,
+        provider=provider,
+        model=model,
+        usage=usage,
+        finish_reason=finish_reason,
+        article=article,
+    )

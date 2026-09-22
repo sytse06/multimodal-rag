@@ -1,8 +1,10 @@
 """Tests for cited answer generation."""
 
+from threading import Event
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage
+import pytest
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
@@ -11,10 +13,14 @@ from multimodal_rag.query.generator import (
     SYSTEM_PROMPT,
     _build_citations,
     _content_to_text,
+    _format_context_budgeted,
     _replace_refs_with_links,
     _strip_code_fence,
+    astream_cited_answer,
     generate_cited_answer,
     generate_kb_article,
+    stream_cited_answer,
+    stream_kb_article,
 )
 
 
@@ -118,6 +124,22 @@ class TestContentToText:
         ]
         assert _content_to_text(content) == "Answer."
 
+    def test_context_budget_omits_tail_predictably(self) -> None:
+        results = [
+            _video_result(),
+            SearchResult(
+                text="A very long source that should be omitted from the tail.",
+                source_type=SourceType.WEB,
+                source_url="https://docs.example.com/long",
+                source_name="Long source",
+                relevance_score=0.7,
+            ),
+        ]
+
+        context = _format_context_budgeted(results, max_context_tokens=8)
+
+        assert "Additional source context omitted" in context
+
 
 class TestGenerateCitedAnswer:
     def test_empty_results_returns_fallback(self) -> None:
@@ -161,6 +183,71 @@ class TestGenerateCitedAnswer:
         assert "Use " in answer.answer
         assert "provider metadata" not in answer.answer
         assert "'type': 'text'" not in answer.answer
+
+    def test_streams_progress_and_final_citations(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = [
+            AIMessageChunk(content="Use "),
+            AIMessageChunk(
+                content="[1].",
+                usage_metadata={
+                    "input_tokens": 3,
+                    "output_tokens": 2,
+                    "total_tokens": 5,
+                },
+                response_metadata={"finish_reason": "stop"},
+            ),
+        ]
+
+        events = list(
+            stream_cited_answer(
+                "How do I start?",
+                [_video_result()],
+                mock_llm,
+                provider="ollama",
+                model="test-model",
+            )
+        )
+
+        assert [event.event_type for event in events] == [
+            "progress",
+            "progress",
+            "complete",
+        ]
+        assert events[1].text == "Use [1]."
+        assert events[-1].answer is not None
+        assert "Quickstart @ 00:42" in events[-1].text
+        assert events[-1].usage is not None
+        assert events[-1].usage.total_tokens == 5
+        assert events[-1].finish_reason == "stop"
+
+    def test_stream_error_is_safe(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.side_effect = RuntimeError("provider secret must not leak")
+
+        events = list(stream_cited_answer("question", [_video_result()], mock_llm))
+
+        assert events[-1].event_type == "error"
+        assert events[-1].error is not None
+        assert "provider secret" not in events[-1].error
+
+    def test_stream_cancellation_does_not_complete(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = [
+            AIMessageChunk(content="Partial answer."),
+            AIMessageChunk(content="More text."),
+        ]
+        cancel_event = Event()
+        cancel_event.set()
+
+        events = list(
+            stream_cited_answer(
+                "question", [_video_result()], mock_llm, cancel_event=cancel_event
+            )
+        )
+
+        assert [event.event_type for event in events] == ["cancelled"]
+        assert events[-1].answer is None
 
     def test_passes_context_to_llm(self) -> None:
         mock_llm = MagicMock()
@@ -256,6 +343,36 @@ class TestGenerateKbArticle:
         result = generate_kb_article(self._answer(), llm=mock_llm)
         assert "## Sources" in result
         assert "https://yt.com/watch?v=abc&t=42s" in result
+
+    def test_streams_article_and_appends_sources_on_completion(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = [
+            AIMessageChunk(content="# Article\n\nBody."),
+        ]
+
+        events = list(stream_kb_article(self._answer(), mock_llm))
+
+        assert events[-1].event_type == "complete"
+        assert events[-1].article is not None
+        assert "## Sources" in events[-1].article
+
+    @pytest.mark.anyio
+    async def test_async_stream_matches_sync_contract(self) -> None:
+        mock_llm = MagicMock()
+
+        async def chunks() -> object:
+            yield AIMessageChunk(content="Use [1].")
+
+        mock_llm.astream.return_value = chunks()
+        events = [
+            event
+            async for event in astream_cited_answer(
+                "question", [_video_result()], mock_llm
+            )
+        ]
+
+        assert events[-1].event_type == "complete"
+        assert events[-1].answer is not None
 
 
 class TestStripCodeFence:

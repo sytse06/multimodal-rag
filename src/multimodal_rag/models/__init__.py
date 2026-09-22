@@ -19,6 +19,7 @@ from multimodal_rag.models.config import (
     RuntimeSettings,
     VisionSettings,
 )
+from multimodal_rag.models.inference import InferenceEvent, TokenUsage
 from multimodal_rag.models.llm import create_chat_model, create_embeddings
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 from multimodal_rag.models.sources import (
@@ -45,6 +46,8 @@ __all__ = [
     "RuntimeSettings",
     "VisionSettings",
     "CitedAnswer",
+    "InferenceEvent",
+    "TokenUsage",
     "create_chat_model",
     "create_embeddings",
     "Citation",
