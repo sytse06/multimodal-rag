@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import yaml
+from pydantic import SecretStr
 
 from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
 from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
@@ -23,6 +24,10 @@ from multimodal_rag.store.weaviate import WeaviateStore
 logger = logging.getLogger(__name__)
 
 SOURCES_PATH = Path("config/sources.yaml")
+
+
+def _secret_value(value: SecretStr | str) -> str:
+    return value.get_secret_value() if isinstance(value, SecretStr) else value
 
 
 def load_sources() -> SourceConfig:
@@ -107,12 +112,12 @@ def run() -> None:
                             label,
                         )
 
-                elif settings.mistral_api_key:
+                elif _secret_value(settings.mistral_api_key):
                     # Standard spoken video: fused Voxtral + optional vision
                     tc = fetch_fused_chunks(
                         video_url=str(yt.url),
                         source_name=yt.name,
-                        mistral_api_key=settings.mistral_api_key,
+                        mistral_api_key=_secret_value(settings.mistral_api_key),
                         vision_llm=vision_llm,
                         cookies_file=settings.youtube_cookies_file,
                         window_seconds=30,
@@ -150,7 +155,7 @@ def run() -> None:
             try:
                 pages = crawl_knowledge_base(
                     root_url=str(kb.url),
-                    api_key=settings.firecrawl_api_key,
+                    api_key=_secret_value(settings.firecrawl_api_key),
                     limit=100,
                 )
             except Exception:

@@ -48,7 +48,7 @@ class WebChunk(BaseModel):
 class SupportChunk(BaseModel):
     """Unified chunk model for Weaviate storage."""
 
-    chunk_id: UUID = Field(default=None)  # type: ignore[assignment]
+    chunk_id: UUID | None = None
     text: str
     source_type: SourceType
     source_url: str

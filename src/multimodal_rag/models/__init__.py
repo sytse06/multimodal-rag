@@ -1,7 +1,24 @@
 """Data models for the multimodal RAG pipeline."""
 
 from multimodal_rag.models.chunks import SupportChunk, TranscriptChunk, WebChunk
-from multimodal_rag.models.config import AppSettings
+from multimodal_rag.models.config import (
+    AppSettings,
+    ChatSettings,
+    CredentialSettings,
+    EmbeddingSettings,
+    GeminiProviderConfig,
+    InfrastructureSettings,
+    IngestionSettings,
+    ModelCapabilities,
+    ModelSelection,
+    ModelSpec,
+    OllamaProviderConfig,
+    OpenAIProviderConfig,
+    OpenRouterProviderConfig,
+    ProviderEndpointSettings,
+    RuntimeSettings,
+    VisionSettings,
+)
 from multimodal_rag.models.llm import create_chat_model, create_embeddings
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 from multimodal_rag.models.sources import (
@@ -12,6 +29,21 @@ from multimodal_rag.models.sources import (
 
 __all__ = [
     "AppSettings",
+    "ChatSettings",
+    "CredentialSettings",
+    "EmbeddingSettings",
+    "GeminiProviderConfig",
+    "InfrastructureSettings",
+    "IngestionSettings",
+    "ModelCapabilities",
+    "ModelSelection",
+    "ModelSpec",
+    "OllamaProviderConfig",
+    "OpenAIProviderConfig",
+    "OpenRouterProviderConfig",
+    "ProviderEndpointSettings",
+    "RuntimeSettings",
+    "VisionSettings",
     "CitedAnswer",
     "create_chat_model",
     "create_embeddings",

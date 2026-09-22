@@ -1,6 +1,6 @@
 """Source configuration models for ingestion pipeline."""
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class YouTubeSource(BaseModel):
@@ -15,9 +15,9 @@ class KnowledgeBaseSource(BaseModel):
 
 
 class SourceConfig(BaseModel):
-    youtube: list[YouTubeSource] = []
-    knowledge_bases: list[KnowledgeBaseSource] | None = None
+    youtube: list[YouTubeSource] = Field(default_factory=list)
+    knowledge_bases: list[KnowledgeBaseSource] = Field(default_factory=list)
 
     @property
     def kb_sources(self) -> list[KnowledgeBaseSource]:
-        return self.knowledge_bases or []
+        return self.knowledge_bases

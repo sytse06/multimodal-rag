@@ -7,25 +7,17 @@ from datetime import datetime
 from pathlib import Path
 
 import gradio as gr
-from langchain_core.language_models import BaseChatModel
-from pydantic import SecretStr
 
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.config import AppSettings
-from multimodal_rag.models.llm import create_embeddings
+from multimodal_rag.models.llm import create_chat_model, create_embeddings
+from multimodal_rag.models.providers import model_choices, selection_from_key
 from multimodal_rag.models.query import CitedAnswer, SearchResult
 from multimodal_rag.query.generator import generate_cited_answer, generate_kb_article
 from multimodal_rag.query.retriever import retrieve
 from multimodal_rag.store.weaviate import WeaviateStore
 
 logger = logging.getLogger(__name__)
-
-OPENROUTER_MODELS = [
-    "openai/gpt-5.4-mini",
-    "qwen/qwen3.5-35b-a3b",
-    "deepseek/deepseek-v3.2",
-    "mistralai/ministral-14b-2512",
-]
 
 KB_OUTPUT_DIR = Path("kb_output")
 
@@ -91,31 +83,6 @@ def save_kb_article(
     return str(path)
 
 
-def _is_ollama_model(model_name: str) -> bool:
-    """Ollama models are bare names (e.g. 'llama3.2'); OpenRouter uses 'provider/model'."""  # noqa: E501
-    return "/" not in model_name
-
-
-def _make_llm(model_name: str, settings: AppSettings) -> BaseChatModel:
-    """Route to Ollama or OpenRouter based on model name format."""
-    if _is_ollama_model(model_name):
-        from langchain_ollama import ChatOllama
-
-        return ChatOllama(
-            model=model_name,
-            base_url=settings.ollama_base_url,
-            temperature=0.3,
-        )
-    from langchain_openai import ChatOpenAI
-
-    return ChatOpenAI(
-        model=model_name,
-        api_key=SecretStr(settings.openrouter_api_key),
-        base_url=settings.openrouter_base_url,
-        temperature=0.3,
-    )
-
-
 def main() -> None:
     # Suppress Pandas deprecation warnings emitted by Gradio internals.
     # gradio/queueing.py calls df.infer_objects(copy=False) and uses
@@ -137,9 +104,10 @@ def main() -> None:
 
     def _respond(
         message: str,
-        model: str,
+        selection_key: str,
     ) -> tuple[str, CitedAnswer, list[SearchResult]]:
-        llm = _make_llm(model, settings)
+        selection = selection_from_key(selection_key, settings)
+        llm = create_chat_model(settings, selection)
         results = retrieve(message, store, top_k=settings.top_k)
         answer = generate_cited_answer(
             question=message,
@@ -157,15 +125,10 @@ def main() -> None:
             "Workflow to generate knowledge base articles based on the sources."
         )
 
-        ollama_models = [
-            m for m in [settings.llm_model] if _is_ollama_model(m)
-        ]
-        all_models = ollama_models + OPENROUTER_MODELS
-        default_model = settings.llm_model
-        if default_model not in all_models:
-            default_model = all_models[0]
+        choices = model_choices(settings)
+        default_model = f"{settings.chat.provider}:{settings.chat.model}"
         model_dropdown = gr.Dropdown(
-            choices=all_models,
+            choices=choices,
             value=default_model,
             label="Model",
             interactive=True,
@@ -240,13 +203,13 @@ def main() -> None:
         def user_submit(
             message: str,
             history: list[dict[str, str]],
-            model: str,
+            selection_key: str,
         ) -> tuple[str, list[dict[str, str]], CitedAnswer | None, list[SearchResult], str]:  # noqa: E501
             if not message.strip():
                 return "", history, None, [], ""
             question = message
             history = history + [{"role": "user", "content": message}]
-            formatted, answer, results = _respond(message, model)
+            formatted, answer, results = _respond(message, selection_key)
             history = history + [{"role": "assistant", "content": formatted}]
             return "", history, answer, results, question
 
@@ -332,12 +295,13 @@ def main() -> None:
         def go_to_step3(
             answer: CitedAnswer | None,
             results: list[SearchResult],
-            model: str,
+            selection_key: str,
             question: str,
         ) -> tuple[object, str]:
             if answer is None:
                 return gr.Walkthrough(selected=3), ""
-            llm = _make_llm(model, settings)
+            selection = selection_from_key(selection_key, settings)
+            llm = create_chat_model(settings, selection)
             draft = generate_kb_article(answer, llm, results=results, question=question)
             return gr.Walkthrough(selected=3), draft
 
@@ -382,7 +346,7 @@ def main() -> None:
             outputs=[save_msg],
         )
 
-    demo.launch(share=True)
+    demo.launch(share=settings.gradio_share)
 
 
 if __name__ == "__main__":

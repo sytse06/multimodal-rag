@@ -2,22 +2,20 @@
 name = "multimodal-rag"
 version = "0.1.0"
 description = "RAG-powered support knowledge base with video timestamp citations"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.15"
 dependencies = [
-    "gradio>=6.0.0",
-    "langchain>=0.3.0",
-    "langchain-core>=0.3.0",
-    "langchain-openai>=0.3.0",
-    "langchain-community>=0.3.0",
+    "gradio>=6.0,<7",
+    "langchain-core>=1.2,<2",
+    "langchain-google-genai>=4.0,<5",
+    "langchain-ollama>=1.0,<2",
+    "langchain-openai>=1.1,<2",
+    "langchain-openrouter>=0.1,<1",
     "weaviate-client>=4.0.0",
-    "langchain-ollama>=0.3.0",
     "youtube-transcript-api>=1.0.0",
-    "pydantic>=2.5.0",
-    "pydantic-settings>=2.0.0",
-    "python-dotenv>=1.0.0",
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.13,<3",
     "firecrawl-py>=1.0.0",
     "pyyaml>=6.0.0",
-    "langchain-weaviate>=0.0.6",
     "mistralai>=1.12.3",
     "yt-dlp>=2026.3.13",
     "tenacity>=9.1.4",
