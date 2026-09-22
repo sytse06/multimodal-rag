@@ -462,6 +462,11 @@ dependency and Python-version documentation
 
 - Add typed provider and model registry entries for OpenRouter, OpenAI, Gemini, and
   Ollama, including display name and streaming, vision, and reasoning capabilities
+- Extend `src/multimodal_rag/models/config.py` with the typed provider/model selection
+  contract consumed by the registry and factory; provider identity must remain explicit
+- Keep `.env.example` and `config/development.env` aligned with the supported provider
+  keys, endpoints, active provider, and active model so a colleague can configure the
+  application without editing source code
 - Centralize chat-model construction in one factory returning LangChain's
   `BaseChatModel`
 - Use the dedicated provider integrations (`ChatOpenRouter`, `ChatOpenAI`,
@@ -473,8 +478,28 @@ dependency and Python-version documentation
 - Make adding a model a configuration change and adding a provider a contained factory
   extension, not a Gradio rewrite
 
+**Acceptance criteria:**
+
+- The active provider and model are represented as an explicit typed selection; a model
+  name or slash format never determines the provider
+- `.env.example` documents every supported chat provider's credential, endpoint, active
+  provider, and active model settings without containing real secrets
+- The registry exposes only providers with valid configuration and never exposes API
+  keys through model data, UI choices, serialization, or logs
+- The factory returns the correct dedicated LangChain chat integration for OpenRouter,
+  OpenAI, Gemini, and Ollama, with provider-specific settings applied consistently
+- The existing cited-answer and KB-article paths work through the central factory
+  without provider-specific branches in `app.py`
+- Gradio model choices come from the registry; adding a model does not require editing
+  the Gradio component code
+- Changing chat provider/model leaves embedding provider, embedding model, and existing
+  Weaviate vector compatibility unchanged
+- Factory, registry, configuration, and application-routing tests pass without network
+  calls, and the existing Gradio smoke test succeeds with the configured provider
+
 **Scope:** `src/multimodal_rag/models/config.py`,
-`src/multimodal_rag/models/llm.py`, provider-registry models and factory tests
+`src/multimodal_rag/models/llm.py`, `.env.example`, `config/development.env`,
+provider-registry models, application-routing tests, and factory tests
 
 ### INFER-004 — Provider-neutral Streaming Inference
 
