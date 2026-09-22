@@ -234,6 +234,37 @@ class TestGenerateCitedAnswer:
         assert events[-1].error is not None
         assert "provider secret" not in events[-1].error
 
+    def test_empty_stream_still_completes_with_citations(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = []
+
+        events = list(stream_cited_answer("question", [_video_result()], mock_llm))
+
+        assert [event.event_type for event in events] == ["complete"]
+        assert events[0].answer is not None
+        assert events[0].answer.answer == ""
+
+    def test_usage_from_response_metadata_is_normalized(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = [
+            AIMessageChunk(
+                content="Answer.",
+                response_metadata={
+                    "token_usage": {
+                        "prompt_tokens": 4,
+                        "completion_tokens": 3,
+                        "total_tokens": 7,
+                    }
+                },
+            )
+        ]
+
+        events = list(stream_cited_answer("question", [_video_result()], mock_llm))
+
+        assert events[-1].usage is not None
+        assert events[-1].usage.input_tokens == 4
+        assert events[-1].usage.output_tokens == 3
+
     def test_stream_cancellation_does_not_complete(self) -> None:
         mock_llm = MagicMock()
         mock_llm.stream.return_value = [
@@ -359,6 +390,19 @@ class TestGenerateKbArticle:
         assert events[-1].article is not None
         assert "## Sources" in events[-1].article
 
+    def test_article_stream_cancellation_is_not_complete(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = [AIMessageChunk(content="Partial.")]
+        cancel_event = Event()
+        cancel_event.set()
+
+        events = list(
+            stream_kb_article(self._answer(), mock_llm, cancel_event=cancel_event)
+        )
+
+        assert events[-1].event_type == "cancelled"
+        assert events[-1].article is None
+
     @pytest.mark.anyio
     async def test_async_stream_matches_sync_contract(self) -> None:
         mock_llm = MagicMock()
@@ -376,6 +420,26 @@ class TestGenerateKbArticle:
 
         assert events[-1].event_type == "complete"
         assert events[-1].answer is not None
+
+    @pytest.mark.anyio
+    async def test_async_stream_error_is_safe(self) -> None:
+        mock_llm = MagicMock()
+
+        async def failing_chunks() -> object:
+            raise RuntimeError("provider secret must not leak")
+            yield AIMessageChunk(content="unreachable")
+
+        mock_llm.astream.return_value = failing_chunks()
+        events = [
+            event
+            async for event in astream_cited_answer(
+                "question", [_video_result()], mock_llm
+            )
+        ]
+
+        assert events[-1].event_type == "error"
+        assert events[-1].error is not None
+        assert "provider secret" not in events[-1].error
 
 
 class TestStripCodeFence:

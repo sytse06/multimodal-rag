@@ -13,6 +13,7 @@ from multimodal_rag.models.inference import InferenceEvent, TokenUsage
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 
 logger = logging.getLogger(__name__)
+DEFAULT_CONTEXT_TOKENS = 6000
 
 SYSTEM_PROMPT = """\
 You are a support assistant for Paro Software. Answer the user's question \
@@ -159,7 +160,7 @@ def stream_cited_answer(
     *,
     provider: str | None = None,
     model: str | None = None,
-    max_context_tokens: int | None = None,
+    max_context_tokens: int | None = DEFAULT_CONTEXT_TOKENS,
     cancel_event: Event | None = None,
 ) -> Iterator[InferenceEvent]:
     """Stream a cited answer while emitting a finalized answer event."""
@@ -442,7 +443,7 @@ async def astream_cited_answer(
     *,
     provider: str | None = None,
     model: str | None = None,
-    max_context_tokens: int | None = None,
+    max_context_tokens: int | None = DEFAULT_CONTEXT_TOKENS,
     cancel_event: AsyncEvent | None = None,
 ) -> AsyncIterator[InferenceEvent]:
     """Asynchronously stream a cited answer with the same event contract."""

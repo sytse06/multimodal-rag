@@ -129,12 +129,20 @@ class ChatSettings(BaseModel):
 
     config: ProviderConfig = Field(default_factory=OpenRouterProviderConfig)
     temperature: float = 0.3
+    max_context_tokens: int = 6000
 
     @field_validator("temperature")
     @classmethod
     def validate_temperature(cls, value: float) -> float:
         if not 0 <= value <= 2:
             raise ValueError("temperature must be between 0 and 2")
+        return value
+
+    @field_validator("max_context_tokens")
+    @classmethod
+    def validate_context_tokens(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("max_context_tokens must be greater than zero")
         return value
 
     @model_validator(mode="after")
@@ -349,6 +357,7 @@ class AppSettings(BaseSettings):
                 "temperature": cls._value(
                     data, "llm_temperature", cls._value(data, "temperature", 0.3)
                 ),
+                "max_context_tokens": cls._value(data, "llm_context_tokens", 6000),
             }
         if "embeddings" not in data:
             provider = cls._value(data, "embedding_provider", "openrouter")
