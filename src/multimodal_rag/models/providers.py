@@ -40,14 +40,14 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ),
     ModelSpec(
         provider="gemini",
-        model="gemini-2.5-flash",
-        display_name="Gemini — 2.5 Flash",
+        model="gemini-3.6-flash",
+        display_name="Gemini — 3.6 Flash",
         capabilities=ModelCapabilities(vision=True),
     ),
     ModelSpec(
         provider="ollama",
-        model="llama3.2",
-        display_name="Ollama — Llama 3.2",
+        model="nemotron-3.5-lightning:30b-mlx",
+        display_name="Ollama — Nemotron 3.5 Lightning 30B MLX",
     ),
 )
 

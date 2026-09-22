@@ -22,6 +22,7 @@ class TestCreateChatModel:
         )
         llm = create_chat_model(settings)
         assert isinstance(llm, ChatOpenRouter)
+        assert llm.client.sdk_configuration.timeout_ms == 60_000
 
     @patch.dict(
         "os.environ",
@@ -38,6 +39,7 @@ class TestCreateChatModel:
         )
         llm = create_chat_model(settings)
         assert isinstance(llm, ChatOllama)
+        assert llm.model == "nemotron-3.5-lightning:30b-mlx"
 
     @patch.dict(
         "os.environ",
@@ -93,7 +95,7 @@ class TestCreateChatModel:
         )
         llm = create_chat_model(
             settings,
-            ModelSelection(provider="gemini", model="gemini-2.5-flash"),
+            ModelSelection(provider="gemini", model="gemini-3.6-flash"),
         )
         assert isinstance(llm, ChatGoogleGenerativeAI)
 

@@ -104,13 +104,13 @@ class OpenAIProviderConfig(_ProviderConfig):
 
 class GeminiProviderConfig(_ProviderConfig):
     provider: Literal["gemini"] = "gemini"
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.6-flash"
     base_url: AnyHttpUrl = AnyHttpUrl("https://generativelanguage.googleapis.com")
 
 
 class OllamaProviderConfig(_ProviderConfig):
     provider: Literal["ollama"] = "ollama"
-    model: str = "llama3.2"
+    model: str = "nemotron-3.5-lightning:30b-mlx"
     api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:11434")
 
@@ -333,7 +333,17 @@ class AppSettings(BaseSettings):
 
         if "chat" not in data:
             provider = cls._value(data, "llm_provider", "openrouter")
-            model = cls._value(data, "llm_model", "google/gemini-3-flash-preview")
+            default_models = {
+                "openrouter": "google/gemini-3-flash-preview",
+                "openai": "gpt-4o-mini",
+                "gemini": "gemini-3.6-flash",
+                "ollama": "nemotron-3.5-lightning:30b-mlx",
+            }
+            model = cls._value(
+                data,
+                "llm_model",
+                default_models.get(str(provider), "google/gemini-3-flash-preview"),
+            )
             data["chat"] = {
                 "config": cls._provider_payload(data, provider, model),
                 "temperature": cls._value(

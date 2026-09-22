@@ -10,6 +10,7 @@ from multimodal_rag.query.generator import (
     KB_ARTICLE_PROMPT,
     SYSTEM_PROMPT,
     _build_citations,
+    _content_to_text,
     _replace_refs_with_links,
     _strip_code_fence,
     generate_cited_answer,
@@ -95,6 +96,29 @@ class TestReplaceRefsWithLinks:
         assert "[1]" not in replaced
 
 
+class TestContentToText:
+    def test_plain_text_is_unchanged(self) -> None:
+        assert _content_to_text("Answer.") == "Answer."
+
+    def test_extracts_text_from_structured_blocks(self) -> None:
+        content = [
+            {
+                "type": "text",
+                "text": "First part. ",
+                "extras": {"signature": "ignored"},
+            },
+            {"type": "text", "text": "Second part."},
+        ]
+        assert _content_to_text(content) == "First part. Second part."
+
+    def test_ignores_non_text_blocks(self) -> None:
+        content = [
+            {"type": "image", "data": "..."},
+            {"type": "text", "text": "Answer."},
+        ]
+        assert _content_to_text(content) == "Answer."
+
+
 class TestGenerateCitedAnswer:
     def test_empty_results_returns_fallback(self) -> None:
         mock_llm = MagicMock()
@@ -117,6 +141,26 @@ class TestGenerateCitedAnswer:
         assert "Quickstart @ 00:42" in answer.answer
         assert len(answer.citations) == 1
         mock_llm.invoke.assert_called_once()
+
+    def test_normalizes_structured_provider_content(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": "Use [1] to zoom.",
+                    "extras": {"signature": "provider metadata"},
+                }
+            ]
+        )
+
+        answer = generate_cited_answer(
+            "How do I zoom?", [_video_result()], llm=mock_llm
+        )
+
+        assert "Use " in answer.answer
+        assert "provider metadata" not in answer.answer
+        assert "'type': 'text'" not in answer.answer
 
     def test_passes_context_to_llm(self) -> None:
         mock_llm = MagicMock()

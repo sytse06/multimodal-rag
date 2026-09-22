@@ -55,7 +55,7 @@ def create_chat_model(
             api_key=api_key,
             base_url=endpoint,
             temperature=settings.chat.temperature,
-            timeout=int(settings.chat.timeout),
+            timeout=int(settings.chat.timeout * 1000),
             max_retries=settings.chat.max_retries,
         )
     if provider == "openai":

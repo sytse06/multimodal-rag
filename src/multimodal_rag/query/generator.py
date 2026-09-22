@@ -29,6 +29,25 @@ USER_TEMPLATE = """\
 {question}"""
 
 
+def _content_to_text(content: object) -> str:
+    """Convert plain or structured LangChain message content to text."""
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, (list, tuple)):
+        text_parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                text = block.get("text")
+            else:
+                text = getattr(block, "text", None)
+            if isinstance(text, str):
+                text_parts.append(text)
+        return "".join(text_parts)
+
+    return str(content) if content else ""
+
+
 def generate_cited_answer(
     question: str,
     results: list[SearchResult],
@@ -51,7 +70,7 @@ def generate_cited_answer(
         HumanMessage(content=user_message),
     ])
 
-    raw_answer = str(response.content) if response.content else ""
+    raw_answer = _content_to_text(response.content)
 
     citations = _build_citations(results)
     answer_with_links = _replace_refs_with_links(raw_answer, results)
@@ -141,7 +160,7 @@ def generate_kb_article(
         SystemMessage(content=KB_ARTICLE_PROMPT),
         HumanMessage(content=user_message),
     ])
-    raw = str(response.content) if response.content else ""
+    raw = _content_to_text(response.content)
     article = _strip_code_fence(raw)
 
     if answer.citations:
