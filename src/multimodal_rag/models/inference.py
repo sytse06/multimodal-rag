@@ -8,7 +8,7 @@ from multimodal_rag.models.query import CitedAnswer
 
 
 class TokenUsage(BaseModel):
-    """Provider-normalized token accounting."""
+    """Provider-reported token accounting when available."""
 
     input_tokens: int | None = None
     output_tokens: int | None = None

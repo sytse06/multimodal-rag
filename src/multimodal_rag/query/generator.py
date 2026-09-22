@@ -66,6 +66,15 @@ def _format_context_budgeted(
     if max_context_tokens <= 0:
         raise ValueError("max_context_tokens must be greater than zero")
 
+    return _truncate_context(context, max_context_tokens)
+
+
+def _truncate_context(context: str, max_context_tokens: int | None) -> str:
+    """Truncate prompt context to an approximate token budget."""
+    if max_context_tokens is None:
+        return context
+    if max_context_tokens <= 0:
+        raise ValueError("max_context_tokens must be greater than zero")
     max_chars = max_context_tokens * 4
     if len(context) <= max_chars:
         return context
@@ -340,6 +349,7 @@ def _article_user_message(
     answer: CitedAnswer,
     results: list[SearchResult] | None,
     question: str,
+    max_context_tokens: int | None = DEFAULT_CONTEXT_TOKENS,
 ) -> str:
     source_blocks: list[str] = []
     if results:
@@ -352,7 +362,8 @@ def _article_user_message(
     if question:
         parts.append(f"## Question\n\n{question}\n\n")
     parts.append("## Source Material\n")
-    parts.append("\n\n".join(source_blocks) if source_blocks else answer.answer)
+    source_material = "\n\n".join(source_blocks) if source_blocks else answer.answer
+    parts.append(_truncate_context(source_material, max_context_tokens))
     return "\n".join(parts)
 
 
@@ -364,6 +375,7 @@ def stream_kb_article(
     *,
     provider: str | None = None,
     model: str | None = None,
+    max_context_tokens: int | None = DEFAULT_CONTEXT_TOKENS,
     cancel_event: Event | None = None,
 ) -> Iterator[InferenceEvent]:
     """Stream a knowledge-base article draft and append citations on completion."""
@@ -374,7 +386,11 @@ def stream_kb_article(
     first_token_ms: float | None = None
     messages = [
         SystemMessage(content=KB_ARTICLE_PROMPT),
-        HumanMessage(content=_article_user_message(answer, results, question)),
+        HumanMessage(
+            content=_article_user_message(
+                answer, results, question, max_context_tokens
+            )
+        ),
     ]
     try:
         for chunk in llm.stream(messages):
@@ -536,6 +552,7 @@ async def astream_kb_article(
     *,
     provider: str | None = None,
     model: str | None = None,
+    max_context_tokens: int | None = DEFAULT_CONTEXT_TOKENS,
     cancel_event: AsyncEvent | None = None,
 ) -> AsyncIterator[InferenceEvent]:
     """Asynchronously stream a knowledge-base article draft."""
@@ -546,7 +563,11 @@ async def astream_kb_article(
     first_token_ms: float | None = None
     messages = [
         SystemMessage(content=KB_ARTICLE_PROMPT),
-        HumanMessage(content=_article_user_message(answer, results, question)),
+        HumanMessage(
+            content=_article_user_message(
+                answer, results, question, max_context_tokens
+            )
+        ),
     ]
     try:
         async for chunk in llm.astream(messages):

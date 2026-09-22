@@ -403,6 +403,24 @@ class TestGenerateKbArticle:
         assert events[-1].event_type == "cancelled"
         assert events[-1].article is None
 
+    def test_article_stream_applies_context_budget(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = []
+        long_result = _video_result()
+        long_result.text = "word " * 100
+
+        list(
+            stream_kb_article(
+                self._answer(),
+                mock_llm,
+                results=[long_result],
+                max_context_tokens=8,
+            )
+        )
+
+        message = mock_llm.stream.call_args[0][0][1].content
+        assert "Additional source context omitted" in message
+
     @pytest.mark.anyio
     async def test_async_stream_matches_sync_contract(self) -> None:
         mock_llm = MagicMock()
