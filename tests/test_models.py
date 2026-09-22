@@ -492,6 +492,7 @@ class TestAppSettings:
         assert settings.weaviate_url == "http://localhost:8080"
         assert settings.chunk_size == 400
         assert settings.top_k == 10
+        assert settings.chat.max_context_tokens == 6000
 
     def test_nested_provider_settings_and_secret_redaction(self) -> None:
         settings = AppSettings(
@@ -521,6 +522,7 @@ class TestAppSettings:
     ) -> None:
         monkeypatch.setenv("LLM_PROVIDER", "ollama")
         monkeypatch.setenv("LLM_MODEL", "llama-test")
+        monkeypatch.setenv("LLM_CONTEXT_TOKENS", "1200")
         monkeypatch.setenv("EMBEDDING_PROVIDER", "ollama")
         monkeypatch.setenv("GRADIO_SHARE", "true")
 
@@ -528,6 +530,7 @@ class TestAppSettings:
 
         assert settings.chat.provider == "ollama"
         assert settings.chat.model == "llama-test"
+        assert settings.chat.max_context_tokens == 1200
         assert settings.embeddings.provider == "ollama"
         assert settings.gradio_share is True
 
@@ -544,4 +547,11 @@ class TestAppSettings:
                 _env_file=None,
                 openrouter_api_key="test",
                 llm_timeout=0,
+            )
+
+        with pytest.raises(ValidationError, match="max_context_tokens"):
+            AppSettings(
+                _env_file=None,
+                openrouter_api_key="test",
+                llm_context_tokens=0,
             )

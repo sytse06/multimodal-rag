@@ -514,8 +514,8 @@ provider-registry models, application-routing tests, and factory tests
 - Build the final message by combining chunks so completion metadata and token usage
   are retained
 - Normalize provider usage metadata into a common shape containing prompt tokens,
-  completion tokens, total tokens, finish reason, and whether values were reported
-  or estimated
+  completion tokens, total tokens, and finish reason when the provider reports them;
+  do not invent estimates when usage is unavailable
 - Record time-to-first-token, total generation latency, provider, model, and final
   completion status without logging secrets or prompt contents
 - Enforce a predictable context budget before generation; reduce or truncate
