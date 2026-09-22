@@ -220,6 +220,9 @@ class TestGenerateCitedAnswer:
         assert events[-1].usage is not None
         assert events[-1].usage.total_tokens == 5
         assert events[-1].finish_reason == "stop"
+        assert events[-1].elapsed_ms is not None
+        assert events[-1].time_to_first_token_ms is not None
+        assert events[-1].time_to_first_token_ms <= events[-1].elapsed_ms
 
     def test_stream_error_is_safe(self) -> None:
         mock_llm = MagicMock()

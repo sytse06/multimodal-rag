@@ -26,6 +26,8 @@ class InferenceEvent(BaseModel):
     model: str | None = None
     usage: TokenUsage | None = None
     finish_reason: str | None = None
+    elapsed_ms: float | None = None
+    time_to_first_token_ms: float | None = None
     answer: CitedAnswer | None = None
     article: str | None = None
     error: str | None = None

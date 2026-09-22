@@ -4,6 +4,7 @@ import logging
 from asyncio import Event as AsyncEvent
 from collections.abc import AsyncIterator, Iterator, Mapping
 from threading import Event
+from time import monotonic
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -179,6 +180,8 @@ def stream_cited_answer(
     parts: list[str] = []
     usage: TokenUsage | None = None
     finish_reason: str | None = None
+    started_at = monotonic()
+    first_token_ms: float | None = None
     try:
         for chunk in llm.stream(
             _answer_messages(question, results, max_context_tokens)
@@ -190,11 +193,15 @@ def stream_cited_answer(
                     provider=provider,
                     model=model,
                     usage=usage,
+                    elapsed_ms=(monotonic() - started_at) * 1000,
+                    time_to_first_token_ms=first_token_ms,
                 )
                 return
             delta = _content_to_text(chunk.content)
             if delta:
                 parts.append(delta)
+                if first_token_ms is None:
+                    first_token_ms = (monotonic() - started_at) * 1000
             usage = _usage_from_chunk(chunk) or usage
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
@@ -204,6 +211,8 @@ def stream_cited_answer(
                 provider=provider,
                 model=model,
                 usage=usage,
+                elapsed_ms=(monotonic() - started_at) * 1000,
+                time_to_first_token_ms=first_token_ms,
             )
     except Exception as exc:
         yield InferenceEvent(
@@ -212,6 +221,8 @@ def stream_cited_answer(
             provider=provider,
             model=model,
             usage=usage,
+            elapsed_ms=(monotonic() - started_at) * 1000,
+            time_to_first_token_ms=first_token_ms,
             error=_safe_error(exc),
         )
         return
@@ -228,6 +239,8 @@ def stream_cited_answer(
         model=model,
         usage=usage,
         finish_reason=finish_reason,
+        elapsed_ms=(monotonic() - started_at) * 1000,
+        time_to_first_token_ms=first_token_ms,
         answer=answer,
     )
 
@@ -356,6 +369,8 @@ def stream_kb_article(
     parts: list[str] = []
     usage: TokenUsage | None = None
     finish_reason: str | None = None
+    started_at = monotonic()
+    first_token_ms: float | None = None
     messages = [
         SystemMessage(content=KB_ARTICLE_PROMPT),
         HumanMessage(content=_article_user_message(answer, results, question)),
@@ -369,11 +384,15 @@ def stream_kb_article(
                     provider=provider,
                     model=model,
                     usage=usage,
+                    elapsed_ms=(monotonic() - started_at) * 1000,
+                    time_to_first_token_ms=first_token_ms,
                 )
                 return
             delta = _content_to_text(chunk.content)
             if delta:
                 parts.append(delta)
+                if first_token_ms is None:
+                    first_token_ms = (monotonic() - started_at) * 1000
             usage = _usage_from_chunk(chunk) or usage
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
@@ -383,6 +402,8 @@ def stream_kb_article(
                 provider=provider,
                 model=model,
                 usage=usage,
+                elapsed_ms=(monotonic() - started_at) * 1000,
+                time_to_first_token_ms=first_token_ms,
             )
     except Exception as exc:
         yield InferenceEvent(
@@ -391,6 +412,8 @@ def stream_kb_article(
             provider=provider,
             model=model,
             usage=usage,
+            elapsed_ms=(monotonic() - started_at) * 1000,
+            time_to_first_token_ms=first_token_ms,
             error=_safe_error(exc),
         )
         return
@@ -406,6 +429,8 @@ def stream_kb_article(
         model=model,
         usage=usage,
         finish_reason=finish_reason,
+        elapsed_ms=(monotonic() - started_at) * 1000,
+        time_to_first_token_ms=first_token_ms,
         article=article,
     )
 
@@ -438,6 +463,8 @@ async def astream_cited_answer(
     parts: list[str] = []
     usage: TokenUsage | None = None
     finish_reason: str | None = None
+    started_at = monotonic()
+    first_token_ms: float | None = None
     try:
         async for chunk in llm.astream(
             _answer_messages(question, results, max_context_tokens)
@@ -449,11 +476,15 @@ async def astream_cited_answer(
                     provider=provider,
                     model=model,
                     usage=usage,
+                    elapsed_ms=(monotonic() - started_at) * 1000,
+                    time_to_first_token_ms=first_token_ms,
                 )
                 return
             delta = _content_to_text(chunk.content)
             if delta:
                 parts.append(delta)
+                if first_token_ms is None:
+                    first_token_ms = (monotonic() - started_at) * 1000
             usage = _usage_from_chunk(chunk) or usage
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
@@ -463,6 +494,8 @@ async def astream_cited_answer(
                 provider=provider,
                 model=model,
                 usage=usage,
+                elapsed_ms=(monotonic() - started_at) * 1000,
+                time_to_first_token_ms=first_token_ms,
             )
     except Exception as exc:
         yield InferenceEvent(
@@ -471,6 +504,8 @@ async def astream_cited_answer(
             provider=provider,
             model=model,
             usage=usage,
+            elapsed_ms=(monotonic() - started_at) * 1000,
+            time_to_first_token_ms=first_token_ms,
             error=_safe_error(exc),
         )
         return
@@ -486,6 +521,8 @@ async def astream_cited_answer(
         model=model,
         usage=usage,
         finish_reason=finish_reason,
+        elapsed_ms=(monotonic() - started_at) * 1000,
+        time_to_first_token_ms=first_token_ms,
         answer=answer,
     )
 
@@ -504,6 +541,8 @@ async def astream_kb_article(
     parts: list[str] = []
     usage: TokenUsage | None = None
     finish_reason: str | None = None
+    started_at = monotonic()
+    first_token_ms: float | None = None
     messages = [
         SystemMessage(content=KB_ARTICLE_PROMPT),
         HumanMessage(content=_article_user_message(answer, results, question)),
@@ -517,11 +556,15 @@ async def astream_kb_article(
                     provider=provider,
                     model=model,
                     usage=usage,
+                    elapsed_ms=(monotonic() - started_at) * 1000,
+                    time_to_first_token_ms=first_token_ms,
                 )
                 return
             delta = _content_to_text(chunk.content)
             if delta:
                 parts.append(delta)
+                if first_token_ms is None:
+                    first_token_ms = (monotonic() - started_at) * 1000
             usage = _usage_from_chunk(chunk) or usage
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
@@ -531,6 +574,8 @@ async def astream_kb_article(
                 provider=provider,
                 model=model,
                 usage=usage,
+                elapsed_ms=(monotonic() - started_at) * 1000,
+                time_to_first_token_ms=first_token_ms,
             )
     except Exception as exc:
         yield InferenceEvent(
@@ -539,6 +584,8 @@ async def astream_kb_article(
             provider=provider,
             model=model,
             usage=usage,
+            elapsed_ms=(monotonic() - started_at) * 1000,
+            time_to_first_token_ms=first_token_ms,
             error=_safe_error(exc),
         )
         return
@@ -554,5 +601,7 @@ async def astream_kb_article(
         model=model,
         usage=usage,
         finish_reason=finish_reason,
+        elapsed_ms=(monotonic() - started_at) * 1000,
+        time_to_first_token_ms=first_token_ms,
         article=article,
     )
