@@ -2,33 +2,85 @@
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
+from pydantic import SecretStr
 
-from multimodal_rag.models.config import AppSettings
+from multimodal_rag.models.config import AppSettings, ModelSelection
 
 
-def create_chat_model(settings: AppSettings) -> BaseChatModel:
-    """Create a LangChain chat model based on the configured provider."""
-    if settings.chat.provider == "ollama":
+def _provider_credentials(settings: AppSettings, provider: str) -> SecretStr | None:
+    if provider == "ollama":
+        return None
+    credentials = (
+        settings.chat.api_key
+        if provider == settings.chat.provider
+        else getattr(settings.credentials, f"{provider}_api_key")
+    )
+    if not isinstance(credentials, SecretStr):
+        raise ValueError(f"Unsupported chat provider: {provider}")
+    if not credentials.get_secret_value():
+        raise ValueError(f"chat.{provider}.api_key is required")
+    return credentials
+
+
+def _provider_endpoint(settings: AppSettings, provider: str) -> str:
+    if provider == settings.chat.provider:
+        return str(settings.chat.base_url)
+    return str(getattr(settings.endpoints, f"{provider}_base_url"))
+
+
+def create_chat_model(
+    settings: AppSettings, selection: ModelSelection | None = None
+) -> BaseChatModel:
+    """Create a LangChain chat model from an explicit provider/model selection."""
+    selection = selection or ModelSelection(
+        provider=settings.chat.provider,
+        model=settings.chat.model,
+    )
+    provider = selection.provider
+    if provider == "ollama":
         from langchain_ollama import ChatOllama
 
         return ChatOllama(
-            model=settings.chat.model,
-            base_url=str(settings.chat.base_url),
+            model=selection.model,
+            base_url=_provider_endpoint(settings, provider),
             temperature=settings.chat.temperature,
         )
-    if settings.chat.provider != "openrouter":
-        raise ValueError(
-            f"Chat provider '{settings.chat.provider}' is configured but not yet"
-            " supported by the current model factory"
-        )
-    from langchain_openai import ChatOpenAI
+    api_key = _provider_credentials(settings, provider)
+    endpoint = _provider_endpoint(settings, provider)
+    if provider == "openrouter":
+        from langchain_openrouter import ChatOpenRouter
 
-    return ChatOpenAI(
-        model=settings.chat.model,
-        api_key=settings.chat.api_key,
-        base_url=str(settings.chat.base_url),
-        temperature=settings.chat.temperature,
-    )
+        return ChatOpenRouter(
+            model=selection.model,
+            api_key=api_key,
+            base_url=endpoint,
+            temperature=settings.chat.temperature,
+            timeout=int(settings.chat.timeout),
+            max_retries=settings.chat.max_retries,
+        )
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=selection.model,
+            api_key=api_key,
+            base_url=endpoint,
+            temperature=settings.chat.temperature,
+            timeout=settings.chat.timeout,
+            max_retries=settings.chat.max_retries,
+        )
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(
+            model=selection.model,
+            api_key=api_key,
+            client_options={"api_endpoint": endpoint},
+            temperature=settings.chat.temperature,
+            request_timeout=settings.chat.timeout,
+            retries=settings.chat.max_retries,
+        )
+    raise ValueError(f"Unsupported chat provider: {provider}")
 
 
 def create_vision_llm(settings: AppSettings) -> BaseChatModel:
@@ -39,9 +91,9 @@ def create_vision_llm(settings: AppSettings) -> BaseChatModel:
     """
     if not settings.vision_model:
         raise ValueError("vision_model is not configured in settings")
-    from langchain_openai import ChatOpenAI
+    from langchain_openrouter import ChatOpenRouter
 
-    return ChatOpenAI(
+    return ChatOpenRouter(
         model=settings.vision_model,
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,

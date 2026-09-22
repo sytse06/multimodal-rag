@@ -17,6 +17,48 @@ ChatProvider: TypeAlias = Literal["openrouter", "openai", "gemini", "ollama"]
 EmbeddingProvider: TypeAlias = Literal["openrouter", "ollama"]
 
 
+class ModelCapabilities(BaseModel):
+    """Capabilities advertised by a registered chat model."""
+
+    streaming: bool = True
+    vision: bool = False
+    reasoning: bool = False
+
+
+class ModelSpec(BaseModel):
+    """Provider-qualified model metadata used by the factory and UI."""
+
+    provider: ChatProvider
+    model: str
+    display_name: str
+    capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
+
+    @field_validator("model", "display_name")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model metadata must not be empty")
+        return value.strip()
+
+    @property
+    def selection_key(self) -> str:
+        return f"{self.provider}:{self.model}"
+
+
+class ModelSelection(BaseModel):
+    """An explicit provider/model choice made by the application or UI."""
+
+    provider: ChatProvider
+    model: str
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("selected model must not be empty")
+        return value.strip()
+
+
 class _ProviderConfig(BaseModel):
     """Shared provider configuration and validation."""
 
