@@ -28,7 +28,7 @@ with section headings.
 
 ## Prerequisites
 
-- Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker
+- Python 3.12–3.14, [uv](https://docs.astral.sh/uv/), Docker
 - Credentials for the providers you plan to use: [OpenRouter](https://openrouter.ai/),
   [OpenAI](https://platform.openai.com/), or [Gemini](https://ai.google.dev/); Ollama
   can run locally without an API key
@@ -73,7 +73,7 @@ then `.env`, then typed defaults. `make dev` copies the safe development templat
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Python 3.12 |
+| Language | Python 3.12–3.14 |
 | Package manager | uv |
 | RAG framework | LangChain |
 | Vector store | Weaviate |

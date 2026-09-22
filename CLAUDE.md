@@ -7,7 +7,7 @@ YouTube tutorial transcripts and web knowledge bases into Weaviate, enabling sup
 staff to ask natural language questions and receive cited answers with clickable video
 timestamps and source page links.
 
-**Tech stack:** Python, LangChain, Gradio, Weaviate, OpenRouter, youtube-transcript-api, Firecrawl, Mistral (Voxtral), yt-dlp
+**Tech stack:** Python 3.12–3.14, LangChain Core with OpenRouter/OpenAI/Gemini/Ollama integrations, Gradio, Weaviate, youtube-transcript-api, Firecrawl, Mistral (Voxtral), yt-dlp
 
 ## Development Commands
 
