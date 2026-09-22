@@ -406,10 +406,12 @@ implementation details.
 - A colleague can switch chat provider and model without restarting the application
 - OpenRouter, OpenAI, Gemini, and Ollama use the same cited-answer workflow
 - Answers and article drafts appear progressively while generation is running
+- A running generation can be cancelled cleanly, and context is reduced predictably
+  when the configured generation budget would otherwise be exceeded
 - Changing the chat provider never changes the embedding provider or invalidates the
   vectors already stored in Weaviate
-- Provider, model, completion status, token usage, and safe error context are available
-  for operational logging
+- Provider, model, completion status, token usage, latency, and safe error context are
+  available for operational logging
 
 ### INFER-001 — Typed Configuration and Colleague Onboarding
 
@@ -511,6 +513,15 @@ provider-registry models, application-routing tests, and factory tests
   safe response metadata
 - Build the final message by combining chunks so completion metadata and token usage
   are retained
+- Normalize provider usage metadata into a common shape containing prompt tokens,
+  completion tokens, total tokens, finish reason, and whether values were reported
+  or estimated
+- Record time-to-first-token, total generation latency, provider, model, and final
+  completion status without logging secrets or prompt contents
+- Enforce a predictable context budget before generation; reduce or truncate
+  retrieved context explicitly when the configured budget would be exceeded
+- Support cancellation and interrupted streams without returning a misleading
+  completed answer or leaving the request in a running state
 - Stream numbered citation references during generation, then perform citation-link
   replacement once on the completed answer; never rewrite partial token chunks
 - Preserve blocking `invoke()` where progressive output provides no user benefit, such
@@ -518,7 +529,8 @@ provider-registry models, application-routing tests, and factory tests
 - Normalize provider errors into safe, actionable application errors without hiding
   the original cause from logs
 - Test multi-chunk responses, empty streams, interrupted streams, provider errors,
-  usage metadata, and final citation construction without network calls
+  structured provider content, usage metadata, context-budget handling, cancellation,
+  latency events, and final citation construction without network calls
 
 **Scope:** `src/multimodal_rag/query/generator.py`, inference event models,
 streaming and error-handling tests
@@ -529,11 +541,16 @@ streaming and error-handling tests
 
 - Add separate provider and model selectors; changing the provider filters the model
   choices to compatible configured entries
+- Use provider/model capability flags to hide or disable unsupported streaming and
+  multimodal selections, with an explanatory status instead of a request that is
+  known to fail
 - Clearly explain unavailable providers instead of allowing a request that is known to
   fail
 - Adapt streaming inference events into cumulative Gradio chatbot and walkthrough
   updates using generator callbacks
 - Show immediate progress while retrieval and generation are running
+- Show generation status, cancellation state, and normalized token/latency metadata
+  after completion when the provider reports it
 - Preserve the final `CitedAnswer`, retrieved chunks, question, selected provider, and
   selected model in state for the review-and-save workflow
 - Keep provider construction, routing, inference orchestration, and article persistence
@@ -551,7 +568,10 @@ streaming and error-handling tests
   ingestion prerequisites, startup, and common failure recovery
 - Document how to add a model and how to implement another provider
 - Add mocked contract tests proving each provider satisfies the same streaming and
-  metadata behaviour
+  metadata behaviour, including structured content blocks and normalized usage
+- Qualify the provider capability registry for streaming, vision, reasoning, and
+  tool-calling support; capability flags are metadata only and do not add tool use
+  to Epic 8
 - Add startup tests for configured, unavailable, and misconfigured providers
 - Run the full quality and test suite across the supported Python versions
 - Manually smoke-test OpenRouter, OpenAI, Gemini, and Ollama through Gradio, including
