@@ -73,7 +73,22 @@ def test_model_choices_can_be_filtered_by_provider() -> None:
 
     choices = model_choices(settings, provider="openai")
 
-    assert choices == (("OpenAI — GPT-4o Mini", "openai:gpt-4o-mini"),)
+    assert choices == (("OpenAI — GPT-6 Luna", "openai:gpt-6-luna"),)
+
+
+def test_nvidia_provider_exposes_requested_model_when_configured() -> None:
+    settings = AppSettings(
+        _env_file=None,
+        nvidia_api_key="nvidia-key",
+        llm_provider="nvidia",
+        embedding_provider="ollama",
+    )
+
+    assert ("NVIDIA", "nvidia") in provider_choices(settings)
+    assert (
+        "NVIDIA — Nemotron 3 Ultra 550B A55B",
+        "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+    ) in model_choices(settings, provider="nvidia")
 
 
 def test_provider_availability_never_exposes_credentials() -> None:

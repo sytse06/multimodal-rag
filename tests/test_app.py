@@ -30,16 +30,16 @@ class TestResolveSelection:
 
     def test_accepts_matching_provider_and_model(self) -> None:
         selection = resolve_selection(
-            "openai", "openai:gpt-4o-mini", self._settings()
+            "openai", "openai:gpt-6-luna", self._settings()
         )
         assert selection.provider == "openai"
-        assert selection.model == "gpt-4o-mini"
+        assert selection.model == "gpt-6-luna"
 
     def test_rejects_model_from_another_provider(self) -> None:
         with pytest.raises(ValueError, match="does not belong"):
             resolve_selection(
                 "ollama",
-                "openai:gpt-4o-mini",
+                "openai:gpt-6-luna",
                 self._settings(),
             )
 

@@ -4,7 +4,11 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from multimodal_rag.models.config import AppSettings, ModelSelection
+from multimodal_rag.models.config import (
+    AppSettings,
+    ModelSelection,
+    NvidiaProviderConfig,
+)
 
 
 def _provider_credentials(settings: AppSettings, provider: str) -> SecretStr | None:
@@ -68,6 +72,26 @@ def create_chat_model(
             temperature=settings.chat.temperature,
             timeout=settings.chat.timeout,
             max_retries=settings.chat.max_retries,
+        )
+    if provider == "nvidia":
+        from langchain_openai import ChatOpenAI
+
+        nvidia_config = (
+            settings.chat.config
+            if isinstance(settings.chat.config, NvidiaProviderConfig)
+            else NvidiaProviderConfig()
+        )
+        return ChatOpenAI(
+            model=selection.model,
+            api_key=api_key,
+            base_url=endpoint,
+            temperature=settings.chat.temperature,
+            timeout=settings.chat.timeout,
+            max_retries=settings.chat.max_retries,
+            extra_body={
+                **nvidia_config.extra_body,
+                "max_tokens": nvidia_config.max_tokens,
+            },
         )
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI

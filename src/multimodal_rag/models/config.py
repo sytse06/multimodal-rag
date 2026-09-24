@@ -13,7 +13,9 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ChatProvider: TypeAlias = Literal["openrouter", "openai", "gemini", "ollama"]
+ChatProvider: TypeAlias = Literal[
+    "openrouter", "openai", "gemini", "ollama", "nvidia"
+]
 EmbeddingProvider: TypeAlias = Literal["openrouter", "ollama"]
 
 
@@ -115,11 +117,25 @@ class OllamaProviderConfig(_ProviderConfig):
     base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:11434")
 
 
+class NvidiaProviderConfig(_ProviderConfig):
+    provider: Literal["nvidia"] = "nvidia"
+    model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    base_url: AnyHttpUrl = AnyHttpUrl("https://integrate.api.nvidia.com/v1")
+    max_tokens: int = 1536
+    extra_body: dict[str, object] = Field(
+        default_factory=lambda: {
+            "chat_template_kwargs": {"enable_thinking": True},
+            "reasoning_budget": 1024,
+        }
+    )
+
+
 ProviderConfig: TypeAlias = Annotated[
     OpenRouterProviderConfig
     | OpenAIProviderConfig
     | GeminiProviderConfig
-    | OllamaProviderConfig,
+    | OllamaProviderConfig
+    | NvidiaProviderConfig,
     Field(discriminator="provider"),
 ]
 
@@ -265,6 +281,7 @@ class CredentialSettings(BaseModel):
     openrouter_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     openai_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     gemini_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
+    nvidia_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
 
 
 class ProviderEndpointSettings(BaseModel):
@@ -276,6 +293,9 @@ class ProviderEndpointSettings(BaseModel):
         "https://generativelanguage.googleapis.com"
     )
     ollama_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:11434")
+    nvidia_base_url: AnyHttpUrl = AnyHttpUrl(
+        "https://integrate.api.nvidia.com/v1"
+    )
 
 
 class AppSettings(BaseSettings):
@@ -323,6 +343,7 @@ class AppSettings(BaseSettings):
             "openai": "https://api.openai.com/v1",
             "gemini": "https://generativelanguage.googleapis.com",
             "ollama": "http://localhost:11434",
+            "nvidia": "https://integrate.api.nvidia.com/v1",
         }
         if provider_name not in defaults:
             raise ValueError(f"Unsupported chat provider: {provider_name}")
@@ -346,6 +367,7 @@ class AppSettings(BaseSettings):
                 "openai": "gpt-4o-mini",
                 "gemini": "gemini-3.6-flash",
                 "ollama": "nemotron-3.5-lightning:30b-mlx",
+                "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
             }
             model = cls._value(
                 data,
@@ -413,6 +435,7 @@ class AppSettings(BaseSettings):
                 "openrouter_api_key": cls._value(data, "openrouter_api_key", ""),
                 "openai_api_key": cls._value(data, "openai_api_key", ""),
                 "gemini_api_key": cls._value(data, "gemini_api_key", ""),
+                "nvidia_api_key": cls._value(data, "nvidia_api_key", ""),
             }
         if "endpoints" not in data:
             data["endpoints"] = {
@@ -429,6 +452,11 @@ class AppSettings(BaseSettings):
                 ),
                 "ollama_base_url": cls._value(
                     data, "ollama_base_url", "http://localhost:11434"
+                ),
+                "nvidia_base_url": cls._value(
+                    data,
+                    "nvidia_base_url",
+                    "https://integrate.api.nvidia.com/v1",
                 ),
             }
         return data

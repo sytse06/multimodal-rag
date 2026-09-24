@@ -68,7 +68,7 @@ and receive an accurate answer with links to the source material.
 *Acceptance criteria:*
 - Embeds user question via same embedding model as ingestion
 - Performs similarity search against Weaviate, retrieves top-k chunks (default k=10) with at least half the available slots reserved for video results
-- Passes retrieved chunks + user question to the configured OpenRouter, OpenAI, Gemini, or Ollama LLM
+- Passes retrieved chunks + user question to the configured OpenRouter, OpenAI, Gemini, NVIDIA NIM, or Ollama LLM
 - LLM generates a synthesized answer with inline citations
 - Each citation includes: source title, clickable URL (with `&t=Ns` for videos), relevance score
 - Displays conversation history within a session; each question is currently retrieved and generated independently
@@ -97,7 +97,7 @@ questions and see answers with clickable source links.
 - Web citations formatted as: `[Page Title](https://url)`
 - Relevance scores displayed per citation (e.g. percentage or bar)
 - Source type indicator (video icon vs page icon) per citation
-- Provider and model selectors showing only configured, usable combinations (OpenRouter, OpenAI, Gemini, and Ollama)
+- Provider and model selectors showing only configured, usable combinations (OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama)
 - Progressive answer updates while retrieval and generation are running
 - Clear conversation button
 
@@ -150,7 +150,7 @@ knowledge_bases:
 | Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers without code changes |
 | Embeddings | Configurable through OpenRouter or Ollama (for example, `openai/text-embedding-3-small` or `nomic-embed-text`) | LangChain interface enables provider diversity; independent from chat provider |
 | Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
-| LLM providers | OpenRouter, OpenAI, Gemini, and Ollama | Dedicated LangChain integrations behind one provider-neutral factory |
+| LLM providers | OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama | Dedicated LangChain integrations behind one provider-neutral factory |
 | Primary video transcription | Mistral Voxtral Mini + yt-dlp/ffmpeg | Segment-level audio transcription for the fused video pipeline |
 | Caption fallback | youtube-transcript-api | Used when `MISTRAL_API_KEY` is absent |
 | Visual understanding | Vision LLM via OpenRouter (e.g. GPT-4V / Gemini Flash) | Describes keyframes and web screenshots as text; uses existing OpenRouter config, no new API keys |
@@ -214,7 +214,7 @@ knowledge_bases:
 
 ## 7. Security Considerations
 
-- **API keys** — OpenRouter, OpenAI, Gemini, Firecrawl, and Mistral keys stored in `.env`, never committed; secrets are not shown in logs or serialized settings
+- **API keys** — OpenRouter, OpenAI, Gemini, NVIDIA, Firecrawl, and Mistral keys stored in `.env`, never committed; secrets are not shown in logs or serialized settings
 - **Weaviate** — local Docker instance, no authentication needed for v1
 - **Source content** — all sources are already public (YouTube, published knowledge bases)
 - **No user auth in v1** — internal tool, network-level access control assumed
@@ -241,7 +241,7 @@ knowledge_bases:
 | QUERY-001 | Retrieval chain | Embed question → Weaviate top-k search → format context |
 | QUERY-002 | Cited answer generation | Prompt template + LLM call producing CitedAnswer with structured citations |
 | QUERY-003 | Gradio chat interface | Chat UI with markdown citations, relevance scores, provider/model selectors, streaming output, and clear button |
-| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` interfaces with provider-neutral configuration; current providers are OpenRouter and Ollama |
+| QUERY-004 | LangChain model client | LangChain `BaseChatModel`/`Embeddings` interfaces with provider-neutral configuration; current providers include OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama |
 
 **Epic 3: Per-source Ingestion Pipeline** (completed)
 
@@ -289,14 +289,22 @@ Closes the loop between retrieval quality and knowledge base growth. A "Review &
 **Completion criteria:** Support staff can ask a question and receive a cited answer
 linking to specific video timestamps and knowledge base pages.
 
-**Epic 8: Production-ready, Configurable AI Inference Experience** (planned)
+**Epic 8: Production-ready, Configurable AI Inference Experience** (completed)
 
 Makes provider selection, configuration, and streamed inference understandable and
 safe for colleagues who did not build the project. The epic adds typed Pydantic
-configuration, qualified LangChain and Gradio dependencies, OpenAI and Gemini support,
+configuration, qualified LangChain and Gradio dependencies, OpenAI, Gemini, and NVIDIA
+NIM support,
 provider/model selection in Gradio, and a common streaming experience. It keeps chat
 inference independent from the embedding provider and requires an actionable
 `.env.example`-based onboarding path.
+
+**Completion:** Epic 8 is implemented and merged. The application now uses typed
+Pydantic configuration, a provider/model registry and factory, provider-neutral
+streaming for chat and article drafts, provider/model switching in Gradio, and
+actionable handling for transient provider failures. OpenRouter, OpenAI, Gemini,
+NVIDIA NIM, and Ollama are supported for chat inference while embedding configuration
+remains independent.
 
 **Epic 9: Shareable Weaviate Collection Snapshot** (planned)
 

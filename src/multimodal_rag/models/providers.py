@@ -13,8 +13,8 @@ from multimodal_rag.models.config import (
 CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ModelSpec(
         provider="openrouter",
-        model="openai/gpt-5.4-mini",
-        display_name="OpenRouter — GPT-5.4 Mini",
+        model="openai/gpt-6-luna",
+        display_name="OpenRouter — GPT-6 Luna",
         capabilities=ModelCapabilities(reasoning=True),
     ),
     ModelSpec(
@@ -24,20 +24,20 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ),
     ModelSpec(
         provider="openrouter",
-        model="deepseek/deepseek-v3.2",
-        display_name="OpenRouter — DeepSeek V3.2",
+        model="deepseek/deepseek-v4.1-flash",
+        display_name="OpenRouter — DeepSeek 4.1-flash",
         capabilities=ModelCapabilities(reasoning=True),
     ),
     ModelSpec(
         provider="openrouter",
-        model="mistralai/ministral-14b-2512",
-        display_name="OpenRouter — Ministral 14B",
+        model="mistralai/mistral-small-2603",
+        display_name="OpenRouter — Mistral Small 2603",
         capabilities=ModelCapabilities(vision=True),
     ),
     ModelSpec(
         provider="openai",
-        model="gpt-4o-mini",
-        display_name="OpenAI — GPT-4o Mini",
+        model="gpt-6-luna",
+        display_name="OpenAI — GPT-6 Luna",
     ),
     ModelSpec(
         provider="gemini",
@@ -47,8 +47,25 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ),
     ModelSpec(
         provider="ollama",
+        model="qwen3.5:9b",
+        display_name="Ollama — Qwen 3.5 9B",
+    ),
+    ModelSpec(
+        provider="ollama",
         model="nemotron-3.5-lightning:30b-mlx",
         display_name="Ollama — Nemotron 3.5 Lightning 30B MLX",
+    ),
+    ModelSpec(
+        provider="nvidia",
+        model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        display_name="NVIDIA — Nemotron 3 Nano omni 30b a3b reasoning",
+        capabilities=ModelCapabilities(vision=True),
+    ),
+    ModelSpec(
+        provider="nvidia",
+        model="nvidia/nemotron-3-ultra-550b-a55b",
+        display_name="NVIDIA — Nemotron 3 Ultra 550B A55B",
+        capabilities=ModelCapabilities(reasoning=True),
     ),
 )
 
@@ -99,6 +116,7 @@ def available_providers(settings: AppSettings) -> tuple[ChatProvider, ...]:
         "openai",
         "gemini",
         "ollama",
+        "nvidia",
     )
     return tuple(
         provider
@@ -114,6 +132,7 @@ def provider_choices(settings: AppSettings) -> tuple[tuple[str, str], ...]:
         "openai": "OpenAI",
         "gemini": "Gemini",
         "ollama": "Ollama",
+        "nvidia": "NVIDIA",
     }
     return tuple(
         (labels[provider], provider) for provider in available_providers(settings)

@@ -60,6 +60,29 @@ class TestCreateChatModel:
 
     @patch.dict(
         "os.environ",
+        {"NVIDIA_API_KEY": "test-key", "LLM_PROVIDER": "nvidia"},
+        clear=False,
+    )
+    def test_nvidia_returns_chatopenai_with_nim_parameters(self) -> None:
+        from langchain_openai import ChatOpenAI
+
+        settings = AppSettings(
+            _env_file=None,
+            nvidia_api_key="test-key",
+            llm_provider="nvidia",
+            embedding_provider="ollama",
+        )
+        llm = create_chat_model(settings)
+        assert isinstance(llm, ChatOpenAI)
+        assert llm.extra_body["max_tokens"] == 1536
+        assert llm.extra_body == {
+            "chat_template_kwargs": {"enable_thinking": True},
+            "reasoning_budget": 1024,
+            "max_tokens": 1536,
+        }
+
+    @patch.dict(
+        "os.environ",
         {"GEMINI_API_KEY": "test-key", "LLM_PROVIDER": "gemini"},
         clear=False,
     )

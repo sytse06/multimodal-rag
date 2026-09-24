@@ -9,24 +9,24 @@ The query pipeline converts a natural language support question into a cited ans
 
 The KB article editorial workflow is a downstream extension of phase 2: the same `CitedAnswer` and `list[SearchResult]` from state are fed to a second LLM call that generates a structured article.
 
-## Target Architecture for Epic 8
+## Implemented Architecture for Epic 8
 
-The pipeline is being migrated from UI-owned, blocking model calls to a provider-neutral
-inference boundary. Gradio should select a validated chat provider and model, while the
-application layer constructs the LangChain `BaseChatModel` through one centralized
-factory. Embeddings remain independently configured so changing the chat provider never
-changes the vectors already stored in Weaviate.
+The pipeline uses a provider-neutral inference boundary. Gradio selects a validated chat
+provider and model, while the application layer constructs the LangChain
+`BaseChatModel` through one centralized factory. Embeddings remain independently
+configured so changing the chat provider never changes the vectors already stored in
+Weaviate.
 
-The target generation path exposes streaming progress and completion events. Gradio
-adapts those events into cumulative chatbot and article-draft updates; it does not
-construct provider clients or contain provider-specific routing. Citation links are
+The generation path exposes streaming progress and completion events. Gradio adapts
+those events into cumulative chatbot and article-draft updates; it does not construct
+provider clients or contain provider-specific routing. Citation links are
 constructed only after the final response has been accumulated, because partial chunks
 cannot be reliably rewritten.
 
-This document currently describes the implementation being migrated. References to
-`_make_llm`, model-name routing, blocking `invoke()`, and final-only state updates are
-legacy behavior and must not be extended. The exact typed settings, provider registry,
-event models, and callback signatures will be finalized in INFER-001 through INFER-005.
+References to `_make_llm`, model-name routing, and final-only state updates below are
+legacy behavior retained only for migration context. New code must use the typed
+provider/model registry, central factory, and streaming event contract implemented in
+INFER-001 through INFER-005.
 
 ---
 
@@ -319,10 +319,12 @@ Gradio queues handlers by default. Handlers that do no I/O should bypass the que
 
 Without `queue=False` on navigation handlers, clicking "Next" or "Back" while an LLM call is in progress would queue behind it, producing a multi-second delay on what should be an instant UI update.
 
-The Epic 8 target keeps non-I/O navigation handlers outside the queue and changes the
-I/O handlers to consume streaming generators or async generators. Final citation
+The Epic 8 implementation keeps non-I/O navigation handlers outside the queue and uses
+streaming generators or async generators for I/O handlers. Final citation
 construction and state persistence happen when the stream completes; provider errors
-must produce a safe user-facing event and retain diagnostic context for logs.
+produce safe user-facing events and retain diagnostic context for logs. Transient
+provider capacity failures and timeouts are distinguished from configuration errors so
+colleagues receive actionable retry guidance.
 
 ---
 
@@ -337,7 +339,7 @@ Both are configured at `temperature=0.3`. The same routing is used for both `gen
 
 The model dropdown is populated at startup by combining any Ollama model found in `settings.llm_model` with the hardcoded `OPENROUTER_MODELS` list. The configured `settings.llm_model` is used as the default selection if it appears in the list.
 
-This routing is retained here only as a migration reference. Epic 8 replaces name-based
+This routing is retained here only as a migration reference. Epic 8 replaced name-based
 routing and the hardcoded model list with validated provider/model registry entries for
-OpenRouter, OpenAI, Gemini, and Ollama. Gradio receives only combinations that are
+OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama. Gradio receives only combinations that are
 configured and usable; it does not infer a provider from the model name.

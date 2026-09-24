@@ -381,7 +381,7 @@ Saves the approved article as a markdown file in `kb_output/`:
 
 ---
 
-## Epic 8: Production-ready, Configurable AI Inference Experience (planned)
+## Epic 8: Production-ready, Configurable AI Inference Experience (completed)
 
 Makes the application dependable and self-explanatory for colleagues who did not
 build it. A colleague can clone the repository, configure credentials safely, start
@@ -404,7 +404,7 @@ implementation details.
   setting and provider; secrets are never printed or serialized
 - Gradio lists only providers and models that are usable with the current configuration
 - A colleague can switch chat provider and model without restarting the application
-- OpenRouter, OpenAI, Gemini, and Ollama use the same cited-answer workflow
+- OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama use the same cited-answer workflow
 - Answers and article drafts appear progressively while generation is running
 - A running generation can be cancelled cleanly, and context is reduced predictably
   when the configured generation budget would otherwise be exceeded
@@ -412,6 +412,8 @@ implementation details.
   vectors already stored in Weaviate
 - Provider, model, completion status, token usage, latency, and safe error context are
   available for operational logging
+- Transient provider capacity errors and timeouts are presented as actionable retry or
+  provider-switch messages rather than misleading configuration errors
 
 ### INFER-001 — Typed Configuration and Colleague Onboarding
 
@@ -462,8 +464,9 @@ dependency and Python-version documentation
 
 **Branch:** `feature/INFER-003-provider-registry`
 
-- Add typed provider and model registry entries for OpenRouter, OpenAI, Gemini, and
-  Ollama, including display name and streaming, vision, and reasoning capabilities
+- Add typed provider and model registry entries for OpenRouter, OpenAI, Gemini, NVIDIA
+  NIM, and Ollama, including display name and streaming, vision, and reasoning
+  capabilities
 - Extend `src/multimodal_rag/models/config.py` with the typed provider/model selection
   contract consumed by the registry and factory; provider identity must remain explicit
 - Keep `.env.example` and `config/development.env` aligned with the supported provider
@@ -472,7 +475,8 @@ dependency and Python-version documentation
 - Centralize chat-model construction in one factory returning LangChain's
   `BaseChatModel`
 - Use the dedicated provider integrations (`ChatOpenRouter`, `ChatOpenAI`,
-  `ChatGoogleGenerativeAI`, and `ChatOllama`) behind the shared factory
+  `ChatGoogleGenerativeAI`, and `ChatOllama`) plus NVIDIA's OpenAI-compatible endpoint
+  behind the shared factory
 - Remove `_make_llm()` and the hardcoded `OPENROUTER_MODELS` list from `app.py`
 - Determine provider availability from validated configuration without exposing keys
 - Keep chat inference and embedding configuration independent; provider switching in
@@ -489,7 +493,8 @@ dependency and Python-version documentation
 - The registry exposes only providers with valid configuration and never exposes API
   keys through model data, UI choices, serialization, or logs
 - The factory returns the correct dedicated LangChain chat integration for OpenRouter,
-  OpenAI, Gemini, and Ollama, with provider-specific settings applied consistently
+  OpenAI, Gemini, NVIDIA NIM, and Ollama, with provider-specific settings applied
+  consistently
 - The existing cited-answer and KB-article paths work through the central factory
   without provider-specific branches in `app.py`
 - Gradio model choices come from the registry; adding a model does not require editing
@@ -574,8 +579,9 @@ streaming and error-handling tests
   to Epic 8
 - Add startup tests for configured, unavailable, and misconfigured providers
 - Run the full quality and test suite across the supported Python versions
-- Manually smoke-test OpenRouter, OpenAI, Gemini, and Ollama through Gradio, including
-  provider switching, streaming, citations, article drafting, and safe failures
+- Manually smoke-test OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama through Gradio,
+  including provider switching, streaming, citations, article drafting, and safe
+  failures
 - Verify a colleague can complete the documented fresh-clone workflow without
   undocumented local knowledge
 
@@ -588,33 +594,69 @@ workflows, or replacing Gradio with another frontend.
 
 ---
 
-## Epic 9: Shareable Weaviate Collection Snapshot (planned)
+## Epic 9: Shareable Weaviate Inference Storage (planned)
 
-Provides the simplest MVP way for colleagues to use the same fixed support-content
-dataset. Create an immutable, collection-scoped Weaviate filesystem backup of
-`SupportChunk`, package it with a checksum and compatibility manifest, and place it in
-an approved shared artifact location outside Git. A colleague restores that snapshot
-into the matching single-node Docker setup and uses the documented embedding model and
-configuration. This epic intentionally excludes live synchronization, shared writes,
-cloud-hosted Weaviate, and automatic re-ingestion; a new snapshot is created when the
-content needs to change.
+Provides the simplest MVP way for colleagues to run inference against the same fixed
+`SupportChunk` dataset. The application supports either a local single-node Docker
+instance or a hosted Weaviate cluster selected through configuration. The collection is
+exported once, validated with a compatibility manifest, and stored outside Git. This
+epic deliberately excludes application-side ingestion, live synchronization, shared
+writes, automatic re-ingestion, and embedding-model migration.
 
-### DATA-001 — Backup and Restore the Fixed Collection
+### DATA-001 — Provider-neutral Weaviate Connection
 
-**Branch:** `feature/DATA-001-weaviate-snapshot`
+**Branch:** `feature/DATA-001-weaviate-connection`
 
-- Enable Weaviate's local filesystem backup module and bind-mount a host backup path
-- Back up only the `SupportChunk` collection
-- Produce a manifest containing the Weaviate image, collection name, object count,
-  embedding provider/model, vector dimension, snapshot date, source commit and SHA-256
+- Add typed Weaviate deployment settings for `local` and `cloud` modes
+- Use an unauthenticated local Docker connection in local mode
+- Use HTTPS and an API key in hosted mode
+- Keep collection name and optional tenant explicit
+- Return actionable connection and authorization errors
+- Test both connection paths without network calls
+
+### DATA-002 — Fixed Collection Export and Manifest
+
+- Export the `SupportChunk` schema, properties, stored vectors, and object count
+- Produce a manifest containing the Weaviate version, collection name, object count,
+  embedding provider/model, vector dimension, creation date, source commit, and SHA-256
   checksum
-- Document where the artifact is stored and how colleagues restore it into a clean
-  matching instance
-- Verify restoration with collection count and a known retrieval query
-- Keep the backup and support content outside Git and restrict access appropriately
+- Store the export and manifest in an approved location outside Git
+- Verify that the configured query embedding model is compatible with the stored vectors
 
-**Out of scope:** live shared databases, incremental synchronization, schema migration,
-embedding-model migration, and cloud backup automation.
+### DATA-003 — Local Docker Restore
+
+- Start a clean single-node Weaviate instance with the project Docker configuration
+- Restore the fixed collection artifact
+- Verify the collection schema and object count
+- Verify one known retrieval query followed by an inference smoke test
+
+### DATA-004 — Hosted Weaviate Bootstrap
+
+- Provide a one-time procedure to load the fixed collection into a hosted Weaviate
+  cluster
+- Configure the application to query the hosted collection without write access
+- Keep hosted credentials out of Git and use read-only access for colleagues where
+  supported
+- Verify hosted retrieval and inference with the same known query as the local path
+
+### DATA-005 — Runtime Compatibility Validation
+
+- Validate that the configured collection exists before inference
+- Validate the expected schema and vector dimension
+- Validate optional tenant availability and read permissions
+- Fail with a clear configuration or compatibility message instead of an opaque query
+  error
+
+### DATA-006 — Deployment and Restore Documentation
+
+- Update `.env.example` with local and hosted Weaviate settings
+- Document local startup, fixed-collection restore, and hosted bootstrap procedures
+- Document the embedding-model and vector-dimension compatibility requirement
+- Update `docs/PRD.md` and `docs/pipeline.md` with the deployment contract
+
+**Out of scope:** application-side ingestion, live synchronization, shared writes,
+incremental synchronization, automatic re-ingestion, schema migration, embedding-model
+migration, multi-tenant UI, and collection version management.
 
 ---
 
@@ -629,9 +671,9 @@ embedding-model migration, and cloud backup automation.
 | 5 — Visual Grounding | 5 | completed | ~15 |
 | 6 — Multimodal Chunk Fusion | 2 | completed | ~8 |
 | 7 — Answer-to-KB Pipeline | 3 | completed | 22 |
-| 8 — Configurable AI Inference | 6 | planned | TBD |
-| 9 — Shareable Weaviate Snapshot | 1 | planned | TBD |
-| **Total** | **32** | **7 completed, 2 planned** | **187 current** |
+| 8 — Configurable AI Inference | 6 | completed | 63+ |
+| 9 — Shareable Weaviate Inference Storage | 6 | planned | TBD |
+| **Total** | **37** | **8 completed, 1 planned** | **220 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
