@@ -117,6 +117,21 @@ def _finish_reason(chunk: object) -> str | None:
 
 def _safe_error(exc: Exception) -> str:
     logger.exception("Streaming inference failed: %s", exc)
+    status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    detail = str(exc).lower()
+    if status_code in {429, 500, 502, 503, 504} or any(
+        marker in detail
+        for marker in ("503 unavailable", "service unavailable", "high demand")
+    ):
+        return (
+            "The selected model is temporarily unavailable because the provider "
+            "is busy. Please try again shortly or choose another model."
+        )
+    if "readtimeout" in detail or "timed out" in detail:
+        return (
+            "The selected model did not respond in time. Please try again or "
+            "choose another model."
+        )
     return "Model inference failed. Check the provider configuration and try again."
 
 

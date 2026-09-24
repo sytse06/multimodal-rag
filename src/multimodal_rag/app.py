@@ -9,17 +9,49 @@ from pathlib import Path
 import gradio as gr
 
 from multimodal_rag.models.chunks import SourceType
-from multimodal_rag.models.config import AppSettings
+from multimodal_rag.models.config import AppSettings, ChatProvider, ModelSelection
 from multimodal_rag.models.llm import create_chat_model, create_embeddings
-from multimodal_rag.models.providers import model_choices, selection_from_key
+from multimodal_rag.models.providers import (
+    model_choices,
+    provider_choices,
+    selection_from_key,
+)
 from multimodal_rag.models.query import CitedAnswer, SearchResult
-from multimodal_rag.query.generator import generate_cited_answer, generate_kb_article
+from multimodal_rag.query.generator import (
+    generate_cited_answer,
+    stream_cited_answer,
+    stream_kb_article,
+)
 from multimodal_rag.query.retriever import retrieve
 from multimodal_rag.store.weaviate import WeaviateStore
 
 logger = logging.getLogger(__name__)
 
 KB_OUTPUT_DIR = Path("kb_output")
+
+
+def resolve_selection(
+    provider: str, model_key: str, settings: AppSettings
+) -> ModelSelection:
+    """Validate that the selected model belongs to the selected provider."""
+    selection = selection_from_key(model_key, settings)
+    if selection.provider != provider:
+        raise ValueError("The selected model does not belong to the selected provider")
+    return selection
+
+
+def normalize_stored_selection(
+    selection: ModelSelection | dict[str, object] | None,
+    settings: AppSettings,
+) -> ModelSelection:
+    """Restore a selection from Gradio state or use the configured active model."""
+    if isinstance(selection, ModelSelection):
+        return selection
+    if isinstance(selection, dict):
+        return ModelSelection.model_validate(selection)
+    return selection_from_key(
+        f"{settings.chat.provider}:{settings.chat.model}", settings
+    )
 
 
 def _format_citations_block(answer: CitedAnswer) -> str:
@@ -125,18 +157,29 @@ def main() -> None:
             "Workflow to generate knowledge base articles based on the sources."
         )
 
-        choices = model_choices(settings)
+        choices = model_choices(settings, settings.chat.provider)
         default_model = f"{settings.chat.provider}:{settings.chat.model}"
-        model_dropdown = gr.Dropdown(
-            choices=choices,
-            value=default_model,
-            label="Model",
-            interactive=True,
-        )
+        with gr.Row():
+            model_dropdown = gr.Dropdown(
+                choices=choices,
+                value=default_model,
+                label="Model",
+                interactive=True,
+                scale=1,
+            )
+            provider_dropdown = gr.Dropdown(
+                choices=provider_choices(settings),
+                value=settings.chat.provider,
+                label="Provider",
+                interactive=True,
+                scale=1,
+            )
+        provider_status = gr.Markdown()
 
         last_answer_state: gr.State = gr.State(None)
         last_results_state: gr.State = gr.State([])
         last_question_state: gr.State = gr.State("")
+        last_selection_state: gr.State = gr.State(None)
 
         chatbot = gr.Chatbot(label="Chat", height=500)
 
@@ -147,9 +190,8 @@ def main() -> None:
                     label="Question",
                     show_label=False,
                     scale=4,
-                )
-                submit_btn = gr.Button(
-                    "Submit", variant="primary", scale=1, elem_classes=["align-center"]
+                    submit_btn=True,
+                    stop_btn=True,
                 )
             with gr.Row():
                 gr.ClearButton([msg, chatbot], value="Clear conversation")
@@ -200,31 +242,179 @@ def main() -> None:
 
         # --- Chat submit ---
 
+        def update_models(provider: ChatProvider) -> tuple[object, str]:
+            choices = model_choices(settings, provider)
+            if not choices:
+                return gr.update(choices=[], value=None), (
+                    f"No models are configured for **{provider}**."
+                )
+            return gr.update(choices=choices, value=choices[0][1]), ""
+
+        provider_dropdown.change(
+            update_models,
+            inputs=[provider_dropdown],
+            outputs=[model_dropdown, provider_status],
+            queue=False,
+        )
+
         def user_submit(
             message: str,
             history: list[dict[str, str]],
-            selection_key: str,
-        ) -> tuple[str, list[dict[str, str]], CitedAnswer | None, list[SearchResult], str]:  # noqa: E501
+            provider: str,
+            model_key: str,
+            previous_answer: CitedAnswer | None,
+            previous_results: list[SearchResult],
+            previous_question: str,
+            previous_selection: ModelSelection | None,
+        ) -> object:
             if not message.strip():
-                return "", history, None, [], ""
+                yield (
+                    "",
+                    history,
+                    previous_answer,
+                    previous_results,
+                    previous_question,
+                    previous_selection,
+                    "",
+                )
+                return
+            try:
+                selection = resolve_selection(provider, model_key, settings)
+            except ValueError as exc:
+                yield (
+                    "",
+                    history,
+                    previous_answer,
+                    previous_results,
+                    previous_question,
+                    previous_selection,
+                    f"⚠️ {exc}",
+                )
+                return
             question = message
             history = history + [{"role": "user", "content": message}]
-            formatted, answer, results = _respond(message, selection_key)
-            history = history + [{"role": "assistant", "content": formatted}]
-            return "", history, answer, results, question
+            history = history + [
+                {"role": "assistant", "content": "_Retrieving sources..._"}
+            ]
+            yield (
+                "",
+                history,
+                previous_answer,
+                previous_results,
+                previous_question,
+                previous_selection,
+                "Retrieving sources...",
+            )
+            try:
+                llm = create_chat_model(settings, selection)
+                results = retrieve(message, store, top_k=settings.top_k)
+            except Exception as exc:
+                logger.exception("Retrieval setup failed: %s", exc)
+                history[-1] = {
+                    "role": "assistant",
+                    "content": (
+                        "⚠️ Unable to start this request. Check the provider "
+                        "configuration."
+                    ),
+                }
+                yield (
+                    "",
+                    history,
+                    previous_answer,
+                    previous_results,
+                    previous_question,
+                    previous_selection,
+                    "Request failed.",
+                )
+                return
+
+            history[-1] = {"role": "assistant", "content": "_Generating..._"}
+            yield (
+                "",
+                history,
+                previous_answer,
+                previous_results,
+                previous_question,
+                previous_selection,
+                "Generating...",
+            )
+            for event in stream_cited_answer(
+                question=question,
+                results=results,
+                llm=llm,
+                provider=selection.provider,
+                model=selection.model,
+                max_context_tokens=settings.chat.max_context_tokens,
+            ):
+                if event.event_type == "progress":
+                    history[-1] = {"role": "assistant", "content": event.text}
+                    yield (
+                        "",
+                        history,
+                        previous_answer,
+                        previous_results,
+                        previous_question,
+                        previous_selection,
+                        "Generating...",
+                    )
+                elif event.event_type == "complete" and event.answer is not None:
+                    history[-1] = {
+                        "role": "assistant",
+                        "content": _format_citations_block(event.answer),
+                    }
+                    yield (
+                        "",
+                        history,
+                        event.answer,
+                        results,
+                        question,
+                        selection,
+                        "Completed",
+                    )
+                elif event.event_type in {"error", "cancelled"}:
+                    status = (
+                        "Cancelled"
+                        if event.event_type == "cancelled"
+                        else event.error or "Request failed."
+                    )
+                    history[-1] = {
+                        "role": "assistant",
+                        "content": f"⚠️ {event.error or status}",
+                    }
+                    yield (
+                        "",
+                        history,
+                        previous_answer,
+                        previous_results,
+                        previous_question,
+                        previous_selection,
+                        status,
+                    )
 
         outputs_submit = [
-            msg, chatbot, last_answer_state, last_results_state, last_question_state
+            msg,
+            chatbot,
+            last_answer_state,
+            last_results_state,
+            last_question_state,
+            last_selection_state,
+            provider_status,
         ]
-        msg.submit(
+        submit_event = msg.submit(
             user_submit,
-            inputs=[msg, chatbot, model_dropdown],
+            inputs=[
+                msg,
+                chatbot,
+                provider_dropdown,
+                model_dropdown,
+                last_answer_state,
+                last_results_state,
+                last_question_state,
+                last_selection_state,
+            ],
             outputs=outputs_submit,
-        )
-        submit_btn.click(
-            user_submit,
-            inputs=[msg, chatbot, model_dropdown],
-            outputs=outputs_submit,
+            trigger_mode="always_last",
+            concurrency_limit=1,
         )
 
         # --- Review workflow ---
@@ -263,6 +453,8 @@ def main() -> None:
                 step1_citations,
             ],
             queue=False,
+            show_progress="hidden",
+            cancels=[submit_event],
         )
 
         def cancel_review() -> tuple:
@@ -276,6 +468,8 @@ def main() -> None:
             cancel_review,
             outputs=[input_row, walkthrough_col, chatbot],
             queue=False,
+            show_progress="hidden",
+            cancels=[submit_event],
         )
 
         # Step navigation — Step 2 sources loaded lazily on first visit
@@ -287,37 +481,84 @@ def main() -> None:
             inputs=[last_results_state],
             outputs=[walkthrough, step2_sources],
             queue=False,
+            show_progress="hidden",
         )
         back2_btn.click(
-            lambda: gr.Walkthrough(selected=1), outputs=walkthrough, queue=False
+            lambda: gr.Walkthrough(selected=1),
+            outputs=walkthrough,
+            queue=False,
+            show_progress="hidden",
         )
 
         def go_to_step3(
             answer: CitedAnswer | None,
             results: list[SearchResult],
-            selection_key: str,
+            selection: ModelSelection | dict[str, object] | None,
             question: str,
-        ) -> tuple[object, str]:
+        ) -> object:
             if answer is None:
-                return gr.Walkthrough(selected=3), ""
-            selection = selection_from_key(selection_key, settings)
-            llm = create_chat_model(settings, selection)
-            draft = generate_kb_article(answer, llm, results=results, question=question)
-            return gr.Walkthrough(selected=3), draft
+                yield gr.Walkthrough(selected=3), "", "No answer available."
+                return
+            selection = normalize_stored_selection(selection, settings)
+            try:
+                llm = create_chat_model(settings, selection)
+            except Exception as exc:
+                logger.exception("Article draft setup failed: %s", exc)
+                yield (
+                    gr.Walkthrough(selected=3),
+                    "",
+                    "⚠️ Unable to start the draft. Check the provider configuration.",
+                )
+                return
+            for event in stream_kb_article(
+                answer,
+                llm,
+                results=results,
+                question=question,
+                provider=selection.provider,
+                model=selection.model,
+                max_context_tokens=settings.chat.max_context_tokens,
+            ):
+                if event.event_type == "progress":
+                    yield gr.Walkthrough(selected=3), event.text, "Generating draft..."
+                elif event.event_type == "complete":
+                    yield (
+                        gr.Walkthrough(selected=3),
+                        event.article or event.text,
+                        "Draft ready",
+                    )
+                else:
+                    yield (
+                        gr.Walkthrough(selected=3),
+                        event.text,
+                        event.error or "Draft cancelled",
+                    )
 
-        next2_btn.click(
+        def start_draft() -> tuple[object, str, str]:
+            return gr.Walkthrough(selected=3), "", "Generating draft..."
+
+        draft_transition = next2_btn.click(
+            start_draft,
+            outputs=[walkthrough, article_editor, provider_status],
+            queue=False,
+            show_progress="hidden",
+        )
+        draft_transition.then(
             go_to_step3,
             inputs=[
                 last_answer_state,
                 last_results_state,
-                model_dropdown,
+                last_selection_state,
                 last_question_state,
             ],
-            outputs=[walkthrough, article_editor],
+            outputs=[walkthrough, article_editor, provider_status],
         )
 
         back3_btn.click(
-            lambda: gr.Walkthrough(selected=2), outputs=walkthrough, queue=False
+            lambda: gr.Walkthrough(selected=2),
+            outputs=walkthrough,
+            queue=False,
+            show_progress="hidden",
         )
 
         def go_to_step4(article: str) -> tuple[object, str]:
@@ -331,9 +572,13 @@ def main() -> None:
             inputs=[article_editor],
             outputs=[walkthrough, title_input],
             queue=False,
+            show_progress="hidden",
         )
         back4_btn.click(
-            lambda: gr.Walkthrough(selected=3), outputs=walkthrough, queue=False
+            lambda: gr.Walkthrough(selected=3),
+            outputs=walkthrough,
+            queue=False,
+            show_progress="hidden",
         )
 
         def do_save(title: str, body: str) -> str:

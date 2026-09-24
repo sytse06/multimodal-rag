@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from multimodal_rag.models.config import (
     AppSettings,
+    ChatProvider,
     ModelCapabilities,
     ModelSelection,
     ModelSpec,
@@ -91,11 +92,42 @@ def available_models(settings: AppSettings) -> tuple[ModelSpec, ...]:
     return _with_active_model(settings, models)
 
 
-def model_choices(settings: AppSettings) -> tuple[tuple[str, str], ...]:
+def available_providers(settings: AppSettings) -> tuple[ChatProvider, ...]:
+    """Return providers with enough configuration for a chat request."""
+    providers: tuple[ChatProvider, ...] = (
+        "openrouter",
+        "openai",
+        "gemini",
+        "ollama",
+    )
+    return tuple(
+        provider
+        for provider in providers
+        if provider_available(settings, provider)
+    )
+
+
+def provider_choices(settings: AppSettings) -> tuple[tuple[str, str], ...]:
+    """Return Gradio-safe display/value pairs for available providers."""
+    labels = {
+        "openrouter": "OpenRouter",
+        "openai": "OpenAI",
+        "gemini": "Gemini",
+        "ollama": "Ollama",
+    }
+    return tuple(
+        (labels[provider], provider) for provider in available_providers(settings)
+    )
+
+
+def model_choices(
+    settings: AppSettings, provider: ChatProvider | None = None
+) -> tuple[tuple[str, str], ...]:
     """Return Gradio-safe display/value pairs for available chat models."""
     return tuple(
         (model.display_name, model.selection_key)
         for model in available_models(settings)
+        if provider is None or model.provider == provider
     )
 
 

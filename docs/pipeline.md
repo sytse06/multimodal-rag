@@ -64,30 +64,29 @@ This is the unit passed through Gradio state between the chat pipeline and the r
 
 ### 1. User submits a question
 
-The current `user_submit` handler in `app.py` is triggered by the textbox submit or the
-Submit button. It calls `_respond(message, model)` and owns the full pipeline:
+The `user_submit` handler in `app.py` is triggered by the textbox submit or the Submit
+button. It resolves the explicit provider/model selection, retrieves sources, and
+consumes `stream_cited_answer()`:
 
 ```python
-def _respond(message, model):
-    llm = _make_llm(model, settings)
-    results = retrieve(message, store, top_k=settings.top_k)
-    answer = generate_cited_answer(question=message, results=results, llm=llm)
-    return _format_citations_block(answer), answer, results
+for event in stream_cited_answer(
+    question, results, llm, provider=selection.provider, model=selection.model
+):
+    yield cumulative_chat_history(event), event
 ```
 
-This is the legacy blocking path. The Epic 8 target replaces `_make_llm` with the
-central provider factory and replaces the final-only return value with streamed
-inference events. Keep the retrieval and citation data contracts stable while that
-boundary changes.
+Retrieval and generation progress are yielded separately. The chatbot displays raw
+cumulative text during generation; citation links are formatted only when the complete
+event arrives. A Stop action cancels the active Gradio event.
 
-After the current `user_submit` completes, three items are written to Gradio state:
+After completion, the following items are written to Gradio state:
 - `last_answer_state` — the `CitedAnswer`
 - `last_results_state` — the `list[SearchResult]`
 - `last_question_state` — the raw question string
+- `last_selection_state` — the selected `ModelSelection`
 
-The target path should retain these final state values while also yielding cumulative
-progress during retrieval and generation. Provider, model, completion status, and safe
-error context belong in typed inference events rather than in Gradio component logic.
+Provider, model, completion status, usage, latency, and safe error context come from
+typed inference events rather than provider-specific Gradio logic.
 
 ### 2. Retrieval (`retriever.py`)
 
@@ -198,17 +197,15 @@ Sources are loaded lazily here on first visit from `last_results_state` — they
 **Handler:** `go_to_step3(answer, results, model, question)` (called by `next2_btn.click`)
 **Queue:** `True` (default — not set to `False`)
 
-This step currently makes a blocking LLM call. `generate_kb_article` is called with:
+This step consumes `stream_kb_article()` with:
 - `answer` — the `CitedAnswer` from state (for citations and fallback text)
-- `llm` — a fresh instance from `_make_llm(model, settings)`
+- `llm` — a fresh instance from the selected provider/model factory
 - `results` — the `list[SearchResult]` from state (for full source chunk text)
 - `question` — the original question string from state
 
-The generated draft is placed into `article_editor`, a 20-line `gr.Textbox` the user can edit freely before proceeding.
-
-During Epic 8 this handler will consume the same provider-neutral streaming boundary as
-the chat response and progressively update the draft. The final article remains the
-editable value used by Step 4.
+The draft is progressively placed into `article_editor`, a 20-line `gr.Textbox` the
+user can edit freely before proceeding. The final article remains the editable value
+used by Step 4.
 
 ---
 
@@ -309,12 +306,12 @@ Gradio queues handlers by default. Handlers that do no I/O should bypass the que
 
 | Handler | Queue | Reason |
 |---|---|---|
-| `user_submit` | `True` (default) | Legacy blocking LLM call — can be slow |
+| `user_submit` | `True` (default) | Retrieval and streaming generation |
 | `enter_review` | `False` | Pure state read + UI update |
 | `cancel_review` | `False` | Pure UI update |
 | `go_to_step2` | `False` | Formats already-fetched state |
 | `back2_btn` lambda | `False` | Step navigation only |
-| `go_to_step3` | `True` (default) | Legacy blocking LLM call — can be slow |
+| `go_to_step3` | `True` (default) | Streaming article generation |
 | `back3_btn` lambda | `False` | Step navigation only |
 | `go_to_step4` | `False` | H1 extraction from string |
 | `back4_btn` lambda | `False` | Step navigation only |
