@@ -15,6 +15,7 @@ from multimodal_rag.query.generator import (
     _content_to_text,
     _format_context_budgeted,
     _replace_refs_with_links,
+    _safe_error,
     _strip_code_fence,
     astream_cited_answer,
     generate_cited_answer,
@@ -140,6 +141,19 @@ class TestContentToText:
 
         assert "Additional source context omitted" in context
 
+
+class TestSafeError:
+    def test_provider_capacity_error_is_actionable(self) -> None:
+        error = Exception(
+            "503 UNAVAILABLE: model is currently experiencing high demand"
+        )
+        message = _safe_error(error)
+        assert "temporarily unavailable" in message
+        assert "provider configuration" not in message
+
+    def test_timeout_error_is_actionable(self) -> None:
+        message = _safe_error(TimeoutError("read operation timed out"))
+        assert "did not respond in time" in message
 
 class TestGenerateCitedAnswer:
     def test_empty_results_returns_fallback(self) -> None:

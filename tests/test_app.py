@@ -3,15 +3,56 @@
 import re
 from pathlib import Path
 
+import pytest
+
 from multimodal_rag.app import (
     _format_citations_block,
     _format_step1,
     _format_step2,
     _slugify,
+    normalize_stored_selection,
+    resolve_selection,
     save_kb_article,
 )
 from multimodal_rag.models.chunks import SourceType
+from multimodal_rag.models.config import AppSettings
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
+
+
+class TestResolveSelection:
+    def _settings(self) -> AppSettings:
+        return AppSettings(
+            _env_file=None,
+            openrouter_api_key="router-key",
+            openai_api_key="openai-key",
+            llm_provider="openrouter",
+        )
+
+    def test_accepts_matching_provider_and_model(self) -> None:
+        selection = resolve_selection(
+            "openai", "openai:gpt-4o-mini", self._settings()
+        )
+        assert selection.provider == "openai"
+        assert selection.model == "gpt-4o-mini"
+
+    def test_rejects_model_from_another_provider(self) -> None:
+        with pytest.raises(ValueError, match="does not belong"):
+            resolve_selection(
+                "ollama",
+                "openai:gpt-4o-mini",
+                self._settings(),
+            )
+
+    def test_restores_selection_from_gradio_dict(self) -> None:
+        selection = normalize_stored_selection(
+            {"provider": "openai", "model": "gpt-4o-mini"}, self._settings()
+        )
+        assert selection.provider == "openai"
+        assert selection.model == "gpt-4o-mini"
+
+    def test_falls_back_to_active_selection_when_empty(self) -> None:
+        selection = normalize_stored_selection(None, self._settings())
+        assert selection.provider == "openrouter"
 
 
 class TestFormatCitationsBlock:
