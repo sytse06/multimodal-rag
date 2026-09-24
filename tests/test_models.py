@@ -490,6 +490,7 @@ class TestAppSettings:
         assert settings.llm_model == "google/gemini-3-flash-preview"
         assert settings.embedding_model == "nomic-embed-text"
         assert settings.weaviate_url == "http://localhost:8080"
+        assert settings.weaviate_mode == "local"
         assert settings.chunk_size == 400
         assert settings.top_k == 10
         assert settings.chat.max_context_tokens == 6000
@@ -511,6 +512,44 @@ class TestAppSettings:
         assert settings.embeddings.provider == "ollama"
         assert settings.embeddings.model == "nomic-test"
         assert settings.gradio_share is False
+
+    def test_hosted_weaviate_requires_api_key(self) -> None:
+        with pytest.raises(ValidationError, match="weaviate_api_key"):
+            AppSettings(
+                _env_file=None,
+                openrouter_api_key="test",
+                weaviate_mode="cloud",
+                weaviate_url="https://example.weaviate.network",
+            )
+
+    def test_hosted_weaviate_settings(self) -> None:
+        settings = AppSettings(
+            _env_file=None,
+            openrouter_api_key="test",
+            weaviate_mode="cloud",
+            weaviate_url="https://example.weaviate.network",
+            weaviate_api_key="weaviate-secret",
+        )
+
+        assert settings.weaviate_mode == "cloud"
+        assert settings.weaviate_url == "https://example.weaviate.network"
+        assert settings.weaviate_api_key.get_secret_value() == "weaviate-secret"
+        assert "weaviate-secret" not in settings.model_dump_json()
+
+    def test_hosted_weaviate_prefers_viewer_key_for_runtime(self) -> None:
+        settings = AppSettings(
+            _env_file=None,
+            openrouter_api_key="test",
+            weaviate_mode="cloud",
+            weaviate_url="https://example.weaviate.network",
+            weaviate_admin_api_key="admin-secret",
+            weaviate_viewer_api_key="viewer-secret",
+        )
+
+        assert settings.weaviate_api_key.get_secret_value() == "viewer-secret"
+        assert settings.weaviate_admin_api_key.get_secret_value() == "admin-secret"
+        assert "admin-secret" not in settings.model_dump_json()
+        assert "viewer-secret" not in settings.model_dump_json()
         assert "openai-secret" not in settings.model_dump_json()
 
     def test_provider_credentials_are_required(self) -> None:

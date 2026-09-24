@@ -1,10 +1,12 @@
 """Weaviate vector store for SupportChunk objects."""
 
 import logging
+from urllib.parse import urlparse
 
 import weaviate
 import weaviate.classes.config as wvc
 from langchain_core.embeddings import Embeddings
+from weaviate.auth import AuthApiKey
 from weaviate.classes.query import Filter, MetadataQuery
 
 from multimodal_rag.models.chunks import SourceType, SupportChunk
@@ -22,12 +24,37 @@ class WeaviateStore:
         self,
         weaviate_url: str,
         embeddings: Embeddings,
+        weaviate_mode: str = "local",
+        weaviate_api_key: str = "",
     ) -> None:
         self._embeddings = embeddings
-        host = weaviate_url.replace("http://", "").split(":")[0]
-        tail = weaviate_url.rsplit("/", 1)[-1]
-        port = int(weaviate_url.split(":")[-1]) if ":" in tail else 8080
-        self._client = weaviate.connect_to_local(host=host, port=port)
+        try:
+            parsed = urlparse(weaviate_url)
+            if weaviate_mode == "cloud":
+                if parsed.scheme != "https" or not parsed.hostname:
+                    raise ValueError("cloud Weaviate URL must be an https URL")
+                if not weaviate_api_key:
+                    raise ValueError("Weaviate API key is required in cloud mode")
+                self._client = weaviate.connect_to_weaviate_cloud(
+                    cluster_url=parsed.hostname,
+                    auth_credentials=AuthApiKey(weaviate_api_key),
+                )
+            elif weaviate_mode == "local":
+                if parsed.scheme != "http" or not parsed.hostname:
+                    raise ValueError("local Weaviate URL must be an http URL")
+                self._client = weaviate.connect_to_local(
+                    host=parsed.hostname,
+                    port=parsed.port or 8080,
+                )
+            else:
+                raise ValueError(f"Unsupported Weaviate mode: {weaviate_mode}")
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ConnectionError(
+                f"Unable to connect to Weaviate ({weaviate_mode}) at "
+                f"{weaviate_url}: {exc}"
+            ) from exc
 
     def close(self) -> None:
         self._client.close()

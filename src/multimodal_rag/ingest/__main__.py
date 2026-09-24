@@ -75,6 +75,8 @@ def run() -> None:
     with WeaviateStore(
         weaviate_url=settings.weaviate_url,
         embeddings=embeddings,
+        weaviate_mode=settings.weaviate_mode,
+        weaviate_api_key=settings.weaviate_api_key.get_secret_value(),
     ) as store:
         store.ensure_collection()
 

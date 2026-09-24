@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report purge purge-source purge-video purge-web dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export purge purge-source purge-video purge-web dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -37,6 +37,7 @@ help:
 	@echo "  make purge-source URL=...   - Delete chunks for one source URL"
 	@echo "  make purge-video            - Delete all video chunks"
 	@echo "  make purge-web              - Delete all web chunks"
+	@echo "  make snapshot-export       - Export the fixed collection outside Git"
 	@echo ""
 	@echo "Application:"
 	@echo "  make run          - Start Gradio chat interface"
@@ -186,6 +187,12 @@ ingest:
 	@mkdir -p logs
 	@uv run python -m multimodal_rag.ingest 2>&1 | tee logs/ingest-$$(date +%Y%m%d-%H%M%S).log
 	@echo -e "$(GREEN)✅ Ingestion complete$(NC)"
+
+snapshot-export:
+	@echo -e "$(BLUE)📦 Exporting Weaviate snapshot...$(NC)"
+	@uv run python -m multimodal_rag.store.snapshot \
+		--output "$${OUTPUT_DIR:-../multimodal-rag-weaviate-snapshot}"
+	@echo -e "$(GREEN)✅ Snapshot exported$(NC)"
 
 run:
 	@echo -e "$(BLUE)🚀 Starting Multimodal RAG...$(NC)"

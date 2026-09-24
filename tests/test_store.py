@@ -118,6 +118,53 @@ class TestWeaviateStoreDeleteBySourceType:
         assert n == 0
 
 
+class TestWeaviateStoreConnection:
+    def test_connects_to_local_url(self) -> None:
+        client = MagicMock()
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_local",
+            return_value=client,
+        ) as connect:
+            store = WeaviateStore("http://localhost:9090", MagicMock())
+
+        connect.assert_called_once_with(host="localhost", port=9090)
+        store.close()
+        client.close.assert_called_once()
+
+    def test_connects_to_cloud_with_api_key(self) -> None:
+        client = MagicMock()
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_weaviate_cloud",
+            return_value=client,
+        ) as connect:
+            store = WeaviateStore(
+                "https://example.weaviate.network",
+                MagicMock(),
+                weaviate_mode="cloud",
+                weaviate_api_key="secret",
+            )
+
+        assert connect.call_args.kwargs["cluster_url"] == "example.weaviate.network"
+        assert connect.call_args.kwargs["auth_credentials"].api_key == "secret"
+        store.close()
+
+    def test_cloud_requires_api_key(self) -> None:
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_weaviate_cloud"
+        ) as connect:
+            try:
+                WeaviateStore(
+                    "https://example.weaviate.network",
+                    MagicMock(),
+                    weaviate_mode="cloud",
+                )
+            except ValueError as exc:
+                assert "API key" in str(exc)
+            else:
+                raise AssertionError("Expected a missing API key error")
+        connect.assert_not_called()
+
+
 class TestSupportChunkConversion:
     def test_from_transcript_chunk(self) -> None:
         tc = TranscriptChunk(

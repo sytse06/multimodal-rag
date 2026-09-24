@@ -17,6 +17,7 @@ ChatProvider: TypeAlias = Literal[
     "openrouter", "openai", "gemini", "ollama", "nvidia"
 ]
 EmbeddingProvider: TypeAlias = Literal["openrouter", "ollama"]
+WeaviateMode: TypeAlias = Literal["local", "cloud"]
 
 
 class ModelCapabilities(BaseModel):
@@ -233,10 +234,38 @@ class EmbeddingSettings(BaseModel):
 class InfrastructureSettings(BaseModel):
     """External services and their credentials."""
 
+    weaviate_mode: WeaviateMode = "local"
     weaviate_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8080")
+    weaviate_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
+    weaviate_admin_api_key: SecretStr = Field(
+        default_factory=lambda: SecretStr("")
+    )
+    weaviate_viewer_api_key: SecretStr = Field(
+        default_factory=lambda: SecretStr("")
+    )
     firecrawl_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     mistral_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     youtube_cookies_file: str = ""
+
+    @model_validator(mode="after")
+    def validate_weaviate_connection(self) -> "InfrastructureSettings":
+        has_api_key = bool(self.viewer_api_key.get_secret_value())
+        if self.weaviate_mode == "cloud" and not has_api_key:
+            raise ValueError(
+                "infrastructure.weaviate_api_key is required in cloud mode"
+            )
+        if self.weaviate_mode == "local" and self.weaviate_url.scheme != "http":
+            raise ValueError("local Weaviate must use an http URL")
+        if self.weaviate_mode == "cloud" and self.weaviate_url.scheme != "https":
+            raise ValueError("cloud Weaviate must use an https URL")
+        return self
+
+    @property
+    def viewer_api_key(self) -> SecretStr:
+        """Return the least-privileged configured cloud key."""
+        if self.weaviate_viewer_api_key.get_secret_value():
+            return self.weaviate_viewer_api_key
+        return self.weaviate_api_key
 
 
 class IngestionSettings(BaseModel):
@@ -409,8 +438,16 @@ class AppSettings(BaseSettings):
             }
         if "infrastructure" not in data:
             data["infrastructure"] = {
+                "weaviate_mode": cls._value(data, "weaviate_mode", "local"),
                 "weaviate_url": cls._value(
                     data, "weaviate_url", "http://localhost:8080"
+                ),
+                "weaviate_api_key": cls._value(data, "weaviate_api_key", ""),
+                "weaviate_admin_api_key": cls._value(
+                    data, "weaviate_admin_api_key", ""
+                ),
+                "weaviate_viewer_api_key": cls._value(
+                    data, "weaviate_viewer_api_key", ""
                 ),
                 "firecrawl_api_key": cls._value(data, "firecrawl_api_key", ""),
                 "mistral_api_key": cls._value(data, "mistral_api_key", ""),
@@ -498,6 +535,22 @@ class AppSettings(BaseSettings):
     @property
     def weaviate_url(self) -> str:
         return str(self.infrastructure.weaviate_url).rstrip("/")
+
+    @property
+    def weaviate_mode(self) -> WeaviateMode:
+        return self.infrastructure.weaviate_mode
+
+    @property
+    def weaviate_api_key(self) -> SecretStr:
+        return self.infrastructure.viewer_api_key
+
+    @property
+    def weaviate_admin_api_key(self) -> SecretStr:
+        return self.infrastructure.weaviate_admin_api_key
+
+    @property
+    def weaviate_viewer_api_key(self) -> SecretStr:
+        return self.infrastructure.viewer_api_key
 
     @property
     def firecrawl_api_key(self) -> SecretStr:
