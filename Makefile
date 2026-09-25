@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export snapshot-restore purge purge-source purge-video purge-web dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down
 
 SHELL := /bin/bash
 
@@ -39,6 +39,7 @@ help:
 	@echo "  make purge-web              - Delete all web chunks"
 	@echo "  make snapshot-export       - Export the fixed collection outside Git"
 	@echo "  make snapshot-restore      - Restore a snapshot into local Weaviate"
+	@echo "  make snapshot-bootstrap-cloud - Restore a snapshot into hosted Weaviate"
 	@echo ""
 	@echo "Application:"
 	@echo "  make run          - Start Gradio chat interface"
@@ -201,6 +202,13 @@ snapshot-restore:
 		--snapshot-dir "$${SNAPSHOT_DIR:-../multimodal-rag-weaviate-snapshot}" \
 		$(if $(REPLACE),--replace,)
 	@echo -e "$(GREEN)✅ Snapshot restored$(NC)"
+
+snapshot-bootstrap-cloud:
+	@echo -e "$(BLUE)☁️  Bootstrapping hosted Weaviate...$(NC)"
+	@uv run python -m multimodal_rag.store.restore \
+		--target cloud \
+		--snapshot-dir "$${SNAPSHOT_DIR:-../multimodal-rag-weaviate-snapshot}"
+	@echo -e "$(GREEN)✅ Hosted snapshot restored$(NC)"
 
 run:
 	@echo -e "$(BLUE)🚀 Starting Multimodal RAG...$(NC)"

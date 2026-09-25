@@ -12,6 +12,7 @@ from uuid import UUID
 
 import weaviate
 import weaviate.classes.config as wvc
+from weaviate.auth import AuthApiKey
 
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.store.snapshot import SnapshotManifest
@@ -37,6 +38,27 @@ def _read_snapshot(snapshot_dir: Path) -> tuple[SnapshotManifest, list[dict[str,
             f"found {len(records)}"
         )
     return manifest, records
+
+
+def _connect_target(settings: AppSettings, target: str) -> Any:
+    parsed = urlparse(settings.weaviate_url)
+    if target == "local":
+        if parsed.scheme != "http":
+            raise ValueError("Local restore requires an http Weaviate URL")
+        return weaviate.connect_to_local(
+            host=parsed.hostname or "localhost", port=parsed.port or 8080
+        )
+    if target != "cloud":
+        raise ValueError(f"Unsupported restore target: {target}")
+    api_key = settings.weaviate_admin_api_key.get_secret_value()
+    if parsed.scheme != "https":
+        raise ValueError("Cloud restore requires an https Weaviate URL")
+    if not api_key:
+        raise ValueError("Cloud restore requires WEAVIATE_ADMIN_API_KEY")
+    return weaviate.connect_to_weaviate_cloud(
+        cluster_url=settings.weaviate_url,
+        auth_credentials=AuthApiKey(api_key),
+    )
 
 
 def _validate_schema(collection: Any, manifest: SnapshotManifest) -> None:
@@ -68,6 +90,7 @@ def restore_snapshot(
     *,
     replace: bool = False,
     collection_name: str = COLLECTION_NAME,
+    vector_index: str = "hnsw",
 ) -> SnapshotManifest:
     """Restore and validate a snapshot into a local Weaviate client."""
     manifest, records = _read_snapshot(snapshot_dir)
@@ -85,7 +108,13 @@ def restore_snapshot(
 
     collection = client.collections.create(
         name=collection_name,
-        vector_config=wvc.Configure.Vectors.self_provided(),
+        vector_config=wvc.Configure.Vectors.self_provided(
+            vector_index_config=(
+                wvc.Configure.VectorIndex.hfresh()
+                if vector_index == "hfresh"
+                else wvc.Configure.VectorIndex.hnsw()
+            )
+        ),
         properties=[
             wvc.Property(
                 name=prop["name"], data_type=wvc.DataType(prop["data_type"])
@@ -112,6 +141,7 @@ def restore_snapshot(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot-dir", type=Path, required=True)
+    parser.add_argument("--target", choices=("local", "cloud"), default=None)
     parser.add_argument("--replace", action="store_true")
     return parser.parse_args()
 
@@ -119,14 +149,15 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     settings = AppSettings()
-    parsed = urlparse(settings.weaviate_url)
-    if settings.weaviate_mode != "local" or parsed.scheme != "http":
-        raise ValueError("DATA-003 restore requires WEAVIATE_MODE=local")
-    client = weaviate.connect_to_local(
-        host=parsed.hostname or "localhost", port=parsed.port or 8080
-    )
+    target = args.target or settings.weaviate_mode
+    client = _connect_target(settings, target)
     try:
-        manifest = restore_snapshot(client, args.snapshot_dir, replace=args.replace)
+        manifest = restore_snapshot(
+            client,
+            args.snapshot_dir,
+            replace=args.replace,
+            vector_index="hfresh" if target == "cloud" else "hnsw",
+        )
     finally:
         client.close()
     print(manifest.model_dump_json(indent=2))

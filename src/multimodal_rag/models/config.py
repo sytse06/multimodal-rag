@@ -243,21 +243,46 @@ class InfrastructureSettings(BaseModel):
     weaviate_viewer_api_key: SecretStr = Field(
         default_factory=lambda: SecretStr("")
     )
+    weaviate_tenant: str = ""
+    weaviate_vector_dimension: int = 768
     firecrawl_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     mistral_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     youtube_cookies_file: str = ""
 
+    @field_validator("weaviate_url", mode="before")
+    @classmethod
+    def validate_weaviate_url_format(cls, value: object) -> object:
+        if isinstance(value, str) and "://" not in value:
+            raise ValueError(
+                "infrastructure.weaviate_url must include a scheme, "
+                "for example http://localhost:8080 or https://cluster.weaviate.cloud"
+            )
+        return value
+
     @model_validator(mode="after")
     def validate_weaviate_connection(self) -> "InfrastructureSettings":
-        has_api_key = bool(self.viewer_api_key.get_secret_value())
+        has_api_key = bool(self.viewer_api_key.get_secret_value()) or bool(
+            self.weaviate_admin_api_key.get_secret_value()
+        )
         if self.weaviate_mode == "cloud" and not has_api_key:
             raise ValueError(
                 "infrastructure.weaviate_api_key is required in cloud mode"
             )
         if self.weaviate_mode == "local" and self.weaviate_url.scheme != "http":
             raise ValueError("local Weaviate must use an http URL")
+        if self.weaviate_mode == "local" and (
+            self.weaviate_url.host or ""
+        ).endswith((".weaviate.cloud", ".weaviate.network")):
+            raise ValueError(
+                "local Weaviate points to a hosted endpoint; set "
+                "WEAVIATE_MODE=cloud for a .weaviate.cloud or .weaviate.network URL"
+            )
         if self.weaviate_mode == "cloud" and self.weaviate_url.scheme != "https":
             raise ValueError("cloud Weaviate must use an https URL")
+        if self.weaviate_vector_dimension <= 0:
+            raise ValueError(
+                "infrastructure.weaviate_vector_dimension must be positive"
+            )
         return self
 
     @property
@@ -449,6 +474,10 @@ class AppSettings(BaseSettings):
                 "weaviate_viewer_api_key": cls._value(
                     data, "weaviate_viewer_api_key", ""
                 ),
+                "weaviate_tenant": cls._value(data, "weaviate_tenant", ""),
+                "weaviate_vector_dimension": cls._value(
+                    data, "weaviate_vector_dimension", 768
+                ),
                 "firecrawl_api_key": cls._value(data, "firecrawl_api_key", ""),
                 "mistral_api_key": cls._value(data, "mistral_api_key", ""),
                 "youtube_cookies_file": cls._value(data, "youtube_cookies_file", ""),
@@ -551,6 +580,14 @@ class AppSettings(BaseSettings):
     @property
     def weaviate_viewer_api_key(self) -> SecretStr:
         return self.infrastructure.viewer_api_key
+
+    @property
+    def weaviate_tenant(self) -> str:
+        return self.infrastructure.weaviate_tenant
+
+    @property
+    def weaviate_vector_dimension(self) -> int:
+        return self.infrastructure.weaviate_vector_dimension
 
     @property
     def firecrawl_api_key(self) -> SecretStr:

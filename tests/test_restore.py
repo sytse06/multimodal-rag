@@ -6,7 +6,8 @@ from uuid import uuid4
 
 import pytest
 
-from multimodal_rag.store.restore import restore_snapshot
+from multimodal_rag.models.config import AppSettings
+from multimodal_rag.store.restore import _connect_target, restore_snapshot
 from multimodal_rag.store.snapshot import export_snapshot
 
 
@@ -82,3 +83,33 @@ def test_restore_inserts_snapshot_records(tmp_path: Path) -> None:
     assert manifest.object_count == 1
     assert len(inserted) == 1
     assert inserted[0]["vector"] == [0.1, 0.2]
+
+
+def test_cloud_target_uses_admin_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = AppSettings(
+        _env_file=None,
+        openrouter_api_key="test",
+        weaviate_mode="cloud",
+        weaviate_url="https://example.weaviate.network",
+        weaviate_admin_api_key="admin-secret",
+    )
+    client = object()
+    monkeypatch.setattr(
+        "multimodal_rag.store.restore.weaviate.connect_to_weaviate_cloud",
+        lambda **kwargs: client,
+    )
+
+    assert _connect_target(settings, "cloud") is client
+
+
+def test_cloud_target_requires_admin_key() -> None:
+    settings = AppSettings(
+        _env_file=None,
+        openrouter_api_key="test",
+        weaviate_mode="cloud",
+        weaviate_url="https://example.weaviate.network",
+        weaviate_viewer_api_key="viewer-secret",
+    )
+
+    with pytest.raises(ValueError, match="WEAVIATE_ADMIN_API_KEY"):
+        _connect_target(settings, "cloud")

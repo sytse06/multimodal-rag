@@ -552,6 +552,25 @@ class TestAppSettings:
         assert "viewer-secret" not in settings.model_dump_json()
         assert "openai-secret" not in settings.model_dump_json()
 
+    def test_local_mode_rejects_hosted_endpoint(self) -> None:
+        with pytest.raises(ValidationError, match="points to a hosted endpoint"):
+            AppSettings(
+                _env_file=None,
+                openrouter_api_key="test",
+                weaviate_mode="local",
+                weaviate_url="http://example.weaviate.cloud",
+            )
+
+    def test_weaviate_url_requires_scheme(self) -> None:
+        with pytest.raises(ValidationError, match="must include a scheme"):
+            AppSettings(
+                _env_file=None,
+                openrouter_api_key="test",
+                weaviate_mode="cloud",
+                weaviate_url="example.weaviate.cloud",
+                weaviate_api_key="secret",
+            )
+
     def test_provider_credentials_are_required(self) -> None:
         with pytest.raises(ValidationError, match="chat.openai.api_key"):
             AppSettings(_env_file=None, llm_provider="openai")

@@ -1,6 +1,9 @@
 """Tests for store module (embeddings + Weaviate store)."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from multimodal_rag.models.chunks import (
     SourceType,
@@ -9,7 +12,7 @@ from multimodal_rag.models.chunks import (
     WebChunk,
 )
 from multimodal_rag.store.embeddings import _MAX_WORDS, _RETRY_MAX_WORDS, embed_texts
-from multimodal_rag.store.weaviate import WeaviateStore
+from multimodal_rag.store.weaviate import EXPECTED_PROPERTIES, WeaviateStore
 
 
 class TestEmbedTexts:
@@ -163,6 +166,64 @@ class TestWeaviateStoreConnection:
             else:
                 raise AssertionError("Expected a missing API key error")
         connect.assert_not_called()
+
+    def test_local_rejects_hosted_endpoint(self) -> None:
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_local"
+        ) as connect:
+            with pytest.raises(ValueError, match="points to a hosted endpoint"):
+                WeaviateStore(
+                    "http://example.weaviate.cloud",
+                    MagicMock(),
+                    weaviate_mode="local",
+                )
+        connect.assert_not_called()
+
+
+class TestWeaviateStoreCompatibility:
+    def _make_store(self, vector: list[float]) -> WeaviateStore:
+        store = WeaviateStore.__new__(WeaviateStore)
+        collection = MagicMock()
+        collection.config.get.return_value = SimpleNamespace(
+            properties=[
+                SimpleNamespace(name=name, data_type=SimpleNamespace(value=value))
+                for name, value in EXPECTED_PROPERTIES.items()
+            ]
+        )
+        collection.query.fetch_objects.return_value = SimpleNamespace(
+            objects=[SimpleNamespace(vector=vector)]
+        )
+        client = MagicMock()
+        client.collections.exists.return_value = True
+        client.collections.get.return_value = collection
+        store._client = client
+        store._embeddings = MagicMock()
+        store._tenant = None
+        store._embed = MagicMock(return_value=[vector])
+        return store
+
+    def test_validates_schema_and_vector_dimension(self) -> None:
+        store = self._make_store([0.1, 0.2])
+
+        store.validate_compatibility(expected_vector_dimension=2)
+
+        store._client.collections.get.return_value.query.fetch_objects.assert_called_once_with(
+            limit=1, include_vector=True
+        )
+        store._embed.assert_called_once_with(["compatibility check"])
+
+    def test_reports_missing_collection(self) -> None:
+        store = self._make_store([0.1, 0.2])
+        store._client.collections.exists.return_value = False
+
+        with pytest.raises(ValueError, match="does not exist"):
+            store.validate_compatibility(expected_vector_dimension=2)
+
+    def test_reports_vector_dimension_mismatch(self) -> None:
+        store = self._make_store([0.1, 0.2])
+
+        with pytest.raises(ValueError, match="vector dimension"):
+            store.validate_compatibility(expected_vector_dimension=3)
 
 
 class TestSupportChunkConversion:

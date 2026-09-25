@@ -1,6 +1,7 @@
 """Weaviate vector store for SupportChunk objects."""
 
 import logging
+from typing import Any
 from urllib.parse import urlparse
 
 import weaviate
@@ -15,6 +16,16 @@ from multimodal_rag.store.embeddings import embed_texts
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "SupportChunk"
+EXPECTED_PROPERTIES = {
+    "text": "text",
+    "source_type": "text",
+    "source_url": "text",
+    "source_name": "text",
+    "timestamp_seconds": "int",
+    "section_heading": "text",
+    "url_hash": "text",
+    "ingested_at": "date",
+}
 
 
 class WeaviateStore:
@@ -26,8 +37,10 @@ class WeaviateStore:
         embeddings: Embeddings,
         weaviate_mode: str = "local",
         weaviate_api_key: str = "",
+        weaviate_tenant: str = "",
     ) -> None:
         self._embeddings = embeddings
+        self._tenant = weaviate_tenant.strip() or None
         try:
             parsed = urlparse(weaviate_url)
             if weaviate_mode == "cloud":
@@ -42,6 +55,11 @@ class WeaviateStore:
             elif weaviate_mode == "local":
                 if parsed.scheme != "http" or not parsed.hostname:
                     raise ValueError("local Weaviate URL must be an http URL")
+                if parsed.hostname.endswith((".weaviate.cloud", ".weaviate.network")):
+                    raise ValueError(
+                        "local Weaviate points to a hosted endpoint; set "
+                        "weaviate_mode='cloud' for a hosted URL"
+                    )
                 self._client = weaviate.connect_to_local(
                     host=parsed.hostname,
                     port=parsed.port or 8080,
@@ -87,9 +105,60 @@ class WeaviateStore:
         )
         logger.info("Created collection %s", COLLECTION_NAME)
 
+    def _collection(self) -> Any:
+        collection = self._client.collections.get(COLLECTION_NAME)
+        tenant = getattr(self, "_tenant", None)
+        return collection.with_tenant(tenant) if tenant else collection
+
+    def validate_compatibility(self, expected_vector_dimension: int = 768) -> None:
+        """Validate collection, schema, vectors, and read access before inference."""
+        try:
+            if not self._client.collections.exists(COLLECTION_NAME):
+                raise ValueError(
+                    f"Weaviate collection {COLLECTION_NAME} does not exist"
+                )
+            collection = self._collection()
+            config = collection.config.get()
+            actual = {
+                str(prop.name): str(prop.data_type.value)
+                for prop in config.properties
+            }
+            if actual != EXPECTED_PROPERTIES:
+                raise ValueError(
+                    "Weaviate collection schema is incompatible: "
+                    f"expected {EXPECTED_PROPERTIES}, found {actual}"
+                )
+            objects = collection.query.fetch_objects(limit=1, include_vector=True)
+            if not objects.objects:
+                raise ValueError(f"Weaviate collection {COLLECTION_NAME} is empty")
+            vector = objects.objects[0].vector
+            if isinstance(vector, dict):
+                vector = vector.get("default")
+            stored_dimension = len(vector) if vector is not None else 0
+            if stored_dimension != expected_vector_dimension:
+                raise ValueError(
+                    "Weaviate vector dimension is incompatible: "
+                    f"expected {expected_vector_dimension}, found {stored_dimension}"
+                )
+            query_vector = self._embed(["compatibility check"])[0]
+            if len(query_vector) != stored_dimension:
+                raise ValueError(
+                    "Query embedding dimension is incompatible: "
+                    f"expected {stored_dimension}, found {len(query_vector)}"
+                )
+            collection.aggregate.over_all(total_count=True)
+        except ValueError:
+            raise
+        except Exception as exc:
+            tenant = f" for tenant {self._tenant!r}" if self._tenant else ""
+            raise ConnectionError(
+                "Unable to validate Weaviate collection "
+                f"{COLLECTION_NAME}{tenant}: {exc}"
+            ) from exc
+
     def delete_by_source(self, source_url: str) -> int:
         """Delete all chunks matching source_url. Returns count deleted."""
-        collection = self._client.collections.get(COLLECTION_NAME)
+        collection = self._collection()
         result = collection.data.delete_many(
             where=Filter.by_property("source_url").equal(source_url)
         )
@@ -99,7 +168,7 @@ class WeaviateStore:
 
     def delete_by_source_type(self, source_type: str) -> int:
         """Delete all chunks matching source_type ('video' or 'web'). Returns count."""
-        collection = self._client.collections.get(COLLECTION_NAME)
+        collection = self._collection()
         result = collection.data.delete_many(
             where=Filter.by_property("source_type").equal(source_type)
         )
@@ -124,7 +193,7 @@ class WeaviateStore:
         texts = [f"{c.source_name}: {c.text}" for c in chunks]
         vectors = self._embed(texts)
 
-        collection = self._client.collections.get(COLLECTION_NAME)
+        collection = self._collection()
         added = 0
 
         with collection.batch.dynamic() as batch:
@@ -159,7 +228,7 @@ class WeaviateStore:
         if not vectors:
             return []
 
-        collection = self._client.collections.get(COLLECTION_NAME)
+        collection = self._collection()
         response = collection.query.near_vector(
             near_vector=vectors[0],
             limit=top_k,
@@ -180,6 +249,6 @@ class WeaviateStore:
 
     def count(self) -> int:
         """Return total number of objects in the collection."""
-        collection = self._client.collections.get(COLLECTION_NAME)
+        collection = self._collection()
         result = collection.aggregate.over_all(total_count=True)
         return result.total_count or 0
