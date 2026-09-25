@@ -16,7 +16,8 @@ make install      # Install dependencies (uv sync)
 make dev          # Configure development environment
 make docker-up    # Start Weaviate (Docker)
 make docker-down  # Stop Weaviate
-make ingest       # Run ingestion pipeline (YouTube + web → Weaviate)
+make ingest       # Run maintainer ingestion pipeline (YouTube + web → Weaviate)
+make snapshot-export # Export the fixed SupportChunk collection outside Git
 make run          # Start Gradio chat interface
 make test         # Run test suite with coverage
 make quality      # Code quality checks (ruff, mypy)
@@ -75,8 +76,9 @@ src/multimodal_rag/
 │   ├── web.py         #   Firecrawl crawling + markdown splitting
 │   └── __main__.py    #   CLI orchestrator (make ingest)
 ├── store/             # Vector store layer
-│   ├── embeddings.py  #   OpenRouter embedding (batched)
-│   └── weaviate.py    #   Weaviate collection management + search
+│   ├── embeddings.py  #   Provider-specific embeddings (batched)
+│   ├── snapshot.py    #   Fixed collection export + manifest
+│   └── weaviate.py    #   Local/cloud collection management + search
 ├── query/             # Query pipeline
 │   ├── retriever.py   #   Embed query → Weaviate search → SearchResults
 │   └── generator.py   #   LLM cited answer generation
@@ -94,10 +96,12 @@ src/multimodal_rag/
 
 - **Branches:** `main` ← `feature/*`
 - **All changes:** create a feature branch directly from main. Never commit directly to main.
-- **Merge flow:** feature → main (`--no-ff`)
+- **Merge flow:** keep all work for an epic on its feature branch; merge feature → main
+  (`--no-ff`) only after the epic's acceptance criteria and release checks are complete.
 - **Commit format:** `type(scope): description` (conventional commits)
 - **Types:** feat, fix, docs, style, refactor, test, chore
-- **Quality gate:** run `make quality` and `make test` before every commit. All tests must pass.
+- **Quality gate:** run `make quality` and `make test` before code commits. Documentation-only
+  commits may use the lighter check agreed for that change. All tests must pass before merging.
 
 ## Key Configuration
 
@@ -105,17 +109,27 @@ All configurable via environment variables (`.env`):
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `LLM_PROVIDER` | LLM backend (`openrouter`, `openai`, `gemini`, or `ollama`) | `openrouter` |
+| `LLM_PROVIDER` | LLM backend (`openrouter`, `openai`, `gemini`, `ollama`, or `nvidia`) | `openrouter` |
 | `EMBEDDING_PROVIDER` | Embedding backend (`openrouter` or `ollama`) | `openrouter` |
 | `OPENROUTER_API_KEY` | OpenRouter API access | — |
 | `OPENAI_API_KEY` | OpenAI API access | — |
 | `GEMINI_API_KEY` | Gemini API access | — |
+| `NVIDIA_API_KEY` | NVIDIA NIM API access | — |
 | `OPENROUTER_BASE_URL` | OpenRouter endpoint | `https://openrouter.ai/api/v1` |
 | `OLLAMA_BASE_URL` | Ollama endpoint | `http://localhost:11434` |
-| `LLM_MODEL` | Chat model | `openai/gpt-4o-mini` |
-| `EMBEDDING_MODEL` | Embedding model | `openai/text-embedding-3-small` |
+| `LLM_MODEL` | Chat model | Provider registry default |
+| `EMBEDDING_MODEL` | Embedding model | `nomic-embed-text` |
 | `WEAVIATE_URL` | Weaviate instance | `http://localhost:8080` |
+| `WEAVIATE_MODE` | Weaviate deployment (`local` or `cloud`) | `local` |
+| `WEAVIATE_API_KEY` | Backward-compatible hosted Weaviate key | — |
+| `WEAVIATE_ADMIN_API_KEY` | Hosted bootstrap/maintenance key | — |
+| `WEAVIATE_VIEWER_API_KEY` | Hosted runtime/read-only key | — |
 | `FIRECRAWL_API_KEY` | Firecrawl API access | — |
 | `MISTRAL_API_KEY` | Mistral Voxtral transcription fallback | — |
 | `VISION_MODEL` | Vision LLM for frame/screenshot description (empty = disabled) | `""` |
 | `GRADIO_SHARE` | Enable a public Gradio share link | `false` |
+
+The fixed `SupportChunk` collection uses Ollama `nomic-embed-text` vectors with a
+768-dimensional space. Local Docker and hosted Weaviate are interchangeable deployment
+targets, but they must contain a compatible collection. Snapshot artifacts and API keys stay
+outside Git; only deliberately selected documentation or query results are tracked.

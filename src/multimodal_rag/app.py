@@ -132,7 +132,11 @@ def main() -> None:
     store = WeaviateStore(
         weaviate_url=settings.weaviate_url,
         embeddings=embeddings,
+        weaviate_mode=settings.weaviate_mode,
+        weaviate_api_key=settings.weaviate_api_key.get_secret_value(),
+        weaviate_tenant=settings.weaviate_tenant,
     )
+    store.validate_compatibility(settings.weaviate_vector_dimension)
 
     def _respond(
         message: str,

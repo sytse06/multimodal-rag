@@ -1,6 +1,9 @@
 """Tests for store module (embeddings + Weaviate store)."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from multimodal_rag.models.chunks import (
     SourceType,
@@ -9,7 +12,7 @@ from multimodal_rag.models.chunks import (
     WebChunk,
 )
 from multimodal_rag.store.embeddings import _MAX_WORDS, _RETRY_MAX_WORDS, embed_texts
-from multimodal_rag.store.weaviate import WeaviateStore
+from multimodal_rag.store.weaviate import EXPECTED_PROPERTIES, WeaviateStore
 
 
 class TestEmbedTexts:
@@ -116,6 +119,111 @@ class TestWeaviateStoreDeleteBySourceType:
         n = store.delete_by_source_type("video")
 
         assert n == 0
+
+
+class TestWeaviateStoreConnection:
+    def test_connects_to_local_url(self) -> None:
+        client = MagicMock()
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_local",
+            return_value=client,
+        ) as connect:
+            store = WeaviateStore("http://localhost:9090", MagicMock())
+
+        connect.assert_called_once_with(host="localhost", port=9090)
+        store.close()
+        client.close.assert_called_once()
+
+    def test_connects_to_cloud_with_api_key(self) -> None:
+        client = MagicMock()
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_weaviate_cloud",
+            return_value=client,
+        ) as connect:
+            store = WeaviateStore(
+                "https://example.weaviate.network",
+                MagicMock(),
+                weaviate_mode="cloud",
+                weaviate_api_key="secret",
+            )
+
+        assert connect.call_args.kwargs["cluster_url"] == "example.weaviate.network"
+        assert connect.call_args.kwargs["auth_credentials"].api_key == "secret"
+        store.close()
+
+    def test_cloud_requires_api_key(self) -> None:
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_weaviate_cloud"
+        ) as connect:
+            try:
+                WeaviateStore(
+                    "https://example.weaviate.network",
+                    MagicMock(),
+                    weaviate_mode="cloud",
+                )
+            except ValueError as exc:
+                assert "API key" in str(exc)
+            else:
+                raise AssertionError("Expected a missing API key error")
+        connect.assert_not_called()
+
+    def test_local_rejects_hosted_endpoint(self) -> None:
+        with patch(
+            "multimodal_rag.store.weaviate.weaviate.connect_to_local"
+        ) as connect:
+            with pytest.raises(ValueError, match="points to a hosted endpoint"):
+                WeaviateStore(
+                    "http://example.weaviate.cloud",
+                    MagicMock(),
+                    weaviate_mode="local",
+                )
+        connect.assert_not_called()
+
+
+class TestWeaviateStoreCompatibility:
+    def _make_store(self, vector: list[float]) -> WeaviateStore:
+        store = WeaviateStore.__new__(WeaviateStore)
+        collection = MagicMock()
+        collection.config.get.return_value = SimpleNamespace(
+            properties=[
+                SimpleNamespace(name=name, data_type=SimpleNamespace(value=value))
+                for name, value in EXPECTED_PROPERTIES.items()
+            ]
+        )
+        collection.query.fetch_objects.return_value = SimpleNamespace(
+            objects=[SimpleNamespace(vector=vector)]
+        )
+        client = MagicMock()
+        client.collections.exists.return_value = True
+        client.collections.get.return_value = collection
+        store._client = client
+        store._embeddings = MagicMock()
+        store._tenant = None
+        store._embed = MagicMock(return_value=[vector])
+        return store
+
+    def test_validates_schema_and_vector_dimension(self) -> None:
+        store = self._make_store([0.1, 0.2])
+
+        store.validate_compatibility(expected_vector_dimension=2)
+
+        store._client.collections.get.return_value.query.fetch_objects.assert_called_once_with(
+            limit=1, include_vector=True
+        )
+        store._embed.assert_called_once_with(["compatibility check"])
+
+    def test_reports_missing_collection(self) -> None:
+        store = self._make_store([0.1, 0.2])
+        store._client.collections.exists.return_value = False
+
+        with pytest.raises(ValueError, match="does not exist"):
+            store.validate_compatibility(expected_vector_dimension=2)
+
+    def test_reports_vector_dimension_mismatch(self) -> None:
+        store = self._make_store([0.1, 0.2])
+
+        with pytest.raises(ValueError, match="vector dimension"):
+            store.validate_compatibility(expected_vector_dimension=3)
 
 
 class TestSupportChunkConversion:
