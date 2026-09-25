@@ -306,14 +306,18 @@ actionable handling for transient provider failures. OpenRouter, OpenAI, Gemini,
 NVIDIA NIM, and Ollama are supported for chat inference while embedding configuration
 remains independent.
 
-**Epic 9: Shareable Weaviate Collection Snapshot** (planned)
+**Epic 9: Shareable Weaviate Inference Storage** (implemented)
 
-Provides the simplest MVP way to share a fixed `SupportChunk` dataset. The project will
-create a collection-scoped Weaviate filesystem backup, package it with a checksum and
-compatibility manifest, and place it in an approved shared artifact location outside
-Git. Colleagues restore the immutable snapshot into the matching single-node Docker
-setup. Live synchronization, shared writes, cloud hosting, and automatic re-ingestion
-remain out of scope.
+Provides the simplest MVP way to run inference against one fixed `SupportChunk` dataset.
+The application supports either a local single-node Docker instance or a hosted Weaviate
+cluster selected through `WEAVIATE_MODE`. The collection is exported once with its stored
+vectors, checksum, and compatibility manifest outside Git. Maintainers restore the
+artifact; colleagues use local Docker or a hosted viewer credential for read-only
+inference. The application validates collection existence, schema, read access, and
+embedding/vector dimension compatibility before inference.
+
+Live synchronization, shared writes, automatic re-ingestion, schema migration, and
+embedding-model migration remain out of scope.
 
 ## 9. Risks and Mitigations
 

@@ -109,12 +109,33 @@ The local instance is available at `http://localhost:8080` by default. It must a
 contain the compatible `SupportChunk` collection before inference can return results.
 
 The fixed collection artifact is shared separately through an approved Google Drive
-link. Download it outside the repository and keep the archive and its checksum/manifest
-out of Git. Follow the accompanying restore instructions to load it into the local
-Weaviate instance. Do not use an unverified collection or change the embedding model.
+link. Download the snapshot directory outside the repository and keep the JSONL file,
+manifest, and checksum out of Git. Restore it with:
 
-The project does not yet provide the complete Epic 9 automated snapshot/hosted-deployment
-workflow; the artifact owner must provide the current restore procedure and checksum.
+```bash
+SNAPSHOT_DIR=/path/to/multimodal-rag-weaviate-snapshot make snapshot-restore
+```
+
+The restore command validates the checksum, schema, and object count. Do not use an
+unverified collection or change the embedding model. The hosted cluster is restored
+once by a maintainer; colleagues use its viewer key and never run the cloud restore.
+
+### Hosted Weaviate (optional)
+
+Local Docker remains the default. To use the shared hosted collection, set these values
+in `.env` instead of starting Docker:
+
+```dotenv
+WEAVIATE_MODE=cloud
+WEAVIATE_URL=https://<cluster>.weaviate.cloud
+WEAVIATE_VIEWER_API_KEY=<read-only-key>
+WEAVIATE_TENANT=
+WEAVIATE_VECTOR_DIMENSION=768
+```
+
+Use an HTTPS cluster URL and a viewer/read-only key. Keep admin keys restricted to the
+one-time bootstrap procedure. The application validates collection existence, schema,
+tenant access, stored vector dimension, and query embedding dimension before inference.
 
 ### 4. Start Gradio
 
@@ -156,6 +177,11 @@ make docker-down
 | `NVIDIA_API_KEY` | NVIDIA NIM credential | empty |
 | `OLLAMA_BASE_URL` | Local Ollama endpoint | `http://localhost:11434` |
 | `WEAVIATE_URL` | Weaviate endpoint | `http://localhost:8080` |
+| `WEAVIATE_MODE` | `local` Docker or `cloud` hosted deployment | `local` |
+| `WEAVIATE_VIEWER_API_KEY` | Read-only hosted credential | empty |
+| `WEAVIATE_ADMIN_API_KEY` | Maintainer-only bootstrap credential | empty |
+| `WEAVIATE_TENANT` | Optional Weaviate tenant | empty |
+| `WEAVIATE_VECTOR_DIMENSION` | Expected fixed collection dimension | `768` |
 | `GRADIO_SHARE` | Enable a public Gradio share link | `false` |
 
 Provider endpoints, timeouts, retries, context limits, and ingestion settings are also
@@ -235,7 +261,7 @@ make test-integration
 
 ## Current deployment boundary
 
-The current application is designed around a local Docker-hosted Weaviate collection.
-Shareable fixed snapshots, hosted Weaviate deployment, and optional multi-tenancy are
-planned in Epic 9. Ingestion and collection versioning remain maintainer concerns and
-are intentionally outside the colleague inference workflow.
+The application supports local single-node Docker and a hosted Weaviate cluster for the
+fixed `SupportChunk` collection. Both targets use the same `nomic-embed-text` Ollama
+embeddings and 768-dimensional vectors. Ingestion, snapshot creation, cloud bootstrap,
+and collection versioning remain maintainer concerns and are outside colleague onboarding.

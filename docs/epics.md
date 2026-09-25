@@ -594,7 +594,7 @@ workflows, or replacing Gradio with another frontend.
 
 ---
 
-## Epic 9: Shareable Weaviate Inference Storage (planned)
+## Epic 9: Shareable Weaviate Inference Storage (completed)
 
 Provides the simplest MVP way for colleagues to run inference against the same fixed
 `SupportChunk` dataset. The application supports either a local single-node Docker
@@ -654,6 +654,10 @@ writes, automatic re-ingestion, and embedding-model migration.
 - Document the embedding-model and vector-dimension compatibility requirement
 - Update `docs/PRD.md` and `docs/pipeline.md` with the deployment contract
 
+**Completion:** Local Docker and hosted Weaviate onboarding, restore, compatibility,
+viewer-access, and troubleshooting guidance are documented in the README, PRD, and
+pipeline documentation. The fixed snapshot remains outside Git.
+
 **Out of scope:** application-side ingestion, live synchronization, shared writes,
 incremental synchronization, automatic re-ingestion, schema migration, embedding-model
 migration, multi-tenant UI, and collection version management.
@@ -672,8 +676,8 @@ migration, multi-tenant UI, and collection version management.
 | 6 — Multimodal Chunk Fusion | 2 | completed | ~8 |
 | 7 — Answer-to-KB Pipeline | 3 | completed | 22 |
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
-| 9 — Shareable Weaviate Inference Storage | 6 | planned | TBD |
-| **Total** | **37** | **8 completed, 1 planned** | **220 current** |
+| 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
+| **Total** | **37** | **9 completed** | **241 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.

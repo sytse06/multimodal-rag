@@ -28,6 +28,29 @@ legacy behavior retained only for migration context. New code must use the typed
 provider/model registry, central factory, and streaming event contract implemented in
 INFER-001 through INFER-005.
 
+## Weaviate deployment contract (Epic 9)
+
+The inference path supports two configured Weaviate targets:
+
+- `WEAVIATE_MODE=local` connects to the single-node Docker service at
+  `http://localhost:8080`.
+- `WEAVIATE_MODE=cloud` connects over HTTPS using `WEAVIATE_VIEWER_API_KEY`.
+
+Both targets must expose the fixed `SupportChunk` collection. The current collection
+uses Ollama `nomic-embed-text` embeddings with 768 dimensions. `WEAVIATE_VECTOR_DIMENSION`
+records this expected dimension; changing the embedding model or dimension requires a
+new collection snapshot and is outside the colleague inference workflow.
+
+At application startup, the store validates collection existence, the expected schema,
+read access (and `WEAVIATE_TENANT` when configured), stored vector dimensions, and the
+query embedding dimension. A mode/URL mismatch, missing collection, incompatible schema,
+or permission problem fails before the first inference with an actionable message.
+
+Maintainers restore the fixed artifact with `make snapshot-restore` for local Docker or
+`make snapshot-bootstrap-cloud` for the hosted cluster. The JSONL snapshot and manifest
+remain outside Git; colleagues only need the approved artifact for local restore or the
+viewer credentials for hosted inference.
+
 ---
 
 ## Data Models (`models/query.py`)
