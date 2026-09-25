@@ -73,7 +73,7 @@ class WeaviateStore:
 
         self._client.collections.create(
             name=COLLECTION_NAME,
-            vectorizer_config=wvc.Configure.Vectorizer.none(),
+            vector_config=wvc.Configure.Vectors.self_provided(),
             properties=[
                 wvc.Property(name="text", data_type=wvc.DataType.TEXT),
                 wvc.Property(name="source_type", data_type=wvc.DataType.TEXT),

@@ -42,7 +42,9 @@ def _jsonable(value: Any) -> Any:
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_jsonable(item) for item in value]
-    if isinstance(value, (datetime, UUID)):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, UUID):
         return str(value)
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
