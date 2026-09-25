@@ -664,6 +664,56 @@ migration, multi-tenant UI, and collection version management.
 
 ---
 
+## Epic 10: Query-Only Hugging Face Embedding and Deployment (planned)
+
+Adds an opt-in Hugging Face Inference Endpoint path for querying the existing static
+`SupportChunk` collection. The endpoint hosts the SentenceTransformers model and the
+application calls it only for query embeddings. This remains a compatibility MVP: it does
+not ingest, reindex, mutate, or migrate the collection. Ollama remains the default and
+known-good embedding provider.
+
+### DATA-007 — Static Collection Query Compatibility
+
+**Branch:** `feature/DATA-007-hf-query-compatibility`
+
+- Add a minimal LangChain `Embeddings` adapter for a Hugging Face Inference Endpoint
+- Configure a Hugging Face Inference Endpoint serving the selected SentenceTransformers
+  model; do not deploy it as a Gradio Space
+- Expose the provider and model through the existing typed configuration and `.env.example`
+- Expose the Hugging Face endpoint URL and credential through typed configuration without
+  committing secrets
+- Keep Ollama as the default provider and preserve the current 768-dimensional contract
+- Generate query embeddings only; do not add ingestion or collection-write behaviour
+- Compare Hugging Face and Ollama query embeddings for dimensions and basic similarity
+- Run a read-only known-query comparison against the existing local or hosted Weaviate
+  collection and record top-k retrieval overlap
+- Add unit tests for provider selection, query embedding, dimension validation, and clear
+  failure handling
+- Smoke-test the hosted Hugging Face path independently from the local Ollama path
+- Document that Hugging Face is usable only if retrieval remains compatible with the fixed
+  collection; otherwise Ollama remains required
+
+**Acceptance criteria:**
+
+- The existing collection is never modified by this epic
+- The application can select the Hugging Face provider for query-time embeddings through
+  configuration while Ollama remains the default
+- A documented Hugging Face Inference Endpoint serves the configured SentenceTransformers
+  query embedding model
+- The application reports a clear, actionable error when the Hugging Face endpoint is
+  unavailable, unauthorized, or returns an incompatible response
+- Both providers produce 768-dimensional query vectors for the configured model
+- A known retrieval query completes against the existing collection without writes
+- Retrieval results are compared and the compatibility outcome is documented
+- Misconfiguration or incompatible dimensions produce an actionable error
+
+**Out of scope:** Hugging Face Spaces or Gradio deployment, local SentenceTransformers
+model hosting, ingestion, reindexing, collection migration, embedding fingerprint storage,
+changing the production default, production-scale autoscaling or high availability, and any
+new vector database functionality.
+
+---
+
 ## Summary
 
 | Epic | Features | Status | Tests |
@@ -677,7 +727,8 @@ migration, multi-tenant UI, and collection version management.
 | 7 — Answer-to-KB Pipeline | 3 | completed | 22 |
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
-| **Total** | **37** | **9 completed** | **241 current** |
+| 10 — Query-Only Hugging Face Embedding and Deployment | 1 | planned | TBD |
+| **Total** | **38** | **9 completed, 1 planned** | **241 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
