@@ -1,6 +1,7 @@
 """Gradio chat interface for the support knowledge base."""
 
 import logging
+import os
 import re
 import warnings
 from datetime import datetime
@@ -115,28 +116,28 @@ def save_kb_article(
     return str(path)
 
 
-def main() -> None:
+def build_app(settings: AppSettings, *, preview: bool = False) -> gr.Blocks:
     # Suppress Pandas deprecation warnings emitted by Gradio internals.
     # gradio/queueing.py calls df.infer_objects(copy=False) and uses
     # future.no_silent_downcasting — both deprecated in pandas 3.0.
     warnings.filterwarnings("ignore", message=".*no_silent_downcasting.*")
     warnings.filterwarnings("ignore", message=".*copy keyword is deprecated.*")
 
-    settings = AppSettings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
-    embeddings = create_embeddings(settings)
-    store = WeaviateStore(
-        weaviate_url=settings.weaviate_url,
-        embeddings=embeddings,
-        weaviate_mode=settings.weaviate_mode,
-        weaviate_api_key=settings.weaviate_api_key.get_secret_value(),
-        weaviate_tenant=settings.weaviate_tenant,
-    )
-    store.validate_compatibility(settings.weaviate_vector_dimension)
+    if not preview:
+        embeddings = create_embeddings(settings)
+        store = WeaviateStore(
+            weaviate_url=settings.weaviate_url,
+            embeddings=embeddings,
+            weaviate_mode=settings.weaviate_mode,
+            weaviate_api_key=settings.weaviate_api_key.get_secret_value(),
+            weaviate_tenant=settings.weaviate_tenant,
+        )
+        store.validate_compatibility(settings.weaviate_vector_dimension)
 
     def _respond(
         message: str,
@@ -152,12 +153,18 @@ def main() -> None:
         )
         return _format_citations_block(answer), answer, results
 
-    _css = ".align-bottom { align-self: flex-end; }"
-    with gr.Blocks(title="Paro Support KB", css=_css) as demo:
+    demo = gr.Blocks(title="Paro Support KB")
+    with demo:
         gr.Markdown("# Paro Support Knowledge Base")
+        if preview:
+            gr.Markdown(
+                "**UI preview only.** Model selection is available; asking questions "
+                "and generating articles are disabled. No model or database calls "
+                "are made."
+            )
         gr.Markdown(
-            "Ask questions about Paro software products."
-            "Answers include cited sources with clickable links."
+            "Ask questions about Paro software products. "
+            "Answers include cited sources with clickable links. "
             "Workflow to generate knowledge base articles based on the sources."
         )
 
@@ -196,11 +203,13 @@ def main() -> None:
                     scale=4,
                     submit_btn=True,
                     stop_btn=True,
+                    interactive=not preview,
                 )
             with gr.Row():
                 gr.ClearButton([msg, chatbot], value="Clear conversation")
                 review_btn = gr.Button(
-                    "Review & save as article", variant="secondary"
+                    "Review & save as article", variant="secondary",
+                    interactive=not preview,
                 )
 
         with gr.Column(visible=False) as walkthrough_col:
@@ -240,7 +249,11 @@ def main() -> None:
                         label="Article title",
                         placeholder="Enter a descriptive title...",
                     )
-                    save_btn = gr.Button("Save article", variant="primary")
+                    with gr.Row():
+                        save_btn = gr.Button("Save article", variant="primary")
+                        download_btn = gr.DownloadButton(
+                            "Download article", interactive=False
+                        )
                     save_msg = gr.Markdown()
                     back4_btn = gr.Button("← Back")
 
@@ -260,6 +273,9 @@ def main() -> None:
             outputs=[model_dropdown, provider_status],
             queue=False,
         )
+
+        if preview:
+            return demo
 
         def user_submit(
             message: str,
@@ -585,17 +601,29 @@ def main() -> None:
             show_progress="hidden",
         )
 
-        def do_save(title: str, body: str) -> str:
+        def do_save(title: str, body: str) -> tuple[str, object]:
             path = save_kb_article(title, body)
-            return f"Saved to `{path}`"
+            message = "Article saved. Use the download button above to save it."
+            return message, gr.DownloadButton(value=path, interactive=True)
 
         save_btn.click(
             do_save,
             inputs=[title_input, article_editor],
-            outputs=[save_msg],
+            outputs=[save_msg, download_btn],
         )
 
-    demo.launch(share=settings.gradio_share)
+    return demo
+
+
+def main() -> None:
+    settings = AppSettings()
+    demo = build_app(settings)
+    demo.launch(
+        share=settings.gradio_share,
+        server_name=os.getenv("GRADIO_SERVER_NAME", "127.0.0.1"),
+        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        css=".align-bottom { align-self: flex-end; }",
+    )
 
 
 if __name__ == "__main__":

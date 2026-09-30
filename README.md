@@ -8,7 +8,22 @@ Markdown.
 
 The application uses a fixed `SupportChunk` collection in Weaviate. Collection
 ingestion is a separate maintainer workflow; colleagues normally only need the
-inference path.
+inference path, and normally query the shared hosted Weaviate collection rather than
+running their own.
+
+## Three ways to use this application
+
+1. **Use the hosted deployment** — the application also runs as a Docker container on
+   Google Cloud Run, with Ollama baking in the `nomic-embed-text` embedding model at
+   build time. If someone has shared the Cloud Run URL with you, open it in a browser;
+   no local setup, Python, or Docker is required. See `docs/gcp-deployment.txt` for the
+   full deployment setup and maintainer operations.
+2. **Run inference locally** — clone the repo, install Python dependencies, and point
+   at the shared hosted Weaviate collection with a read-only key. No Docker needed.
+   This is the path documented below.
+3. **Maintain the collection** — building or refreshing the `SupportChunk` collection
+   requires a local, writable Weaviate instance (via Docker) and ingestion credentials.
+   See [Maintainer: ingestion workflow](#maintainer-ingestion-workflow).
 
 ## How the application works
 
@@ -25,32 +40,24 @@ Chat providers are selected explicitly in the UI. Supported providers are OpenRo
 OpenAI, Gemini, NVIDIA NIM, and Ollama. Chat-provider selection does not change the
 embedding provider or the vectors already stored in Weaviate.
 
-## Prerequisites
+## Prerequisites (running inference locally)
 
 - Python 3.12–3.14
 - [uv](https://docs.astral.sh/uv/)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) for macOS,
-  Windows, or Linux
 - An API key for the chat provider you intend to use: [OpenRouter](https://openrouter.ai/),
   [OpenAI](https://platform.openai.com/), or [Gemini](https://ai.google.dev/). Ollama
   runs locally without an API key.
-- [Ollama](https://ollama.com/) with the `nomic-embed-text` model for the current local
-  collection
+- [Ollama](https://ollama.com/) with the `nomic-embed-text` model — used for query
+  embeddings regardless of where the Weaviate collection itself is hosted
+- A read-only (viewer) key for the shared hosted Weaviate collection, from a maintainer
+
+Docker is **not** required for ordinary inference use — that's only needed if you're
+maintaining the collection yourself (see [Maintainer: ingestion
+workflow](#maintainer-ingestion-workflow)), or if you're smoke-testing a Cloud Run
+image build locally.
 
 Video/web ingestion additionally requires Firecrawl, Mistral Voxtral, YouTube access,
 and `ffmpeg`; those dependencies are not needed for ordinary inference.
-
-### Install Docker
-
-Install Docker Desktop from the [official Docker downloads page](https://www.docker.com/products/docker-desktop/)
-for your operating system. Verify that both Docker and Compose are available:
-
-```bash
-docker --version
-docker compose version
-```
-
-Start Docker Desktop before running `make docker-up`.
 
 ### Install the fixed embedding model
 
@@ -90,7 +97,8 @@ Edit `.env` and set the credentials for the providers you will use. At minimum, 
 
 - `OPENROUTER_API_KEY` or the key for your selected chat provider;
 - `EMBEDDING_PROVIDER=ollama` and `EMBEDDING_MODEL=nomic-embed-text`;
-- `WEAVIATE_URL` for the Weaviate instance containing `SupportChunk`.
+- `WEAVIATE_MODE=cloud`, `WEAVIATE_URL`, and `WEAVIATE_VIEWER_API_KEY` for the shared
+  hosted collection (see below).
 
 `GRADIO_SHARE=false` keeps the interface local. Do not commit `.env` or place real
 secrets in configuration files.
@@ -99,31 +107,7 @@ secrets in configuration files.
 the checked-in development template. It overwrites the existing `.env`; use it only
 when that is deliberate.
 
-### 3. Start local Weaviate
-
-```bash
-make docker-up
-```
-
-The local instance is available at `http://localhost:8080` by default. It must already
-contain the compatible `SupportChunk` collection before inference can return results.
-
-The fixed collection artifact is shared separately through an approved Google Drive
-link. Download the snapshot directory outside the repository and keep the JSONL file,
-manifest, and checksum out of Git. Restore it with:
-
-```bash
-SNAPSHOT_DIR=/path/to/multimodal-rag-weaviate-snapshot make snapshot-restore
-```
-
-The restore command validates the checksum, schema, and object count. Do not use an
-unverified collection or change the embedding model. The hosted cluster is restored
-once by a maintainer; colleagues use its viewer key and never run the cloud restore.
-
-### Hosted Weaviate (optional)
-
-Local Docker remains the default. To use the shared hosted collection, set these values
-in `.env` instead of starting Docker:
+### 3. Point at the shared hosted Weaviate collection
 
 ```dotenv
 WEAVIATE_MODE=cloud
@@ -133,9 +117,15 @@ WEAVIATE_TENANT=
 WEAVIATE_VECTOR_DIMENSION=768
 ```
 
-Use an HTTPS cluster URL and a viewer/read-only key. Keep admin keys restricted to the
-one-time bootstrap procedure. The application validates collection existence, schema,
-tenant access, stored vector dimension, and query embedding dimension before inference.
+Get the cluster URL and a viewer/read-only key from a maintainer. Keep admin keys
+restricted to the one-time bootstrap procedure — colleagues only ever need the viewer
+key. The application validates collection existence, schema, tenant access, stored
+vector dimension, and query embedding dimension before inference, and fails with a
+clear error rather than a confusing query failure if anything is misconfigured.
+
+Running your own local Weaviate via Docker is a maintainer/ingestion concern, not part
+of ordinary inference setup — see [Maintainer: ingestion
+workflow](#maintainer-ingestion-workflow) if that's what you need.
 
 ### 4. Start Gradio
 
@@ -154,12 +144,6 @@ four-step editorial workflow:
 
 If a provider is temporarily busy or times out, the UI reports a retry/provider-switch
 message instead of incorrectly blaming local configuration.
-
-Stop Weaviate when finished:
-
-```bash
-make docker-down
-```
 
 ## Configuration
 
@@ -213,8 +197,50 @@ provider/model or the stored Weaviate vectors.
 
 ## Maintainer: ingestion workflow
 
-Ingestion is not required for normal use. Maintainers who need to build or refresh the
-local collection can use:
+Ingestion is not required for normal use — see [Three ways to use this
+application](#three-ways-to-use-this-application). Maintainers who need to build or
+refresh the collection need a local, writable Weaviate instance, which requires Docker.
+
+### Install Docker
+
+Install Docker Desktop from the [official Docker downloads page](https://www.docker.com/products/docker-desktop/)
+for your operating system. Verify that both Docker and Compose are available:
+
+```bash
+docker --version
+docker compose version
+```
+
+Start Docker Desktop before running `make docker-up`.
+
+### Start local Weaviate
+
+```bash
+make docker-up
+```
+
+The local instance is available at `http://localhost:8080` by default.
+
+The fixed collection artifact is shared separately through an approved Google Drive
+link. Download the snapshot directory outside the repository and keep the JSONL file,
+manifest, and checksum out of Git. Restore it with:
+
+```bash
+SNAPSHOT_DIR=/path/to/multimodal-rag-weaviate-snapshot make snapshot-restore
+```
+
+The restore command validates the checksum, schema, and object count. Do not use an
+unverified collection or change the embedding model. The hosted cluster is restored
+once by a maintainer from this local instance; colleagues use its viewer key and never
+run the cloud restore themselves.
+
+Stop Weaviate when finished:
+
+```bash
+make docker-down
+```
+
+### Run ingestion
 
 ```bash
 cp .env.example .env
@@ -257,11 +283,20 @@ make test-integration
 - [Product requirements](docs/PRD.md)
 - [Epics and acceptance criteria](docs/epics.md)
 - [Query and inference pipeline](docs/pipeline.md)
+- [Cloud Run deployment](docs/gcp-deployment.txt)
 - [Contributor and development workflow](CLAUDE.md)
 
 ## Current deployment boundary
 
-The application supports local single-node Docker and a hosted Weaviate cluster for the
-fixed `SupportChunk` collection. Both targets use the same `nomic-embed-text` Ollama
-embeddings and 768-dimensional vectors. Ingestion, snapshot creation, cloud bootstrap,
-and collection versioning remain maintainer concerns and are outside colleague onboarding.
+Three deployment targets are supported, all against the same fixed `SupportChunk`
+collection (Ollama `nomic-embed-text` embeddings, 768-dimensional vectors):
+
+1. **Hosted Cloud Run** — the application deployed as a Docker container; see
+   `docs/gcp-deployment.txt`. No local setup required to use it.
+2. **Local inference against hosted Weaviate** — `make run` on a developer machine,
+   querying the shared cloud collection with a viewer key. No Docker required.
+3. **Local single-node Docker Weaviate** — a maintainer-only path for ingestion and
+   snapshot creation, not used for ordinary inference.
+
+Ingestion, snapshot creation, cloud bootstrap, and collection versioning remain
+maintainer concerns and are outside colleague onboarding.

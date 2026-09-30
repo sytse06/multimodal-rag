@@ -41,8 +41,14 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ),
     ModelSpec(
         provider="gemini",
-        model="gemini-3.6-flash",
-        display_name="Gemini — 3.6 Flash",
+        model="gemini-3.8-flash",
+        display_name="Gemini — 3.8 Flash",
+        capabilities=ModelCapabilities(vision=True),
+    ),
+    ModelSpec(
+        provider="gemini",
+        model="gemini-3.5-flash",
+        display_name="Gemini — 3.5 Flash",
         capabilities=ModelCapabilities(vision=True),
     ),
     ModelSpec(
@@ -73,7 +79,7 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
 def provider_available(settings: AppSettings, provider: str) -> bool:
     """Return whether a provider has enough validated configuration to use."""
     if provider == "ollama":
-        return True
+        return settings.ollama_chat_enabled
     if provider == settings.chat.provider:
         return bool(settings.chat.api_key.get_secret_value())
     credentials = getattr(settings.credentials, f"{provider}_api_key", None)

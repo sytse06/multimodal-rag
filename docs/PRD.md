@@ -149,7 +149,7 @@ knowledge_bases:
 | RAG framework | LangChain | Mature RAG tooling, provider-agnostic model abstraction |
 | Model abstraction | LangChain `BaseChatModel` / `Embeddings` | Swap providers without code changes |
 | Embeddings | Configurable through OpenRouter or Ollama (for example, `openai/text-embedding-3-small` or `nomic-embed-text`) | LangChain interface enables provider diversity; independent from chat provider |
-| Vector store | Weaviate | Team experience, Docker for local, Cloud for HF Spaces |
+| Vector store | Weaviate | Team experience, Docker for local, Cloud for the Cloud Run deployment |
 | LLM providers | OpenRouter, OpenAI, Gemini, NVIDIA NIM, and Ollama | Dedicated LangChain integrations behind one provider-neutral factory |
 | Primary video transcription | Mistral Voxtral Mini + yt-dlp/ffmpeg | Segment-level audio transcription for the fused video pipeline |
 | Caption fallback | youtube-transcript-api | Used when `MISTRAL_API_KEY` is absent |
@@ -157,7 +157,7 @@ knowledge_bases:
 | Frame extraction | yt-dlp + ffmpeg | yt-dlp already a dependency; ffmpeg is the standard tool for keyframe extraction |
 | Web crawling | Firecrawl | Handles full-site crawling from root URL |
 | Data validation | Pydantic | Type-safe models, config via BaseSettings |
-| UI | Gradio | Fast prototyping, HF Spaces deployment path |
+| UI | Gradio | Fast prototyping, Cloud Run deployment path |
 | Containerization | Docker (Weaviate) | Local vector store instance |
 
 ## 5. Conceptual Data Model
@@ -218,7 +218,7 @@ knowledge_bases:
 - **Weaviate** — local Docker instance, no authentication needed for v1
 - **Source content** — all sources are already public (YouTube, published knowledge bases)
 - **No user auth in v1** — internal tool, network-level access control assumed
-- **HF Spaces deployment** — secrets managed via HF Spaces secrets, not environment files
+- **Cloud Run deployment** — secrets managed via Google Secret Manager, not environment files
 
 ## 8. Development Phases
 
@@ -338,7 +338,7 @@ embedding-model migration remain out of scope.
 - Source freshness detection (re-ingest changed content)
 - Analytics: most asked questions, most cited sources
 - Feedback mechanism (thumbs up/down on answers)
-- HF Spaces deployment with Weaviate Cloud
+- Cloud Run deployment with Weaviate Cloud (completed in Epic 10 / DATA-007)
 
 ### Phase 3: Expansion
 

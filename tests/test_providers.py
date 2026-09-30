@@ -23,6 +23,20 @@ def test_available_models_only_include_configured_providers() -> None:
     assert providers == {"openrouter", "ollama"}
 
 
+def test_ollama_chat_models_excluded_when_disabled() -> None:
+    settings = AppSettings(
+        _env_file=None,
+        openrouter_api_key="router-key",
+        llm_provider="openrouter",
+        ollama_chat_enabled=False,
+    )
+
+    providers = {model.provider for model in available_models(settings)}
+
+    assert "ollama" not in providers
+    assert provider_available(settings, "ollama") is False
+
+
 def test_active_model_is_added_to_registry() -> None:
     settings = AppSettings(
         _env_file=None,

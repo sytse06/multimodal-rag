@@ -245,7 +245,16 @@ used by Step 4.
 3. Slugifies the title via `_slugify` (lowercased, non-alphanumeric stripped, spaces/hyphens collapsed, max 60 characters).
 4. Formats a timestamp as `YYYYMMDD-HHMMSS`.
 5. Writes `kb_output/{slug}-{timestamp}.md` with a `# {title}` prepended to the body.
-6. Returns the file path string, which is displayed in `save_msg`.
+
+`do_save` then updates two outputs, not one: `save_msg` shows a plain confirmation
+(not the raw server path — a browser user has no access to it, and on the Cloud Run
+deployment the path doesn't survive the next scale-to-zero cycle anyway), and
+`download_btn` (a `gr.DownloadButton`, always visible but `interactive=False` until
+a save happens) becomes `interactive=True` with the saved file as its value. The
+download button, not the server-side file, is what actually delivers the article to
+the user in both running modes — on a local `make run` instance the `kb_output/`
+file is also directly reachable on disk, but on Cloud Run the download button is the
+only way the user ever receives the content at all.
 
 ---
 

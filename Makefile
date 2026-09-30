@@ -1,6 +1,12 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
+
+# Prevent a VIRTUAL_ENV inherited from the calling shell (e.g. a manually
+# activated .venv-313/.venv-314 used for cross-version testing) from
+# overriding uv's own project environment resolution, which always targets
+# the bare .venv.
+unexport VIRTUAL_ENV
 
 RED := \033[0;31m
 GREEN := \033[0;32m
@@ -43,6 +49,9 @@ help:
 	@echo ""
 	@echo "Application:"
 	@echo "  make run          - Start Gradio chat interface"
+	@echo ""
+	@echo "Deployment:"
+	@echo "  make deploy       - Build and deploy to Cloud Run (see docs/gcp-deployment.txt)"
 	@echo ""
 	@echo "Git:"
 	@echo "  make git-status   - Show git overview"
@@ -218,6 +227,21 @@ run:
 	fi
 	@uv run python -m multimodal_rag.app
 	@echo -e "$(GREEN)✅ Application stopped$(NC)"
+
+deploy:
+	@echo -e "$(BLUE)☁️  Deploying to Cloud Run...$(NC)"
+	@if ! command -v gcloud >/dev/null 2>&1; then \
+		echo -e "$(RED)❌ gcloud CLI not found. Install the Google Cloud SDK first$(NC)"; \
+		exit 1; \
+	fi
+	@gcloud run deploy $${CLOUD_RUN_SERVICE:-multimodal-rag} \
+		--source . \
+		--project=$${GCP_PROJECT:-gen-lang-client-0552956404} \
+		--region=$${GCP_REGION:-europe-west4} \
+		--port=7860 \
+		--quiet
+	@echo -e "$(GREEN)✅ Deployed to Cloud Run$(NC)"
+	@echo "Env vars and secrets are managed separately - see docs/gcp-deployment.txt"
 
 git-status:
 	@echo -e "$(CYAN)📊 Git Status Overview$(NC)"

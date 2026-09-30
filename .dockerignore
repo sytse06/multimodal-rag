@@ -1,0 +1,17 @@
+.git
+.venv
+.venv-*
+.uv-cache
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+__pycache__
+*.py[cod]
+graphify-out
+data
+logs
+kb_output
+.env
+.env.*
+!.env.example

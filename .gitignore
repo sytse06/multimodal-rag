@@ -4,6 +4,9 @@ config/development.env
 .venv/
 *.code-workspace
 *.txt
+# docs/gcp-deployment.txt deliberately excluded: contains real project ID,
+# service account email, Weaviate cluster hostname, and live public service
+# URLs. Kept locally only, not tracked.
 *.pem
 __pycache__/
 .pytest_cache/

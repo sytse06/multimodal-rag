@@ -664,53 +664,71 @@ migration, multi-tenant UI, and collection version management.
 
 ---
 
-## Epic 10: Query-Only Hugging Face Embedding and Deployment (planned)
+## Epic 10: Query-Only Ollama Embedding and Cloud Deployment (completed)
 
-Adds an opt-in Hugging Face Inference Endpoint path for querying the existing static
-`SupportChunk` collection. The endpoint hosts the SentenceTransformers model and the
-application calls it only for query embeddings. This remains a compatibility MVP: it does
-not ingest, reindex, mutate, or migrate the collection. Ollama remains the default and
-known-good embedding provider.
+Deploys the existing inference application to a managed cloud platform using a local
+Ollama embedding service. The `nomic-embed-text` model is baked into the Docker image
+and used only for query embeddings. The app reads from the fixed `SupportChunk`
+collection and uses configured cloud chat providers. This remains a static-collection
+inference MVP: it does not ingest, reindex, mutate, or migrate the collection.
 
-### DATA-007 — Static Collection Query Compatibility
+### DATA-007 — Ollama Query Embeddings in a Deployed Container
 
-**Branch:** `feature/DATA-007-hf-query-compatibility`
+**Branch:** `feature/DATA-007-hf-space-boot`
 
-- Add a minimal LangChain `Embeddings` adapter for a Hugging Face Inference Endpoint
-- Configure a Hugging Face Inference Endpoint serving the selected SentenceTransformers
-  model; do not deploy it as a Gradio Space
-- Expose the provider and model through the existing typed configuration and `.env.example`
-- Expose the Hugging Face endpoint URL and credential through typed configuration without
-  committing secrets
-- Keep Ollama as the default provider and preserve the current 768-dimensional contract
-- Generate query embeddings only; do not add ingestion or collection-write behaviour
-- Compare Hugging Face and Ollama query embeddings for dimensions and basic similarity
-- Run a read-only known-query comparison against the existing local or hosted Weaviate
-  collection and record top-k retrieval overlap
-- Add unit tests for provider selection, query embedding, dimension validation, and clear
-  failure handling
-- Smoke-test the hosted Hugging Face path independently from the local Ollama path
-- Document that Hugging Face is usable only if retrieval remains compatible with the fixed
-  collection; otherwise Ollama remains required
+- Run the production Gradio application as a Docker container on a managed platform
+- Start Ollama as a private, local service in the container and use its embedding API
+  for query vectors
+- Bake the `nomic-embed-text` model into the Docker image at build time, so container
+  restarts need no runtime download and no persistent storage volume
+- Configure query embeddings as Ollama `nomic-embed-text` and preserve the 768-dimensional
+  collection contract
+- Connect to the hosted Weaviate collection with the viewer key and perform read-only
+  retrieval
+- Keep chat inference selectable between configured OpenAI and Gemini models
+- Validate the collection and query-embedding dimension at app startup; surface clear
+  errors for missing secrets, missing model, or incompatible vectors
+- Add tests for container entrypoint settings and startup behavior without requiring
+  credentials
+- Smoke-test one known retrieval query and an inference request against the deployed
+  service
+- Document the deployment platform, image build, and provider settings
+
+**Deployment platform:** Hugging Face Spaces (Docker SDK) was the original target and
+is where the Dockerfile, entrypoint script, and baked-in embedding model were built and
+first verified end-to-end. The Space was deleted after Hugging Face changed pricing
+policy mid-deployment to require a PRO subscription for any compute-backed Space
+(Gradio or Docker, public or private — previously only GPU tiers were restricted).
+The application redeployed to **Google Cloud Run** with no changes to the Dockerfile,
+entrypoint script, or embedding design — only the deployment target changed. Full
+setup, IAM, secrets, and a documented browser-access gotcha (Gradio's client computes
+its own canonical origin for a heartbeat connection, which breaks when accessed through
+an origin-changing proxy) are in `docs/gcp-deployment.txt`.
 
 **Acceptance criteria:**
 
-- The existing collection is never modified by this epic
-- The application can select the Hugging Face provider for query-time embeddings through
-  configuration while Ollama remains the default
-- A documented Hugging Face Inference Endpoint serves the configured SentenceTransformers
-  query embedding model
-- The application reports a clear, actionable error when the Hugging Face endpoint is
-  unavailable, unauthorized, or returns an incompatible response
-- Both providers produce 768-dimensional query vectors for the configured model
-- A known retrieval query completes against the existing collection without writes
-- Retrieval results are compared and the compatibility outcome is documented
-- Misconfiguration or incompatible dimensions produce an actionable error
+- The existing collection is never modified by this epic — met
+- The deployed container starts Ollama and serves the production Gradio interface — met
+- The model ships inside the Docker image and is available immediately on every
+  restart, with no runtime download — met
+- Ollama produces 768-dimensional query vectors compatible with the current collection —
+  met, verified via `validate_compatibility()` at startup in both the local Docker test
+  and the deployed Cloud Run service
+- A known retrieval query and one chat inference complete against the existing collection
+  without Weaviate writes — met, verified against the live Weaviate Cloud collection
+  through the deployed service in a browser
+- OpenAI and Gemini are selectable when their secrets are configured — met for OpenAI;
+  Gemini is wired and configured but not yet smoke-tested end-to-end
+- Missing runtime configuration and incompatible collection/vector dimensions produce
+  actionable startup errors — met (`space-entrypoint.sh` fails fast on missing
+  `WEAVIATE_URL`/`WEAVIATE_VIEWER_API_KEY`; `validate_compatibility()` fails fast on
+  dimension mismatch)
+- Deployment setup and test outcome are documented — met, `docs/gcp-deployment.txt`
+- Misconfiguration or incompatible dimensions produce an actionable error — met
 
-**Out of scope:** Hugging Face Spaces or Gradio deployment, local SentenceTransformers
-model hosting, ingestion, reindexing, collection migration, embedding fingerprint storage,
-changing the production default, production-scale autoscaling or high availability, and any
-new vector database functionality.
+**Out of scope:** ingestion, reindexing, collection migration, embedding fingerprint
+storage, other embedding providers, production-scale autoscaling or high availability, and
+any new vector database functionality.
 
 ---
 
@@ -727,8 +745,8 @@ new vector database functionality.
 | 7 — Answer-to-KB Pipeline | 3 | completed | 22 |
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
-| 10 — Query-Only Hugging Face Embedding and Deployment | 1 | planned | TBD |
-| **Total** | **38** | **9 completed, 1 planned** | **241 current** |
+| 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
+| **Total** | **38** | **10 completed** | **241 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.

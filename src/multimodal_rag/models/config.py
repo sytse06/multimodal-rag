@@ -69,7 +69,7 @@ class _ProviderConfig(BaseModel):
     api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     base_url: AnyHttpUrl
     timeout: float = 60.0
-    max_retries: int = 2
+    max_retries: int = 4
 
     @field_validator("model")
     @classmethod
@@ -327,6 +327,7 @@ class RuntimeSettings(BaseModel):
     app_env: str = "development"
     log_level: str = "INFO"
     gradio_share: bool = False
+    ollama_chat_enabled: bool = True
 
 
 class CredentialSettings(BaseModel):
@@ -407,7 +408,7 @@ class AppSettings(BaseSettings):
             "api_key": cls._value(values, key_name, ""),
             "base_url": cls._value(values, url_name, defaults[provider_name]),
             "timeout": cls._value(values, "llm_timeout", 60.0),
-            "max_retries": cls._value(values, "llm_max_retries", 2),
+            "max_retries": cls._value(values, "llm_max_retries", 4),
         }
 
     @classmethod
@@ -439,7 +440,9 @@ class AppSettings(BaseSettings):
             provider = cls._value(data, "embedding_provider", "openrouter")
             data["embeddings"] = {
                 "provider": provider,
-                "model": cls._value(data, "embedding_model", "nomic-embed-text"),
+                "model": cls._value(
+                    data, "embedding_model", "nomic-embed-text"
+                ),
                 "api_key": cls._value(
                     data,
                     f"{provider}_api_key",
@@ -495,6 +498,9 @@ class AppSettings(BaseSettings):
                 "app_env": cls._value(data, "app_env", "development"),
                 "log_level": cls._value(data, "log_level", "INFO"),
                 "gradio_share": cls._value(data, "gradio_share", False),
+                "ollama_chat_enabled": cls._value(
+                    data, "ollama_chat_enabled", True
+                ),
             }
         if "credentials" not in data:
             data["credentials"] = {
@@ -628,3 +634,7 @@ class AppSettings(BaseSettings):
     @property
     def gradio_share(self) -> bool:
         return self.runtime.gradio_share
+
+    @property
+    def ollama_chat_enabled(self) -> bool:
+        return self.runtime.ollama_chat_enabled

@@ -99,7 +99,7 @@ def create_chat_model(
         return ChatGoogleGenerativeAI(
             model=selection.model,
             api_key=api_key,
-            client_options={"api_endpoint": endpoint},
+            base_url=endpoint,
             temperature=settings.chat.temperature,
             request_timeout=settings.chat.timeout,
             retries=settings.chat.max_retries,
