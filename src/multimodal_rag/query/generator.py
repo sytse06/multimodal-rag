@@ -13,16 +13,21 @@ from multimodal_rag.models.inference import InferenceEvent, TokenUsage
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
 
 logger = logging.getLogger(__name__)
-DEFAULT_CONTEXT_TOKENS = 6000
+DEFAULT_CONTEXT_TOKENS = 10000
 
 SYSTEM_PROMPT = """\
 You are a support assistant for Paro Software. Answer the user's question \
 using ONLY the provided source chunks. Follow these rules strictly:
 
 1. Base your answer entirely on the provided sources. Do NOT invent information.
-2. Cite sources using bracket notation like [1], [2], etc. matching the chunk numbers.
+2. Cite sources using bracket notation like [1], [2], etc. matching the chunk \
+numbers. For a multi-step procedure, cite once per group of steps that come from \
+the same source, not on every line.
 3. If the sources don't contain enough information, say so honestly.
-4. Keep answers concise and actionable for support staff.
+4. Match the answer to the question. For how-to or troubleshooting questions, \
+give the complete numbered procedure from the sources, step by step, with the \
+exact menu paths, field names and values. For factual questions, answer in a \
+few sentences.
 5. Use markdown formatting for readability."""
 
 USER_TEMPLATE = """\

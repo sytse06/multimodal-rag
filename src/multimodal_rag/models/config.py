@@ -146,7 +146,7 @@ class ChatSettings(BaseModel):
 
     config: ProviderConfig = Field(default_factory=OpenRouterProviderConfig)
     temperature: float = 0.3
-    max_context_tokens: int = 6000
+    max_context_tokens: int = 10000
 
     @field_validator("temperature")
     @classmethod
@@ -434,7 +434,7 @@ class AppSettings(BaseSettings):
                 "temperature": cls._value(
                     data, "llm_temperature", cls._value(data, "temperature", 0.3)
                 ),
-                "max_context_tokens": cls._value(data, "llm_context_tokens", 6000),
+                "max_context_tokens": cls._value(data, "llm_context_tokens", 10000),
             }
         if "embeddings" not in data:
             provider = cls._value(data, "embedding_provider", "openrouter")
