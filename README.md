@@ -180,7 +180,7 @@ providers. Only configured providers appear in the Gradio provider selector.
 | Provider | Credential/endpoint | Model value example |
 |---|---|---|
 | OpenRouter | `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL` | `openai/gpt-5.4-mini` |
-| OpenAI | `OPENAI_API_KEY` and `OPENAI_BASE_URL` | `gpt-4o-mini` |
+| OpenAI | `OPENAI_API_KEY` and `OPENAI_BASE_URL` | `gpt-6-luna` |
 | Gemini | `GEMINI_API_KEY` and `GEMINI_BASE_URL` | `gemini-3.6-flash` |
 | NVIDIA NIM | `NVIDIA_API_KEY` and `NVIDIA_BASE_URL` | `nvidia/nemotron-3-ultra-550b-a55b` |
 | Ollama | `OLLAMA_BASE_URL`; no API key | `nemotron-3.5-lightning:30b-mlx` |
@@ -188,7 +188,8 @@ providers. Only configured providers appear in the Gradio provider selector.
 To use a different model from the same provider, set `LLM_MODEL` to that provider's
 model identifier and restart the application. For Ollama, download the model first
 with `ollama pull <model-name>`. The model must support the application's chat and
-streaming path.
+streaming path. OpenAI `gpt-6*` models only support the default temperature, so the
+application does not send `LLM_TEMPERATURE` to them.
 
 This is provider configuration, not unrestricted provider extensibility. Adding a new
 provider requires a LangChain integration, typed configuration, factory branch, registry

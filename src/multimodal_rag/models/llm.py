@@ -1,5 +1,7 @@
 """LangChain model factories for provider-agnostic LLM and embedding access."""
 
+from typing import Any
+
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
@@ -65,13 +67,19 @@ def create_chat_model(
     if provider == "openai":
         from langchain_openai import ChatOpenAI
 
+        # gpt-6 models reject any non-default temperature with a 400.
+        sampling: dict[str, Any] = (
+            {}
+            if selection.model.startswith("gpt-6")
+            else {"temperature": settings.chat.temperature}
+        )
         return ChatOpenAI(
             model=selection.model,
             api_key=api_key,
             base_url=endpoint,
-            temperature=settings.chat.temperature,
             timeout=settings.chat.timeout,
             max_retries=settings.chat.max_retries,
+            **sampling,
         )
     if provider == "nvidia":
         from langchain_openai import ChatOpenAI
