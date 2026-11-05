@@ -15,6 +15,7 @@ from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_c
 from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
 from multimodal_rag.ingest.web_images import fetch_image_chunks
 from multimodal_rag.ingest.youtube import fetch_transcript_chunks
+from multimodal_rag.logging_config import configure_logging
 from multimodal_rag.models.chunks import SupportChunk
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.models.llm import create_embeddings, create_vision_llm
@@ -54,10 +55,7 @@ def _ingest_chunks(
 
 def run() -> None:
     settings = AppSettings()
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
+    configure_logging(settings)
 
     sources = load_sources()
     embeddings = create_embeddings(settings)

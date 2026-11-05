@@ -85,7 +85,14 @@ def _truncate_context(context: str, max_context_tokens: int | None) -> str:
         return context
     truncated = context[:max_chars].rsplit("\n\n", 1)[0].rstrip()
     omission = "[Additional source context omitted to fit the context budget.]"
-    return f"{truncated}\n\n{omission}"
+    result = f"{truncated}\n\n{omission}"
+    logger.info(
+        "Context truncated to fit budget: ~%d -> ~%d tokens (budget %d)",
+        len(context) // 4,
+        len(result) // 4,
+        max_context_tokens,
+    )
+    return result
 
 
 def _usage_from_chunk(chunk: object) -> TokenUsage | None:

@@ -326,8 +326,14 @@ class RuntimeSettings(BaseModel):
 
     app_env: str = "development"
     log_level: str = "INFO"
+    log_format: Literal["auto", "text", "json"] = "auto"
     gradio_share: bool = False
     ollama_chat_enabled: bool = True
+
+    @field_validator("log_format", mode="before")
+    @classmethod
+    def normalise_log_format(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class CredentialSettings(BaseModel):
@@ -497,6 +503,7 @@ class AppSettings(BaseSettings):
             data["runtime"] = {
                 "app_env": cls._value(data, "app_env", "development"),
                 "log_level": cls._value(data, "log_level", "INFO"),
+                "log_format": cls._value(data, "log_format", "auto"),
                 "gradio_share": cls._value(data, "gradio_share", False),
                 "ollama_chat_enabled": cls._value(
                     data, "ollama_chat_enabled", True
@@ -630,6 +637,10 @@ class AppSettings(BaseSettings):
     @property
     def log_level(self) -> str:
         return self.runtime.log_level
+
+    @property
+    def log_format(self) -> str:
+        return self.runtime.log_format
 
     @property
     def gradio_share(self) -> bool:
