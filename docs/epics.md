@@ -660,7 +660,8 @@ pipeline documentation. The fixed snapshot remains outside Git.
 
 **Out of scope:** application-side ingestion, live synchronization, shared writes,
 incremental synchronization, automatic re-ingestion, schema migration, embedding-model
-migration, multi-tenant UI, and collection version management.
+migration, multi-tenant UI, and collection version management. Maintainer-run
+synchronization of content changes into the hosted collection is planned in Epic 11.
 
 ---
 
@@ -728,7 +729,177 @@ an origin-changing proxy) are in `docs/gcp-deployment.txt`.
 
 **Out of scope:** ingestion, reindexing, collection migration, embedding fingerprint
 storage, other embedding providers, production-scale autoscaling or high availability, and
-any new vector database functionality.
+any new vector database functionality. Maintainer-run content synchronization is planned
+separately in Epic 11.
+
+---
+
+## Epic 11: Operational Observability and Hosted Content Sync (planned)
+
+Makes the live tool observable and safe to operate, then lets a maintainer propagate
+source content changes into the hosted `SupportChunk` collection without a rebuild or an
+app redeploy. The embedding contract does not change (Ollama `nomic-embed-text`, 768
+dimensions). Sync writes happen only from a maintainer machine with the admin key; Cloud
+Run keeps the read-only viewer key.
+
+The tool is in use, so Phase 1 (observability) ships first. It is small, low-risk, and
+shippable on its own. Phase 2 (sync) writes to production data and reuses the Phase 1
+logging.
+
+### Phase 1: Observability
+
+#### OBS-001 — Central Logging Configuration and Correlation
+
+**Branch:** `feature/OBS-001-logging-config`
+
+- Replace the two separate `logging.basicConfig` calls (`app.py`, `ingest/__main__.py`)
+  with one `configure_logging(settings)` shared by the app, ingestion, and sync
+- JSON output on Cloud Run (detected via the `K_SERVICE` environment variable, or
+  `LOG_FORMAT=json`) with a `severity` field Cloud Logging understands; readable plain
+  text locally
+- A correlation ID set per question (context variable) and included on every log line
+  from retrieval through inference
+- Add DEBUG-level logging at decision points: provider/model selection, retrieval
+  counts, and context truncation (log when `_truncate_context` actually cuts, with
+  before/after size)
+
+**Scope:** new `src/multimodal_rag/logging_config.py`, `app.py`, `ingest/__main__.py`,
+`query/generator.py`
+
+#### OBS-002 — Inference Metrics Logging
+
+**Branch:** `feature/OBS-002-inference-metrics`
+
+- Emit exactly one structured INFO record per generation, whether completed, errored, or
+  cancelled: provider, model, status, finish reason, input/output/total tokens (or an
+  explicit "unreported"), time-to-first-token, total latency, chunks retrieved, context
+  tokens used vs the budget, and whether truncation occurred
+- Never include prompt, question, or answer text
+- Closes the Epic 8 requirement that provider, model, completion status, token usage, and
+  latency be available for operational logging. `InferenceEvent` already carries these
+  values, but nothing writes them to the logs.
+- Document two Cloud Logging queries: error rate by model (provider capacity errors) and
+  p95 latency by model
+
+**Scope:** `src/multimodal_rag/query/generator.py`, `app.py`, `models/inference.py`
+
+#### OBS-003 — Logging Privacy and Secret Safety
+
+**Branch:** `feature/OBS-003-logging-safety`
+
+- Decide and document the policy for user query text. Default proposal: do not log it;
+  log only its length and a short hash, with full text at DEBUG in local runs only.
+  Change `query/retriever.py`, which currently logs the first 60 characters of every
+  query at INFO.
+- Redact API keys, bearer tokens, and credentialed URLs from exception text before
+  `logger.exception` calls
+- Mocked tests for each provider's error path asserting no secret appears in captured
+  log output
+- Document log retention for the Cloud Logging bucket
+
+**Scope:** `query/retriever.py`, `query/generator.py`, logging helpers, tests
+
+### Phase 2: Hosted content sync
+
+Current behaviour that motivates this phase: web chunk IDs derive from either
+`url|index` or `url|text` (`SupportChunk.from_web_chunk`), `WeaviateStore.add_chunks`
+uses a plain batch insert, and no change detection exists. Re-ingesting edited content
+can therefore leave stale chunks or fail to update them, and removed content lingers.
+
+#### SYNC-001 — Change Semantics Spike and Deterministic Chunk Identity
+
+**Branch:** `feature/SYNC-001-chunk-identity`
+
+- Verify against hosted Weaviate what `batch.add_object` does when the UUID already
+  exists, and document the result
+- Make web chunk IDs deterministic and explicit (decide between `url|index` and
+  `url|content-hash`)
+- Add a `content_hash` property per chunk, behind an explicit schema-migration step
+
+**Scope:** `src/multimodal_rag/models/chunks.py`, `src/multimodal_rag/store/weaviate.py`
+
+#### SYNC-002 — Per-source Diff and Plan
+
+**Branch:** `feature/SYNC-002-sync-plan`
+
+- For each source, fetch existing chunk IDs and hashes by `source_url`, build the new
+  chunk set, and compute added, changed, and removed
+- `make sync-plan` is a dry run that prints per-source counts and writes nothing
+- Reuse per-source error isolation: one failed source never aborts the run
+
+**Scope:** `src/multimodal_rag/ingest/`, new sync module, `Makefile`
+
+#### SYNC-003 — Safe Apply
+
+**Branch:** `feature/SYNC-003-sync-apply`
+
+- Insert/update first, delete stale last, so a source is never empty or partial mid-run
+- `make sync` requires an explicit `--target cloud` and a confirmation prompt
+- Abort without writing if the plan would delete more than a configurable share of the
+  collection
+- Re-embed only added and changed chunks; refuse to run if the configured embedding model
+  or dimension does not match the collection (`validate_compatibility`)
+
+**Scope:** `src/multimodal_rag/store/weaviate.py`, sync module, `Makefile`
+
+#### SYNC-004 — Removed Sources and Pages
+
+**Branch:** `feature/SYNC-004-removals`
+
+- Pages that disappear upstream, or sources dropped from `config/sources.yaml`, are
+  removed only after an explicit flag or confirmation
+- A failed crawl never deletes existing content
+
+**Scope:** sync module, `config/sources.yaml` handling
+
+#### SYNC-005 — Backup, Verification, and Credentials
+
+**Branch:** `feature/SYNC-005-backup-verify`
+
+- Automatic snapshot (`make snapshot-export`) before any cloud write
+- After sync, verify the object count against the plan and run one known retrieval query
+  on the hosted collection
+- Admin key used only for sync; the viewer key stays in Cloud Run; no keys in logs or Git
+- Sync emits the Phase 1 structured logs (per-source plan and apply results, correlation
+  ID per run) and saves a report outside Git
+
+**Scope:** sync module, `Makefile`, `.env.example`
+
+#### SYNC-006 — Documentation and Tests
+
+**Branch:** `feature/SYNC-006-docs-tests`
+
+- Mocked tests for diff computation, apply ordering, abort thresholds, failed-crawl
+  safety, and key separation
+- Update README, `docs/pipeline.md`, and `docs/gcp-deployment.txt` with the sync
+  procedure and the OBS-002 log queries
+- Update the "out of scope" lists in Epics 9 and 10 once sync ships
+
+**Acceptance criteria:**
+
+Observability
+
+- Every generation produces one structured log record with provider, model, status,
+  tokens, and latency, and no question or answer text
+- Cloud Run logs are JSON with severity and a correlation ID; local logs stay
+  human-readable
+- No user query text or secret appears in INFO logs, verified by tests
+- Context truncation is logged whenever it happens
+
+Sync
+
+- An edited page results in updated chunks and no stale duplicates in the hosted
+  collection
+- A page removed upstream is removed only when explicitly confirmed
+- A failed crawl or failed source never deletes existing content
+- An unchanged source costs no embedding calls
+- The deployed app serves new content without a redeploy
+- A pre-sync snapshot exists before every cloud write
+- Cloud Run never holds write credentials
+
+**Out of scope:** scheduled or unattended sync (candidate Epic 12), distributed tracing or
+an external log platform beyond Cloud Logging, embedding-model migration, multi-tenant
+sync, and live webhooks from the content source.
 
 ---
 
@@ -746,7 +917,8 @@ any new vector database functionality.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| **Total** | **38** | **10 completed** | **241 current** |
+| 11 — Observability and Hosted Content Sync | 9 | planned | TBD |
+| **Total** | **47** | **10 completed, 1 planned** | **241 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
