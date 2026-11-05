@@ -247,8 +247,6 @@ git-status:
 	echo "Current branch: $$current_branch"; \
 	if [ "$$current_branch" = "main" ]; then \
 		echo -e "$(RED)⚠️  You are on MAIN branch$(NC)"; \
-	elif [ "$$current_branch" = "develop" ]; then \
-		echo -e "$(GREEN)✅ On develop branch$(NC)"; \
 	fi
 	@echo "Recent commits:"
 	@git log --oneline -5
