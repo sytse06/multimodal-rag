@@ -42,13 +42,13 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ModelSpec(
         provider="gemini",
         model="gemini-3.8-flash",
-        display_name="Gemini — 3.8 Flash",
+        display_name="Gemini — 3.8 flash",
         capabilities=ModelCapabilities(vision=True),
     ),
     ModelSpec(
         provider="gemini",
-        model="gemini-3.5-flash",
-        display_name="Gemini — 3.5 Flash",
+        model="gemini-3.6-flash",
+        display_name="Gemini — 3.6 flash",
         capabilities=ModelCapabilities(vision=True),
     ),
     ModelSpec(

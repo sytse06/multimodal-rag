@@ -101,7 +101,7 @@ class OpenRouterProviderConfig(_ProviderConfig):
 
 class OpenAIProviderConfig(_ProviderConfig):
     provider: Literal["openai"] = "openai"
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-6-luna"
     base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
 
 
@@ -419,7 +419,7 @@ class AppSettings(BaseSettings):
             provider = cls._value(data, "llm_provider", "openrouter")
             default_models = {
                 "openrouter": "google/gemini-3-flash-preview",
-                "openai": "gpt-4o-mini",
+                "openai": "gpt-6-luna",
                 "gemini": "gemini-3.6-flash",
                 "ollama": "nemotron-3.5-lightning:30b-mlx",
                 "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
