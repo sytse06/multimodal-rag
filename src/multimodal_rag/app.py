@@ -9,6 +9,7 @@ from pathlib import Path
 
 import gradio as gr
 
+from multimodal_rag.logging_config import configure_logging, correlated
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.config import AppSettings, ChatProvider, ModelSelection
 from multimodal_rag.models.llm import create_chat_model, create_embeddings
@@ -123,10 +124,7 @@ def build_app(settings: AppSettings, *, preview: bool = False) -> gr.Blocks:
     warnings.filterwarnings("ignore", message=".*no_silent_downcasting.*")
     warnings.filterwarnings("ignore", message=".*copy keyword is deprecated.*")
 
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
+    configure_logging(settings)
 
     if not preview:
         embeddings = create_embeddings(settings)
@@ -277,6 +275,7 @@ def build_app(settings: AppSettings, *, preview: bool = False) -> gr.Blocks:
         if preview:
             return demo
 
+        @correlated
         def user_submit(
             message: str,
             history: list[dict[str, str]],
@@ -311,6 +310,9 @@ def build_app(settings: AppSettings, *, preview: bool = False) -> gr.Blocks:
                     f"⚠️ {exc}",
                 )
                 return
+            logger.debug(
+                "Selected provider=%s model=%s", selection.provider, selection.model
+            )
             question = message
             history = history + [{"role": "user", "content": message}]
             history = history + [
@@ -510,6 +512,7 @@ def build_app(settings: AppSettings, *, preview: bool = False) -> gr.Blocks:
             show_progress="hidden",
         )
 
+        @correlated
         def go_to_step3(
             answer: CitedAnswer | None,
             results: list[SearchResult],
