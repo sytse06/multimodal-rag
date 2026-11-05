@@ -493,7 +493,7 @@ class TestAppSettings:
         assert settings.weaviate_mode == "local"
         assert settings.chunk_size == 400
         assert settings.top_k == 10
-        assert settings.chat.max_context_tokens == 6000
+        assert settings.chat.max_context_tokens == 10000
 
     def test_nested_provider_settings_and_secret_redaction(self) -> None:
         settings = AppSettings(
