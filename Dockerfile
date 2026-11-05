@@ -3,7 +3,11 @@ FROM python:3.12-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl zstd \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://ollama.com/install.sh | sh \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
+        -o /tmp/ollama.tar.zst https://ollama.com/download/ollama-linux-amd64.tar.zst \
+    && tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local \
+    && rm /tmp/ollama.tar.zst \
+    && ollama --version \
     && python -m pip install --no-cache-dir uv
 
 RUN useradd --create-home --uid 1000 user \

@@ -1,0 +1,18 @@
+#!include:.gitignore
+
+# gcloud run deploy --source reads this file (not .dockerignore) to decide what
+# to upload. The Dockerfile only needs pyproject.toml, uv.lock, README.md, src/,
+# app.py and space-entrypoint.sh.
+.git
+.venv*
+.uv-cache
+.claude
+.github
+.gradio
+.env*
+docs
+tests
+graphify-out
+logs
+kb_output
+*.code-workspace
