@@ -1,10 +1,13 @@
 FROM python:3.12-slim
 
+ARG OLLAMA_VERSION=0.40.14
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl zstd \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
-        -o /tmp/ollama.tar.zst https://ollama.com/download/ollama-linux-amd64.tar.zst \
+        -o /tmp/ollama.tar.zst \
+        "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst" \
     && tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local \
     && rm /tmp/ollama.tar.zst \
     && ollama --version \
