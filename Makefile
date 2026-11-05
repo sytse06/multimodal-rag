@@ -2,10 +2,8 @@
 
 SHELL := /bin/bash
 
-# Prevent a VIRTUAL_ENV inherited from the calling shell (e.g. a manually
-# activated .venv-313/.venv-314 used for cross-version testing) from
-# overriding uv's own project environment resolution, which always targets
-# the bare .venv.
+# Prevent a VIRTUAL_ENV inherited from the calling shell from overriding uv's
+# own project environment resolution, which always targets the bare .venv.
 unexport VIRTUAL_ENV
 
 RED := \033[0;31m
