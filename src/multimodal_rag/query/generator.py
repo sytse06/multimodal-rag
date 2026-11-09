@@ -117,12 +117,20 @@ def _usage_from_chunk(chunk: object) -> TokenUsage | None:
                 return candidate
         return None
 
-    return TokenUsage(
+    normalized = TokenUsage(
         input_tokens=value("input_tokens", "prompt_tokens"),
         output_tokens=value("output_tokens", "completion_tokens"),
         total_tokens=value("total_tokens"),
         reported=True,
     )
+    # Gemini ends its stream with all-zero usage chunks that would otherwise
+    # overwrite the real counts reported on an earlier chunk.
+    counts = (
+        normalized.input_tokens,
+        normalized.output_tokens,
+        normalized.total_tokens,
+    )
+    return normalized if any(counts) else None
 
 
 def _finish_reason(chunk: object) -> str | None:
