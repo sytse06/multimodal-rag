@@ -167,6 +167,8 @@ message instead of incorrectly blaming local configuration.
 | `WEAVIATE_TENANT` | Optional Weaviate tenant | empty |
 | `WEAVIATE_VECTOR_DIMENSION` | Expected fixed collection dimension | `768` |
 | `GRADIO_SHARE` | Enable a public Gradio share link | `false` |
+| `LOG_LEVEL` | Log verbosity; `DEBUG` also logs full query text (local only) | `INFO` |
+| `LOG_FORMAT` | `auto` (JSON on Cloud Run, text locally), `json`, or `text` | `auto` |
 
 Provider endpoints, timeouts, retries, context limits, and ingestion settings are also
 available in `.env.example`. Provider and model names are explicit; a model name never
@@ -290,6 +292,31 @@ counts (or `usage_reported=false`), `time_to_first_token_ms`, `latency_ms`, chun
 context tokens against the budget, and `context_truncated`. It never contains the
 question, the answer, or error text.
 
+### Reading the logs
+
+Locally, `make run` prints logs to the terminal, with the correlation ID in brackets on
+every line. Variations (put them in `.env`, which overrides the shell environment):
+
+| Goal | Setting |
+|---|---|
+| Preview the JSON that Cloud Run emits | `LOG_FORMAT=json` |
+| Decision-point logs and full query text | `LOG_LEVEL=DEBUG` |
+
+On Cloud Run, use the `gcloud` CLI (or the Logs tab of the service in the console):
+
+```bash
+PROJECT=<gcp-project-id>
+SERVICE='resource.type="cloud_run_revision" AND resource.labels.service_name="multimodal-rag"'
+
+# Latest inference records
+gcloud logging read "$SERVICE AND jsonPayload.event=\"inference\"" \
+  --limit=5 --freshness=1h --format=json --project=$PROJECT
+
+# Everything one question logged, using its correlation_id
+gcloud logging read "$SERVICE AND jsonPayload.correlation_id=\"<ID>\"" \
+  --format='value(timestamp,severity,jsonPayload.message)' --project=$PROJECT
+```
+
 ### Privacy and retention
 
 - User questions are never logged at INFO or above. The retrieval record carries only
@@ -318,7 +345,7 @@ Cloud Logging queries (Logs Explorer):
 resource.type="cloud_run_revision"
 jsonPayload.event="inference" AND jsonPayload.status="error"
 
-# Slow generations; group by jsonPayload.model in a log-based metric or Log Analytics
+# Slow generations (filter only; per-model grouping needs the Log Analytics SQL below)
 resource.type="cloud_run_revision"
 jsonPayload.event="inference" AND jsonPayload.status="complete"
 jsonPayload.latency_ms>20000
@@ -341,6 +368,7 @@ GROUP BY model
 - [Epics and acceptance criteria](docs/epics.md)
 - [Query and inference pipeline](docs/pipeline.md)
 - [Cloud Run deployment](docs/gcp-deployment.txt)
+- [Logging, reading logs, and privacy](#logging)
 - [Contributor and development workflow](CLAUDE.md)
 
 ## Current deployment boundary
