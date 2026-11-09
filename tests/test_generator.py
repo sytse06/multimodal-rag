@@ -279,6 +279,34 @@ class TestGenerateCitedAnswer:
         assert events[-1].usage.input_tokens == 4
         assert events[-1].usage.output_tokens == 3
 
+    def test_trailing_zero_usage_chunk_does_not_erase_real_usage(self) -> None:
+        mock_llm = MagicMock()
+        mock_llm.stream.return_value = [
+            AIMessageChunk(
+                content="Answer.",
+                usage_metadata={
+                    "input_tokens": 7,
+                    "output_tokens": 747,
+                    "total_tokens": 754,
+                },
+            ),
+            AIMessageChunk(
+                content="",
+                usage_metadata={
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                },
+                response_metadata={"finish_reason": "STOP"},
+            ),
+        ]
+
+        events = list(stream_cited_answer("question", [_video_result()], mock_llm))
+
+        assert events[-1].usage is not None
+        assert events[-1].usage.total_tokens == 754
+        assert events[-1].finish_reason == "STOP"
+
     def test_stream_cancellation_does_not_complete(self) -> None:
         mock_llm = MagicMock()
         mock_llm.stream.return_value = [
