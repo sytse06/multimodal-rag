@@ -2,6 +2,7 @@
 
 import logging
 
+from multimodal_rag.logging_config import text_fingerprint
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.query import SearchResult
 from multimodal_rag.store.weaviate import WeaviateStore
@@ -61,12 +62,14 @@ def retrieve(
     )
 
     logger.info(
-        "Retrieved %d results (%d video, %d web) for query: %.60s...",
+        "Retrieved %d results (%d video, %d web) for query_len=%d query_hash=%s",
         len(selected),
         n_video,
         n_web,
-        query,
+        len(query),
+        text_fingerprint(query),
     )
+    logger.debug("Query text: %s", query)
     return selected
 
 

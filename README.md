@@ -290,6 +290,27 @@ counts (or `usage_reported=false`), `time_to_first_token_ms`, `latency_ms`, chun
 context tokens against the budget, and `context_truncated`. It never contains the
 question, the answer, or error text.
 
+### Privacy and retention
+
+- User questions are never logged at INFO or above. The retrieval record carries only
+  `query_len` and an 8-character `query_hash` (to spot repeated questions). The full
+  text appears only at `LOG_LEVEL=DEBUG`, which is for local debugging and must not be
+  set on Cloud Run.
+- All log output passes through a redaction step that masks configured API keys (by
+  exact value), bearer tokens, `key=`/`token=`/`password=` pairs, credentialed URLs, and
+  common key prefixes (`sk-`, `AIza`, `nvapi-`, `fc-`, `hf_`). This covers exception
+  messages and tracebacks.
+- Limit: provider exceptions are logged with their original text. If a provider echoes
+  prompt content in an error, that text is not detected as a secret. Keep log access
+  restricted to people who may see support questions.
+- Cloud Run logs go to the `_Default` Cloud Logging bucket: 30 days retention by
+  default, readable by project members with Logging access. Check or change it:
+
+```bash
+gcloud logging buckets describe _Default --location=global
+gcloud logging buckets update _Default --location=global --retention-days=30
+```
+
 Cloud Logging queries (Logs Explorer):
 
 ```text
