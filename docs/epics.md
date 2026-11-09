@@ -783,7 +783,7 @@ logging.
 
 **Scope:** `src/multimodal_rag/query/generator.py`, `app.py`, `models/inference.py`
 
-#### OBS-003 — Logging Privacy and Secret Safety (next)
+#### OBS-003 — Logging Privacy and Secret Safety (done)
 
 **Branch:** `feature/OBS-003-logging-safety`
 

@@ -1,9 +1,11 @@
 """Shared logging setup: plain text locally, JSON on Cloud Run, correlation IDs."""
 
 import functools
+import hashlib
 import json
 import logging
 import os
+import re
 import sys
 import uuid
 from collections.abc import Callable, Iterator
@@ -11,6 +13,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import cast
+
+from pydantic import BaseModel, SecretStr
 
 from multimodal_rag.models.config import AppSettings
 
@@ -20,6 +24,31 @@ TEXT_FORMAT = "%(asctime)s %(name)s %(levelname)s [%(correlation_id)s] %(message
 _NOISY_LOGGERS = ("httpx", "httpcore", "urllib3", "hpack", "asyncio", "PIL")
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="-")
+
+REDACTED = "***"
+_MIN_SECRET_LENGTH = 8
+
+# Shapes of credentials that can end up in exception text. Configured secrets are
+# also masked by exact value (see ``_collect_secrets``), which covers formats
+# not listed here.
+_REDACTION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?i)\bbearer\s+[\w.~+/=-]{8,}"), f"Bearer {REDACTED}"),
+    (re.compile(r"(?<=://)[^/\s:@\"']+:[^/\s@\"']+@"), f"{REDACTED}@"),
+    (
+        re.compile(
+            r"(?i)(\b(?:api[_-]?key|key|access[_-]?token|token|secret|password"
+            r"|authorization)\b[\\\"']*\s*[:=]\s*[\\\"']*)[^\s\\\"',;&)}\]]+"
+        ),
+        rf"\1{REDACTED}",
+    ),
+    (
+        re.compile(
+            r"\b(?:sk-[\w-]{8,}|AIza[\w-]{20,}|nvapi-[\w-]{8,}|fc-[\w]{16,}"
+            r"|hf_[A-Za-z0-9]{20,})"
+        ),
+        REDACTED,
+    ),
+)
 
 
 def get_correlation_id() -> str:
@@ -71,6 +100,56 @@ def correlated(fn: Callable[..., object]) -> Callable[..., Iterator[object]]:
     return wrapper
 
 
+def text_fingerprint(text: str) -> str:
+    """Short stable hash so repeated questions can be correlated without the text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+
+
+def redact(text: str, secrets: tuple[str, ...] = ()) -> str:
+    """Mask credentials in free text: configured secrets first, then known shapes."""
+    for secret in secrets:
+        text = text.replace(secret, REDACTED)
+    for pattern, replacement in _REDACTION_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _collect_secrets(model: object) -> tuple[str, ...]:
+    """Collect non-trivial ``SecretStr`` values from a (nested) settings model."""
+    found: set[str] = set()
+
+    def walk(value: object) -> None:
+        if isinstance(value, SecretStr):
+            secret = value.get_secret_value()
+            if len(secret) >= _MIN_SECRET_LENGTH:
+                found.add(secret)
+        elif isinstance(value, BaseModel):
+            for name in type(value).model_fields:
+                walk(getattr(value, name, None))
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                walk(item)
+
+    walk(model)
+    # Longest first so a secret containing another is masked whole.
+    return tuple(sorted(found, key=len, reverse=True))
+
+
+class _RedactingFormatter(logging.Formatter):
+    """Mask credentials in the final line, including formatted tracebacks."""
+
+    def __init__(self, inner: logging.Formatter, secrets: tuple[str, ...]) -> None:
+        super().__init__()
+        self._inner = inner
+        self._secrets = secrets
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(self._inner.format(record), self._secrets)
+
+
 class _CorrelationFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.correlation_id = _correlation_id.get()
@@ -107,11 +186,12 @@ def configure_logging(settings: AppSettings) -> None:
     """Configure the root logger once; safe to call again (replaces its own handler)."""
     handler = logging.StreamHandler(sys.stderr)
     handler.addFilter(_CorrelationFilter())
-    handler.setFormatter(
+    formatter: logging.Formatter = (
         JsonFormatter()
         if _use_json(settings.log_format)
         else logging.Formatter(TEXT_FORMAT)
     )
+    handler.setFormatter(_RedactingFormatter(formatter, _collect_secrets(settings)))
     handler._multimodal_rag = True  # type: ignore[attr-defined]
 
     root = logging.getLogger()
