@@ -91,6 +91,7 @@ class JsonFormatter(logging.Formatter):
             "correlation_id": getattr(record, "correlation_id", "-"),
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(),
         }
+        payload = {**(getattr(record, "fields", None) or {}), **payload}
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
