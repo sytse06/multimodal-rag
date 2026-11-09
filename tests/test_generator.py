@@ -307,6 +307,35 @@ class TestGenerateCitedAnswer:
         assert events[-1].usage.total_tokens == 754
         assert events[-1].finish_reason == "STOP"
 
+    def test_gemini_style_delta_usage_is_summed_across_chunks(self) -> None:
+        mock_llm = MagicMock()
+
+        def chunk(inp: int, out: int, text: str = "") -> AIMessageChunk:
+            return AIMessageChunk(
+                content=text,
+                usage_metadata={
+                    "input_tokens": inp,
+                    "output_tokens": out,
+                    "total_tokens": inp + out,
+                },
+            )
+
+        mock_llm.stream.return_value = [
+            chunk(7976, 364, "A"),
+            chunk(0, 24, "B"),
+            chunk(0, 24, "C"),
+            chunk(0, 3),
+            chunk(0, 0),
+        ]
+
+        events = list(stream_cited_answer("question", [_video_result()], mock_llm))
+
+        usage = events[-1].usage
+        assert usage is not None
+        assert usage.input_tokens == 7976
+        assert usage.output_tokens == 415
+        assert usage.total_tokens == 8391
+
     def test_stream_cancellation_does_not_complete(self) -> None:
         mock_llm = MagicMock()
         mock_llm.stream.return_value = [

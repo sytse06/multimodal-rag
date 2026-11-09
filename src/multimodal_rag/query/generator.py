@@ -133,6 +133,29 @@ def _usage_from_chunk(chunk: object) -> TokenUsage | None:
     return normalized if any(counts) else None
 
 
+def _merge_usage(total: TokenUsage | None, new: TokenUsage | None) -> TokenUsage | None:
+    """Add a streamed chunk's usage to the running total.
+
+    Gemini (via LangChain) reports input and reasoning tokens on the first chunk and
+    only the output-token delta on each later chunk. Providers that report usage once,
+    on the final chunk, are unaffected by summing.
+    """
+    if new is None:
+        return total
+    if total is None:
+        return new
+
+    def add(a: int | None, b: int | None) -> int | None:
+        return None if a is None and b is None else (a or 0) + (b or 0)
+
+    return TokenUsage(
+        input_tokens=add(total.input_tokens, new.input_tokens),
+        output_tokens=add(total.output_tokens, new.output_tokens),
+        total_tokens=add(total.total_tokens, new.total_tokens),
+        reported=True,
+    )
+
+
 def _finish_reason(chunk: object) -> str | None:
     metadata = getattr(chunk, "response_metadata", None)
     if not isinstance(metadata, Mapping):
@@ -282,7 +305,7 @@ def stream_cited_answer(
                 parts.append(delta)
                 if first_token_ms is None:
                     first_token_ms = (monotonic() - started_at) * 1000
-            usage = _usage_from_chunk(chunk) or usage
+            usage = _merge_usage(usage, _usage_from_chunk(chunk))
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
                 event_type="progress",
@@ -474,7 +497,7 @@ def stream_kb_article(
                 parts.append(delta)
                 if first_token_ms is None:
                     first_token_ms = (monotonic() - started_at) * 1000
-            usage = _usage_from_chunk(chunk) or usage
+            usage = _merge_usage(usage, _usage_from_chunk(chunk))
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
                 event_type="progress",
@@ -567,7 +590,7 @@ async def astream_cited_answer(
                 parts.append(delta)
                 if first_token_ms is None:
                     first_token_ms = (monotonic() - started_at) * 1000
-            usage = _usage_from_chunk(chunk) or usage
+            usage = _merge_usage(usage, _usage_from_chunk(chunk))
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
                 event_type="progress",
@@ -653,7 +676,7 @@ async def astream_kb_article(
                 parts.append(delta)
                 if first_token_ms is None:
                     first_token_ms = (monotonic() - started_at) * 1000
-            usage = _usage_from_chunk(chunk) or usage
+            usage = _merge_usage(usage, _usage_from_chunk(chunk))
             finish_reason = _finish_reason(chunk) or finish_reason
             yield InferenceEvent(
                 event_type="progress",

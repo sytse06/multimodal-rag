@@ -245,6 +245,27 @@ class TestConfigureLogging:
         assert logging.getLogger("httpx").level == logging.WARNING
         assert logging.getLogger("httpcore").level == logging.WARNING
 
+    def test_drops_google_genai_afc_notices_but_keeps_other_records(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        clean_root: logging.Logger,
+    ) -> None:
+        configure_logging(_settings(log_format="text"))
+        genai = logging.getLogger("google_genai.models")
+
+        genai.info("AFC is enabled with max remote calls: 10.")
+        genai.warning(
+            "Direct use of automatic function calling (AFC) in Models.generate"
+        )
+        genai.warning("quota nearly exhausted")
+        logging.getLogger("t").warning("AFC is enabled in our own message")
+
+        err = capsys.readouterr().err
+        assert "max remote calls" not in err
+        assert "automatic function calling" not in err
+        assert "quota nearly exhausted" in err
+        assert "our own message" in err
+
     def test_is_idempotent_and_keeps_foreign_handlers(
         self, clean_root: logging.Logger
     ) -> None:
