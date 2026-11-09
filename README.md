@@ -279,6 +279,41 @@ Integration tests require external services and are run separately:
 make test-integration
 ```
 
+## Logging
+
+Logs are plain text locally and JSON on Cloud Run (`LOG_FORMAT=auto|json|text`,
+`LOG_LEVEL`). Every line carries a correlation ID per question.
+
+Each generation (answer or KB article) writes exactly one `event="inference"` record
+with provider, model, status (`complete`, `error`, `cancelled`), finish reason, token
+counts (or `usage_reported=false`), `time_to_first_token_ms`, `latency_ms`, chunk count,
+context tokens against the budget, and `context_truncated`. It never contains the
+question, the answer, or error text.
+
+Cloud Logging queries (Logs Explorer):
+
+```text
+# Failed generations by model (provider capacity errors)
+resource.type="cloud_run_revision"
+jsonPayload.event="inference" AND jsonPayload.status="error"
+
+# Slow generations; group by jsonPayload.model in a log-based metric or Log Analytics
+resource.type="cloud_run_revision"
+jsonPayload.event="inference" AND jsonPayload.status="complete"
+jsonPayload.latency_ms>20000
+```
+
+For p95 latency per model, use Log Analytics:
+
+```sql
+SELECT JSON_VALUE(json_payload.model) AS model,
+       APPROX_QUANTILES(CAST(JSON_VALUE(json_payload.latency_ms) AS FLOAT64), 100)[OFFSET(95)] AS p95_ms
+FROM `PROJECT.global._Default._AllLogs`
+WHERE JSON_VALUE(json_payload.event) = "inference"
+  AND JSON_VALUE(json_payload.status) = "complete"
+GROUP BY model
+```
+
 ## Documentation
 
 - [Product requirements](docs/PRD.md)

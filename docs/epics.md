@@ -734,7 +734,7 @@ separately in Epic 11.
 
 ---
 
-## Epic 11: Operational Observability and Hosted Content Sync (planned)
+## Epic 11: Operational Observability and Hosted Content Sync (in progress)
 
 Makes the live tool observable and safe to operate, then lets a maintainer propagate
 source content changes into the hosted `SupportChunk` collection without a rebuild or an
@@ -748,7 +748,7 @@ logging.
 
 ### Phase 1: Observability
 
-#### OBS-001 — Central Logging Configuration and Correlation
+#### OBS-001 — Central Logging Configuration and Correlation (done)
 
 **Branch:** `feature/OBS-001-logging-config`
 
@@ -766,7 +766,7 @@ logging.
 **Scope:** new `src/multimodal_rag/logging_config.py`, `app.py`, `ingest/__main__.py`,
 `query/generator.py`
 
-#### OBS-002 — Inference Metrics Logging
+#### OBS-002 — Inference Metrics Logging (done)
 
 **Branch:** `feature/OBS-002-inference-metrics`
 
@@ -917,7 +917,7 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 9 | planned | TBD |
+| 11 — Observability and Hosted Content Sync | 9 | in progress (OBS-001, OBS-002 done) | TBD |
 | **Total** | **47** | **10 completed, 1 planned** | **241 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.

@@ -31,3 +31,12 @@ class InferenceEvent(BaseModel):
     answer: CitedAnswer | None = None
     article: str | None = None
     error: str | None = None
+
+
+class ContextStats(BaseModel):
+    """Approximate size of the retrieved context sent to the model."""
+
+    chunks: int = 0
+    context_tokens: int = 0
+    budget_tokens: int | None = None
+    truncated: bool = False

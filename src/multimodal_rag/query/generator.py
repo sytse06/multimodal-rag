@@ -5,12 +5,18 @@ from asyncio import Event as AsyncEvent
 from collections.abc import AsyncIterator, Iterator, Mapping
 from threading import Event
 from time import monotonic
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from multimodal_rag.models.inference import InferenceEvent, TokenUsage
+from multimodal_rag.models.inference import ContextStats, InferenceEvent, TokenUsage
 from multimodal_rag.models.query import Citation, CitedAnswer, SearchResult
+from multimodal_rag.query.metrics import (
+    estimate_context_stats,
+    logged_astream,
+    logged_stream,
+)
 
 logger = logging.getLogger(__name__)
 DEFAULT_CONTEXT_TOKENS = 10000
@@ -147,6 +153,34 @@ def _safe_error(exc: Exception) -> str:
     return "Model inference failed. Check the provider configuration and try again."
 
 
+def _article_source_material(
+    answer: CitedAnswer, results: list[SearchResult] | None
+) -> str:
+    source_blocks = [
+        f"### Source [{i}]: {result.citation_label}\n\n{result.text}"
+        for i, result in enumerate(results or [], 1)
+    ]
+    return "\n\n".join(source_blocks) if source_blocks else answer.answer
+
+
+def _answer_stats(args: Mapping[str, Any]) -> ContextStats:
+    from multimodal_rag.query.retriever import format_context
+
+    results: list[SearchResult] = args["results"]
+    return estimate_context_stats(
+        format_context(results), len(results), args["max_context_tokens"]
+    )
+
+
+def _article_stats(args: Mapping[str, Any]) -> ContextStats:
+    results: list[SearchResult] | None = args["results"]
+    return estimate_context_stats(
+        _article_source_material(args["answer"], results),
+        len(results or []),
+        args["max_context_tokens"],
+    )
+
+
 def _answer_messages(
     question: str, results: list[SearchResult], max_context_tokens: int | None
 ) -> list[SystemMessage | HumanMessage]:
@@ -189,6 +223,7 @@ def generate_cited_answer(
     return CitedAnswer(answer=answer_with_links, citations=citations)
 
 
+@logged_stream("answer", _answer_stats)
 def stream_cited_answer(
     question: str,
     results: list[SearchResult],
@@ -378,22 +413,16 @@ def _article_user_message(
     question: str,
     max_context_tokens: int | None = DEFAULT_CONTEXT_TOKENS,
 ) -> str:
-    source_blocks: list[str] = []
-    if results:
-        for i, result in enumerate(results, 1):
-            source_blocks.append(
-                f"### Source [{i}]: {result.citation_label}\n\n{result.text}"
-            )
-
     parts: list[str] = []
     if question:
         parts.append(f"## Question\n\n{question}\n\n")
     parts.append("## Source Material\n")
-    source_material = "\n\n".join(source_blocks) if source_blocks else answer.answer
+    source_material = _article_source_material(answer, results)
     parts.append(_truncate_context(source_material, max_context_tokens))
     return "\n".join(parts)
 
 
+@logged_stream("kb_article", _article_stats)
 def stream_kb_article(
     answer: CitedAnswer,
     llm: BaseChatModel,
@@ -479,6 +508,7 @@ def stream_kb_article(
     )
 
 
+@logged_astream("answer", _answer_stats)
 async def astream_cited_answer(
     question: str,
     results: list[SearchResult],
@@ -571,6 +601,7 @@ async def astream_cited_answer(
     )
 
 
+@logged_astream("kb_article", _article_stats)
 async def astream_kb_article(
     answer: CitedAnswer,
     llm: BaseChatModel,
