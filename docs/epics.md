@@ -819,8 +819,22 @@ can therefore leave stale chunks or fail to update them, and removed content lin
 - Make web chunk IDs deterministic and explicit (decide between `url|index` and
   `url|content-hash`)
 - Add a `content_hash` property per chunk, behind an explicit schema-migration step
+- Give screenshot-description chunks provenance. In the hosted collection 381 of 922
+  chunks (41%) are keyed on `uuid5(image_url)` while `image_url` is not stored, so a sync
+  cannot tell which chunk belongs to which image. Add an `image_url` property (no
+  reindex needed) and backfill it by re-deriving `uuid5(image_url)` from each live page;
+  a one-page test matched 3 of 4 stored chunks, 19 of 19 and 7 of 7 on two more pages
+- Re-describe screenshots with a page-anchored prompt on `gemini-3.6-flash`
+  (`thinking_level="low"`, a `max_output_tokens` cap, a repetition guard, decorative
+  images skipped), and replace the three runaway chunks (81k to 229k characters)
+- Take a snapshot before any cloud write and replace objects by explicit UUID, with the
+  re-embedded vector; do not rely on `batch.add_object` overwriting an existing UUID
+  until the duplicate-UUID behaviour above is verified
 
-**Scope:** `src/multimodal_rag/models/chunks.py`, `src/multimodal_rag/store/weaviate.py`
+Evidence, pilot results and the full procedure: `docs/screenshot-description-pilot.md`.
+
+**Scope:** `src/multimodal_rag/models/chunks.py`, `src/multimodal_rag/store/weaviate.py`,
+`src/multimodal_rag/ingest/web_images.py`
 
 #### SYNC-002 — Per-source Diff and Plan
 
