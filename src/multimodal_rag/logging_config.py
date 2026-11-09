@@ -150,6 +150,22 @@ class _RedactingFormatter(logging.Formatter):
         return redact(self._inner.format(record), self._secrets)
 
 
+class _QuietLibraryNoise(logging.Filter):
+    """Drop google-genai's automatic-function-calling notices.
+
+    The SDK emits them on every call because LangChain uses ``generate_content_stream``
+    directly; we never use tools. Other google-genai records still pass through.
+    """
+
+    _MARKERS = ("AFC is enabled", "automatic function calling")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not record.name.startswith("google_genai"):
+            return True
+        message = record.getMessage()
+        return not any(marker in message for marker in self._MARKERS)
+
+
 class _CorrelationFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.correlation_id = _correlation_id.get()
@@ -186,6 +202,7 @@ def configure_logging(settings: AppSettings) -> None:
     """Configure the root logger once; safe to call again (replaces its own handler)."""
     handler = logging.StreamHandler(sys.stderr)
     handler.addFilter(_CorrelationFilter())
+    handler.addFilter(_QuietLibraryNoise())
     formatter: logging.Formatter = (
         JsonFormatter()
         if _use_json(settings.log_format)
