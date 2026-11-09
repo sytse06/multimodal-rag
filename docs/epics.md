@@ -748,7 +748,7 @@ logging.
 
 ### Phase 1: Observability
 
-#### OBS-001 — Central Logging Configuration and Correlation (done)
+#### OBS-001 — Central Logging Configuration and Correlation (done, deployed)
 
 **Branch:** `feature/OBS-001-logging-config`
 
@@ -766,7 +766,7 @@ logging.
 **Scope:** new `src/multimodal_rag/logging_config.py`, `app.py`, `ingest/__main__.py`,
 `query/generator.py`
 
-#### OBS-002 — Inference Metrics Logging (done)
+#### OBS-002 — Inference Metrics Logging (done, deployed)
 
 **Branch:** `feature/OBS-002-inference-metrics`
 
@@ -783,7 +783,7 @@ logging.
 
 **Scope:** `src/multimodal_rag/query/generator.py`, `app.py`, `models/inference.py`
 
-#### OBS-003 — Logging Privacy and Secret Safety
+#### OBS-003 — Logging Privacy and Secret Safety (next)
 
 **Branch:** `feature/OBS-003-logging-safety`
 
@@ -917,8 +917,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 9 | in progress (OBS-001, OBS-002 done) | TBD |
-| **Total** | **47** | **10 completed, 1 planned** | **241 current** |
+| 11 — Observability and Hosted Content Sync | 9 | in progress (OBS-001, OBS-002 done and deployed; 7 open) | 37 |
+| **Total** | **47** | **10 completed, 1 in progress** | **284 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
