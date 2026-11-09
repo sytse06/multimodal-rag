@@ -746,9 +746,9 @@ The tool is in use, so Phase 1 (observability) ships first. It is small, low-ris
 shippable on its own. Phase 2 (sync) writes to production data and reuses the Phase 1
 logging.
 
-**Status:** Phase 1 is code-complete and merged to `main`. OBS-001 and OBS-002 run on
-Cloud Run (revision 00018). The Gemini zero-usage fix and OBS-003 are merged but not yet
-deployed. Phase 2 (sync) has not started.
+**Status:** Phase 1 (OBS-001 to OBS-003) is complete, merged to `main`, and deployed to
+Cloud Run (revision 00019, which includes the Gemini zero-usage fix). Phase 2 (sync) has
+not started.
 
 ### Phase 1: Observability
 
@@ -787,7 +787,7 @@ deployed. Phase 2 (sync) has not started.
 
 **Scope:** `src/multimodal_rag/query/generator.py`, `app.py`, `models/inference.py`
 
-#### OBS-003 — Logging Privacy and Secret Safety (done, awaiting deploy)
+#### OBS-003 — Logging Privacy and Secret Safety (done, deployed)
 
 **Branch:** `feature/OBS-003-logging-safety`
 
@@ -921,7 +921,7 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 9 | in progress (Phase 1 merged, OBS-003 awaiting deploy; 6 open) | 60 |
+| 11 — Observability and Hosted Content Sync | 9 | in progress (Phase 1 done and deployed; 6 open) | 60 |
 | **Total** | **47** | **10 completed, 1 in progress** | **307 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
