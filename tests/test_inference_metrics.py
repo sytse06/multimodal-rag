@@ -126,15 +126,15 @@ class TestAnswerRecord:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         llm = MagicMock()
-        llm.stream.side_effect = RuntimeError("sk-secret-token")
+        llm.stream.side_effect = RuntimeError("leaky-credential-value")
 
         list(stream_cited_answer(QUESTION, [_result()], llm, provider="p", model="m"))
 
         (record,) = _inference_records(caplog)
         assert record.levelno == logging.WARNING
         assert _fields(record)["status"] == "error"
-        assert "sk-secret-token" not in record.getMessage()
-        assert "sk-secret-token" not in json.dumps(_fields(record), default=str)
+        assert "leaky-credential-value" not in record.getMessage()
+        assert "leaky-credential-value" not in json.dumps(_fields(record), default=str)
 
     def test_cancellation_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         cancel = Event()
