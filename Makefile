@@ -232,9 +232,14 @@ deploy:
 		echo -e "$(RED)❌ gcloud CLI not found. Install the Google Cloud SDK first$(NC)"; \
 		exit 1; \
 	fi
-	@gcloud run deploy $${CLOUD_RUN_SERVICE:-multimodal-rag} \
+	@project="$${GCP_PROJECT:-$$(grep -E '^GCP_PROJECT=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'")}"; \
+	if [ -z "$$project" ]; then \
+		echo -e "$(RED)❌ GCP_PROJECT is not set. Export it or add GCP_PROJECT=<project-id> to .env$(NC)"; \
+		exit 1; \
+	fi; \
+	gcloud run deploy $${CLOUD_RUN_SERVICE:-multimodal-rag} \
 		--source . \
-		--project=$${GCP_PROJECT:-gen-lang-client-0552956404} \
+		--project="$$project" \
 		--region=$${GCP_REGION:-europe-west4} \
 		--port=7860 \
 		--quiet

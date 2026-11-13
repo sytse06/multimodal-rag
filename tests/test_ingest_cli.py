@@ -22,6 +22,8 @@ def _make_settings(vision_model: str = "") -> MagicMock:
     settings.mistral_api_key = ""
     settings.vision_model = vision_model
     settings.youtube_cookies_file = ""
+    settings.youtube_cookies_secret = ""
+    settings.gcp_project = ""
     return settings
 
 

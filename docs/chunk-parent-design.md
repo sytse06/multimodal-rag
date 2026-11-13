@@ -6,6 +6,8 @@ the Epic 11 investigation so the SYNC-000 and SYNC-001 work can start from them.
 
 Measurements were taken on 2026-11-09 against the hosted `SupportChunk` collection with
 the read-only viewer key. Related evidence: `docs/screenshot-description-pilot.md`.
+The operating model (personas, prerequisites, the local-then-hosted workflow) is in
+`docs/content-update-workflow.md`.
 Revised on 2026-11-13 after review against the code (schema checks, hashing per layer,
 baseline for the existing data, update loop) and again after the SYNC-000 spike, which
 corrected the assumption about duplicate UUIDs (see section 6).
@@ -205,6 +207,10 @@ inputs change.
 
 - Remove boilerplate such as the YouTube player text before hashing (D5), or the hash
   would change with the player UI.
+- A per-page markdown hash cannot be backfilled for the existing pages, because the source
+  markdown was not kept. It is not needed: the `lastmod` gate (D8) already decides whether
+  to crawl and re-chunk a page, and the chunk-level `content_hash` decides what to
+  re-embed. The page hash stays an optional optimisation for new data.
 - Temperature 0 and a seed reduce LLM variation but do not remove it. The caching rule
   makes variation irrelevant for sync.
 - Embeddings are recomputed only when a chunk's stored text changes (`content_hash`).
@@ -216,29 +222,54 @@ inputs change.
   changed fingerprint or an explicit flag. Transcription and frame description are the
   costliest steps.
 
-### D8. Baseline for the existing data
+### D8. Baseline for the existing data, and what `lastmod` adds
 
 The hosted collection has no content hash and does not store the source page, so a new
 crawl is compared with the output of the March pipeline. A difference can mean the page
 changed, the pipeline changed or the crawl varied.
 
-Evidence that separates these causes:
+**Leaning: use `lastmod` and the hashes for different jobs, as a sequence of gates from
+cheapest to most expensive.**
+
+| Gate | Signal | Decides | Cost avoided |
+|---|---|---|---|
+| 1. Sitemap `lastmod` | the page's current `lastmod` against the `source_lastmod` stored with its chunks | whether to crawl the page at all | Firecrawl credits and re-chunking |
+| 2. Chunk `content_hash` | hash of each newly built chunk against the stored hash | which chunks to re-embed | Ollama embedding calls |
+| 3. Image hash, model and prompt version | image bytes, `description_model`, `prompt_version` | which screenshots to re-describe | vision-model calls, the scarce resource |
+| 4. Video fingerprint and pipeline version | fingerprint (D7) | whether a video is reprocessed | Voxtral and vision calls |
+
+`lastmod` is the cheap **trigger**. The hash is the **verification**. `lastmod` cannot
+replace the hash, because a page can be re-saved without any content change, and whether
+`lastmod` changes when only an image is replaced has not been checked. Two fallbacks follow:
+a page with no `lastmod` is always crawled, and an occasional `--verify` run crawls
+everything (for example quarterly) to catch silent drift.
+
+**First run, explicitly.** From the sitemaps against the March ingest:
+
+| Group | Pages | Action |
+|---|---|---|
+| Modified after the ingest | 11 | Crawl, re-chunk, compare with the stored chunks, replace what changed |
+| Unchanged since the ingest | 135 | **Not crawled.** Converted only (see Conversion of the existing chunks) |
+| In the sitemaps, not stored | 45 | Crawl and add |
+| Stored, not in the sitemaps | 14 | Removal candidates. Confirm each: some may be renames that reappear among the 45, so match by title before deleting. |
+
+**Consequence for pipeline drift.** With the `lastmod` gate, drift only matters for a page
+when that page changes, and replacing that page's text chunks as a set (D3) absorbs it at
+small cost. Re-chunking a few unchanged pages to measure the drift rate is still worth
+doing, but it is an optional spot check, not a precondition.
+
+Evidence and limits:
 
 - The doc sites publish a sitemap with `lastmod` per URL. Of the 160 stored web pages, 146
-  appear in the sitemaps and all 146 have a `lastmod`. 11 were modified after the March
-  ingest (the latest `ingested_at` is 2026-03-16) and 135 were not. 14 stored pages are
-  not in the sitemaps (removed or renamed) and 45 sitemap pages are not stored.
-- For the 135 unchanged pages, comparing a re-chunk made with current code against the
-  stored text measures pure pipeline drift. On modified pages a real edit should differ in
-  a few localised chunks, while drift differs everywhere.
+  appear in the sitemaps and all 146 have a `lastmod`. The latest `ingested_at` is
+  2026-03-16.
 - Stored text chunks are position-keyed and contiguous from 0 on all 160 pages, so a
-  chunk-by-chunk text comparison needs no hash. Over-detection costs a re-embed of a few
-  hundred chunks on local Ollama and does not affect correctness.
+  chunk-by-chunk text comparison needs no hash. Over-detection costs a re-embed on local
+  Ollama and does not affect correctness.
 - Not recoverable: screenshots (the old image bytes are gone and `image_url` is not
-  stored, so re-describe all) and videos (no source state, so take a new fingerprint and
-  compare current durations with the stored windows).
-- Caveats: `lastmod` is the CMS's claim, and whether it changes when only an image is
-  replaced has not been checked. The re-chunk comparison has not been run.
+  stored) and videos (no source state).
+- `lastmod` is the CMS's claim. Its behaviour on image-only edits is unverified, and the
+  re-chunk spot check has not been run.
 
 ## 5. Proposed model
 
@@ -254,10 +285,35 @@ Evidence that separates these causes:
 | `prompt_version` | text | screenshots | version of the description prompt |
 | `source_fingerprint` | text | video | video fingerprint (D7) |
 | `pipeline_version` | text | video | transcription and vision settings |
+| `source_lastmod` | date | web | the CMS `lastmod` the stored content corresponds to |
 
 Existing chunks read null until backfilled. Adding a property to a populated collection
 needs no reindex (verified on small scratch collections, section 6). Whether many optional
 properties or one nested object property is better is open (section 9).
+
+### Conversion of the existing chunks
+
+**Decision: yes, every existing chunk gets a `content_hash`**, computed from its stored
+text. It describes the stored representation, not the source, and it is where the hashing
+starts. For a page that has not changed since the ingest, the stored text is still current,
+so the hash is valid. The conversion needs no crawl and no re-embedding.
+
+| Chunk type | Count | `document_id` | `content_hash` | `source_lastmod` | Other fields |
+|---|---|---|---|---|---|
+| Web text | 327 | `uuid5(source_url)` | SHA-256 of the stored text | the sitemap value for the 135 unchanged pages; **null** for the 11 modified pages (they stay flagged as stale) and the 14 absent pages | none |
+| Web screenshot | 381 | `uuid5(source_url)` | SHA-256 of the stored (old) description | as for web text | `image_url` re-derived from the live page (plain HTTP). `image_hash`, `description_model` and `prompt_version` are set to `legacy` or left null, never guessed; they are filled at the re-description. Unmatched chunks are flagged for a decision, not deleted. |
+| Video | 214 | `uuid5(video URL)` | SHA-256 of the stored text | not applicable | `source_fingerprint` from current YouTube metadata (a new baseline, not proof that nothing changed since March); `pipeline_version = legacy` |
+
+How it runs:
+
+- Metadata-only `data.update` on the **local** collection first, then validated, then
+  promoted to hosted (workflow note, Stage B). The promotion diff must therefore compare
+  properties as well as text and vectors.
+- **Preconditions:** ingestion already writes the new fields (otherwise a re-ingest erases
+  them, section 6) and the new properties exist on both collections.
+- **Verification:** object count, every text and every vector unchanged (compare a
+  checksum before and after), and the new properties set as in the table.
+- **Rollback:** restore the pre-conversion snapshot.
 
 ### Page record (only if D2 stage 2 is taken)
 
@@ -325,31 +381,34 @@ Consequences:
 
 ## 7. Staged plan
 
-1. **SYNC-000, schema readiness:** relax `validate_compatibility` (8 required, extras
-   allowed), add the optional properties to `ensure_collection`, update the tests. Code
-   merged to `main`. **Next: deploy to Cloud Run and verify startup.**
+1. **SYNC-000, schema readiness:** code merged to `main`. **Next: deploy to Cloud Run and
+   verify startup.**
 2. **Spike on local Docker:** done on 1.28.4 and 1.39.13 (section 6).
 3. **Make ingestion write the new fields:** `SupportChunk` and `add_chunks` set
-   `document_id`, `content_hash` and `image_url` on every insert. This must precede the
-   backfill, because an overwrite erases omitted properties.
-4. Snapshot, then add the properties to the hosted schema (additive). Only after step 1
-   is deployed and verified.
-5. Backfill `document_id` and `content_hash` with `data.update` (metadata-only), and
-   `image_url` by re-deriving `uuid5(image_url)` from the live pages. The pilot matched
-   3 of 4, 19 of 19 and 7 of 7 on three pages; full coverage is unmeasured.
-6. **Baseline validation:** re-chunk the unchanged pages and compare (D8); compare video
-   durations with the stored windows.
-7. Re-describe screenshots and remove the three runaway chunks (pilot note), strip the
-   player boilerplate and record `embedded_video_ids`.
-8. Decide on the `Document` collection (D2) from what SYNC-002 needs.
+   `document_id`, `content_hash`, `source_lastmod` and `image_url` on every insert. This
+   must precede any backfill, because an overwrite erases omitted properties.
+4. **Extend the schema, local first:** add the properties to the local collection, then
+   (after a snapshot, and only once step 1 is deployed and verified) to the hosted one.
+5. **Convert the 922 existing chunks on local** (see Conversion of the existing chunks)
+   and validate: counts, texts and vectors unchanged, new properties set.
+6. **Promote the conversion to hosted** as a metadata diff, and verify that local and
+   hosted are identical.
+7. **First lastmod-gated run:** the 11 modified pages, the 45 new pages and the 14 removal
+   candidates, into local, validated, then promoted. Optionally spot-check pipeline drift
+   on a few unchanged pages.
+8. **Re-describe screenshots** and remove the three runaway chunks (pilot note), strip the
+   player boilerplate and record `embedded_video_ids`, in local, then promote.
+9. Decide on the `Document` collection (D2) from what SYNC-002 needs.
 
 ## 8. Update loop (outline)
 
 A maintainer-run, per-source diff-and-apply pass with the page as the unit of work
-(`make sync-plan`, then `make sync`).
+(`make sync-plan`, then `make sync`). This is Stage A of the two-stage workflow in
+`docs/content-update-workflow.md`: it refreshes the **local** Docker collection. Promotion
+to the hosted collection is Stage B (`make promote-plan`, `make promote`).
 
 ```text
-start run (new correlation ID, admin key, target=cloud)
+start run (new correlation ID, target=local Docker collection)
   validate_compatibility()                     # model and 768-d dimension must match
   for each source in config/sources.yaml:      # failures isolated per source
       crawl source -> pages (markdown), or video -> metadata and captions
@@ -381,7 +440,7 @@ threshold on the share of the collection to be deleted, replace by explicit UUID
 every property (an overwrite is a full replace) with a re-embedded vector when the text
 changes, `data.update` for metadata-only changes, verify the object count and one known
 retrieval query afterwards,
-admin key used only for sync, and a report saved outside Git. Cloud Run needs no
+the admin key used only for promotion, and a report saved outside Git. Cloud Run needs no
 redeploy because it reads the live collection with the viewer key.
 
 ## 9. Open questions
