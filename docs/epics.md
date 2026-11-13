@@ -1053,8 +1053,19 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   private temporary file for each ingest run via `YOUTUBE_COOKIES_SECRET`, and explicit
   ignore rules cover cookie files; fresh cookies were uploaded on 2026-11-13 (version 2,
   verified with yt-dlp) and the March files were deleted
-- Keep one `VISION_MODEL` value, and separate the local and hosted settings so a run
-  cannot write to the wrong target
+- Done: one `VISION_MODEL` value, and local and hosted settings kept apart. Found on the
+  way: `VISION_MODEL` in `.env` had never taken effect (pydantic-settings treated the name
+  as part of the nested `vision` field and dropped it), so local ingestion ran with visual
+  grounding off whatever `.env` said; fixed with a regression test. `.env` also defined
+  `VISION_MODEL` and `LLM_MODEL` four times each (the last one silently won); ingestion
+  now warns about duplicate keys, naming lines and never values. `WeaviateStore` refuses
+  every write (create, add, delete) when the target is hosted unless the caller passes
+  `allow_hosted_write`, which only the promotion step will do; ingestion and the purge
+  targets stop with a message instead. The local default now matches production
+  (`LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.6-flash`, one line each), `VISION_MODEL` is
+  `google/gemini-3.8-flash`, and the app logs a warning at startup when the default model
+  is not in the model registry. Still open here: a Gemini vision path (the vision client
+  always uses OpenRouter) and thinking and output limits on that client
 - Align the compose image with the hosted Weaviate version (done 2026-11-13: both 1.39.13)
 - `make sync-preflight` reports missing tools (Docker, Ollama and `nomic-embed-text`,
   ffmpeg, yt-dlp), missing keys without printing them, version drift, the Gemini quota
