@@ -1,7 +1,7 @@
 """Typed application settings loaded from environment variables."""
 
 import os
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import (
     AnyHttpUrl,
@@ -11,7 +11,12 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 ChatProvider: TypeAlias = Literal[
     "openrouter", "openai", "gemini", "ollama", "nvidia"
@@ -250,6 +255,7 @@ class InfrastructureSettings(BaseModel):
     youtube_cookies_file: str = ""
     youtube_cookies_secret: str = ""
     gcp_project: str = ""
+    state_bucket: str = ""
 
     @field_validator("weaviate_url", mode="before")
     @classmethod
@@ -361,6 +367,25 @@ class ProviderEndpointSettings(BaseModel):
     )
 
 
+class _EnvOverridesDotEnv(DotEnvSettingsSource):
+    """A .env source in which a real environment variable wins.
+
+    The legacy flat variables (WEAVIATE_URL and similar) are not model fields, so
+    pydantic-settings only reads them from .env. Without this, an exported variable
+    is silently ignored whenever .env defines the same name.
+    """
+
+    def __call__(self) -> dict[str, Any]:
+        data = super().__call__()
+        fields = self.settings_cls.model_fields
+        return {
+            key: os.environ.get(key.upper(), value)
+            if key not in fields and isinstance(value, str)
+            else value
+            for key, value in data.items()
+        }
+
+
 class AppSettings(BaseSettings):
     """Complete application configuration with legacy env compatibility."""
 
@@ -369,6 +394,23 @@ class AppSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        if isinstance(dotenv_settings, DotEnvSettingsSource):
+            dotenv_settings = _EnvOverridesDotEnv(
+                settings_cls,
+                env_file=dotenv_settings.env_file,
+                env_file_encoding=dotenv_settings.env_file_encoding,
+            )
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
     chat: ChatSettings = Field(default_factory=ChatSettings)
     embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
@@ -496,6 +538,7 @@ class AppSettings(BaseSettings):
                     data, "youtube_cookies_secret", ""
                 ),
                 "gcp_project": cls._value(data, "gcp_project", ""),
+                "state_bucket": cls._value(data, "state_bucket", ""),
             }
         if "ingestion" not in data:
             data["ingestion"] = {
@@ -627,6 +670,10 @@ class AppSettings(BaseSettings):
     @property
     def gcp_project(self) -> str:
         return self.infrastructure.gcp_project
+
+    @property
+    def state_bucket(self) -> str:
+        return self.infrastructure.state_bucket
 
     @property
     def chunk_size(self) -> int:
