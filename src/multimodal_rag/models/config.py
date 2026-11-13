@@ -248,6 +248,8 @@ class InfrastructureSettings(BaseModel):
     firecrawl_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     mistral_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     youtube_cookies_file: str = ""
+    youtube_cookies_secret: str = ""
+    gcp_project: str = ""
 
     @field_validator("weaviate_url", mode="before")
     @classmethod
@@ -490,6 +492,10 @@ class AppSettings(BaseSettings):
                 "firecrawl_api_key": cls._value(data, "firecrawl_api_key", ""),
                 "mistral_api_key": cls._value(data, "mistral_api_key", ""),
                 "youtube_cookies_file": cls._value(data, "youtube_cookies_file", ""),
+                "youtube_cookies_secret": cls._value(
+                    data, "youtube_cookies_secret", ""
+                ),
+                "gcp_project": cls._value(data, "gcp_project", ""),
             }
         if "ingestion" not in data:
             data["ingestion"] = {
@@ -613,6 +619,14 @@ class AppSettings(BaseSettings):
     @property
     def youtube_cookies_file(self) -> str:
         return self.infrastructure.youtube_cookies_file
+
+    @property
+    def youtube_cookies_secret(self) -> str:
+        return self.infrastructure.youtube_cookies_secret
+
+    @property
+    def gcp_project(self) -> str:
+        return self.infrastructure.gcp_project
 
     @property
     def chunk_size(self) -> int:

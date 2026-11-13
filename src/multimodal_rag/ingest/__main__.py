@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 from pydantic import SecretStr
 
+from multimodal_rag.ingest.cookies import youtube_cookies
 from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
 from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
 from multimodal_rag.ingest.web_images import fetch_image_chunks
@@ -56,7 +57,11 @@ def _ingest_chunks(
 def run() -> None:
     settings = AppSettings()
     configure_logging(settings)
+    with youtube_cookies(settings) as cookies_file:
+        _run(settings, cookies_file)
 
+
+def _run(settings: AppSettings, cookies_file: str) -> None:
     sources = load_sources()
     embeddings = create_embeddings(settings)
 
@@ -98,7 +103,7 @@ def run() -> None:
                             yt.name,
                             vision_llm,
                             interval_seconds=5,
-                            cookies_file=settings.youtube_cookies_file,
+                            cookies_file=cookies_file,
                             transcribe_mode=True,
                         )
                         support_chunks = [
@@ -120,7 +125,7 @@ def run() -> None:
                         source_name=yt.name,
                         mistral_api_key=_secret_value(settings.mistral_api_key),
                         vision_llm=vision_llm,
-                        cookies_file=settings.youtube_cookies_file,
+                        cookies_file=cookies_file,
                         window_seconds=30,
                     )
                     chunks = [SupportChunk.from_fused_chunk(c) for c in tc]
@@ -138,7 +143,7 @@ def run() -> None:
                         source_name=yt.name,
                         target_tokens=settings.chunk_size,
                         mistral_api_key="",
-                        cookies_file=settings.youtube_cookies_file,
+                        cookies_file=cookies_file,
                     )
                     chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
                     total_added += _ingest_chunks(store, chunks, label)
