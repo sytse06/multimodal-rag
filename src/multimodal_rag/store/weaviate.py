@@ -27,6 +27,14 @@ EXPECTED_PROPERTIES = {
     "ingested_at": "date",
 }
 
+# Added for content sync (Epic 11). Optional: a collection without them is compatible,
+# so the deployed app keeps working while the hosted schema is extended.
+OPTIONAL_PROPERTIES = {
+    "document_id": "text",
+    "content_hash": "text",
+    "image_url": "text",
+}
+
 
 class WeaviateStore:
     """Manages SupportChunk storage and retrieval in Weaviate."""
@@ -93,14 +101,11 @@ class WeaviateStore:
             name=COLLECTION_NAME,
             vector_config=wvc.Configure.Vectors.self_provided(),
             properties=[
-                wvc.Property(name="text", data_type=wvc.DataType.TEXT),
-                wvc.Property(name="source_type", data_type=wvc.DataType.TEXT),
-                wvc.Property(name="source_url", data_type=wvc.DataType.TEXT),
-                wvc.Property(name="source_name", data_type=wvc.DataType.TEXT),
-                wvc.Property(name="timestamp_seconds", data_type=wvc.DataType.INT),
-                wvc.Property(name="section_heading", data_type=wvc.DataType.TEXT),
-                wvc.Property(name="url_hash", data_type=wvc.DataType.TEXT),
-                wvc.Property(name="ingested_at", data_type=wvc.DataType.DATE),
+                wvc.Property(name=name, data_type=wvc.DataType(data_type))
+                for name, data_type in {
+                    **EXPECTED_PROPERTIES,
+                    **OPTIONAL_PROPERTIES,
+                }.items()
             ],
         )
         logger.info("Created collection %s", COLLECTION_NAME)
@@ -123,10 +128,17 @@ class WeaviateStore:
                 str(prop.name): str(prop.data_type.value)
                 for prop in config.properties
             }
-            if actual != EXPECTED_PROPERTIES:
+            missing = sorted(set(EXPECTED_PROPERTIES) - set(actual))
+            known = {**EXPECTED_PROPERTIES, **OPTIONAL_PROPERTIES}
+            wrong_type = {
+                name: f"expected {known[name]}, found {actual[name]}"
+                for name in sorted(set(known) & set(actual))
+                if actual[name] != known[name]
+            }
+            if missing or wrong_type:
                 raise ValueError(
                     "Weaviate collection schema is incompatible: "
-                    f"expected {EXPECTED_PROPERTIES}, found {actual}"
+                    f"missing properties {missing}, wrong types {wrong_type}"
                 )
             objects = collection.query.fetch_objects(limit=1, include_vector=True)
             if not objects.objects:
