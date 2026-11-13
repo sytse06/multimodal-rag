@@ -947,6 +947,17 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 - `make sync-plan` is a dry run that prints per-source counts, the expected number of
   embedding and vision calls, and writes nothing
 - Reuse per-source error isolation: one failed source never aborts the run
+- The page inventory comes from the sitemap, not from the crawl. The registry holds only
+  the root URL of each knowledge base; no page list exists anywhere, and Firecrawl found
+  the pages at crawl time. Today the only record of the 160 stored pages (hydrosym 99,
+  hydroman 48, hydrocam 13) is the `source_url` on each chunk. Write that inventory to the
+  bucket as the baseline capture before the first sync, then compare each new sitemap
+  capture against it
+- The crawl is capped at `limit=100` per knowledge base (`ingest/__main__.py`), and
+  hydrosym holds 99 pages. The 45 sitemap pages that are not stored are probably pages
+  past that cap, not only new content (unverified). Treat the cap as a defect: the plan
+  reports sitemap pages the crawl did not reach, and the apply step fetches exactly the
+  pages the plan lists
 
 **Scope:** `src/multimodal_rag/ingest/`, new sync module, `Makefile`
 
@@ -1018,7 +1029,7 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 
 **Scope:** sync module, `store/weaviate.py`, `Makefile`
 
-#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: cookies and deploy variable done)
+#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: registry, bucket, cookies, deploy variable and compose done)
 
 **Branch:** `feature/SYNC-008-preflight`
 
@@ -1029,15 +1040,19 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   records the registry generation it used. The repository is public, so only an example
   file lives there. Keep credentials, including the YouTube cookies, in Secret Manager
   (workflow note, section 10)
-- `make sources-pull` and `make sources-push` move the registry between the bucket and a
-  local cache; the push validates the schema and refuses if the remote changed since the
-  pull. Cloud Run's service account gets no access to the bucket
+- Done: `make sources-pull` and `make sources-push` move the registry between the bucket
+  and a local cache; the push validates the schema and refuses if the remote changed
+  since the pull (object generation check). The first registry is in the bucket: 25 videos
+  and the 3 knowledge-base roots, restored from the March original because the working
+  file had lost them. The registry holds roots only, not pages (see SYNC-002). Cloud
+  Run's service account gets no access to the bucket. Still open: each run manifest
+  recording the registry generation
 - Done: the tracked `Makefile` no longer hardcodes the GCP project; `GCP_PROJECT` comes
   from the environment or `.env`, and `make deploy` stops with a message when it is unset
 - Done: the YouTube cookies are in Secret Manager (`YOUTUBE_COOKIES`), fetched into a
   private temporary file for each ingest run via `YOUTUBE_COOKIES_SECRET`, and explicit
-  ignore rules cover cookie files; the existing cookies are from March and must be
-  refreshed before the next run
+  ignore rules cover cookie files; fresh cookies were uploaded on 2026-11-13 (version 2,
+  verified with yt-dlp) and the March files were deleted
 - Keep one `VISION_MODEL` value, and separate the local and hosted settings so a run
   cannot write to the wrong target
 - Align the compose image with the hosted Weaviate version (done 2026-11-13: both 1.39.13)
