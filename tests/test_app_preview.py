@@ -42,3 +42,34 @@ def test_preview_has_real_ui_without_inference(monkeypatch: pytest.MonkeyPatch) 
         forbidden.assert_not_called()
     finally:
         demo.close()
+
+
+def _preview_settings(provider: str, model: str) -> AppSettings:
+    return AppSettings(
+        _env_file=None,
+        llm_provider=provider,
+        llm_model=model,
+        openai_api_key="test-openai",
+        gemini_api_key="test-gemini",
+        embedding_provider="ollama",
+        weaviate_mode="local",
+        weaviate_url="http://localhost:8080",
+    )
+
+
+def test_unregistered_default_model_logs_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="multimodal_rag.app"):
+        build_app(_preview_settings("gemini", "gemini-9-imaginary"), preview=True)
+
+    assert any("not in the model registry" in r.getMessage() for r in caplog.records)
+
+
+def test_registered_default_model_logs_no_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="multimodal_rag.app"):
+        build_app(_preview_settings("gemini", "gemini-3.6-flash"), preview=True)
+
+    assert not any("model registry" in r.getMessage() for r in caplog.records)
