@@ -780,7 +780,7 @@ are identical today (922 UUIDs, identical text) and play different roles:
 
 Prerequisites for a run, and the gaps found today (an untracked source list that omits
 the three knowledge bases, four duplicate `VISION_MODEL` lines, one `.env` shared by both
-targets, local Weaviate 1.28.4 against hosted 1.39.13), are in section 4 of the workflow
+targets, local Weaviate was 1.28.4 against hosted 1.39.13 until aligned on 2026-11-13), are in section 4 of the workflow
 note and in SYNC-008.
 
 ### Phase 1: Observability
@@ -1038,7 +1038,7 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   refreshed before the next run
 - Keep one `VISION_MODEL` value, and separate the local and hosted settings so a run
   cannot write to the wrong target
-- Align the compose image with the hosted Weaviate version (1.28.4 against 1.39.13)
+- Align the compose image with the hosted Weaviate version (done 2026-11-13: both 1.39.13)
 - `make sync-preflight` reports missing tools (Docker, Ollama and `nomic-embed-text`,
   ffmpeg, yt-dlp), missing keys without printing them, version drift, the Gemini quota
   and spend-cap situation, and whether local and hosted are identical; it changes nothing

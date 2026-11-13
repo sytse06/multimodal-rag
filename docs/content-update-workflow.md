@@ -31,7 +31,7 @@ All verified on 2026-11-13.
 - **Hosted `SupportChunk`:** 922 objects (708 web, 214 video), ingested 2026-03-13 to
   2026-03-16, Weaviate 1.39.13, 8 properties, no hashes of any kind that detect change.
 - **Local Docker `SupportChunk`:** identical to hosted. The same 922 UUIDs, identical text
-  on all 922, the same schema and dates. Weaviate 1.28.4 (pinned in `compose.yaml`). The
+  on all 922, the same schema and dates. Weaviate 1.39.13 (pinned in `compose.yaml`, aligned with the hosted cluster on 2026-11-13; it was 1.28.4 before). The
   hosted collection was restored from a snapshot of the local one.
 - **Both are frozen.** The only paths that change either are a full re-ingest, a purge
   target and a snapshot restore. The deployed app is read-only by design (Epics 9 and 10).
@@ -70,7 +70,7 @@ removals over eight months. Content changes are small and infrequent.
 | Config | A source list for all three knowledge bases and the videos, kept in one private versioned bucket (section 10) | Missing, and held on one Mac only (sections 3 and 10) | SYNC-008 |
 | Config | One `VISION_MODEL` value | Four duplicate lines | SYNC-008 |
 | Config | Separate local and hosted settings so a run cannot write to the wrong target | One shared `.env` | SYNC-008 |
-| Versions | Local Weaviate equal to the hosted version | 1.28.4 against 1.39.13 | Align the compose image |
+| Versions | Local Weaviate equal to the hosted version | 1.39.13 on both (aligned 2026-11-13) | **Done.** Fresh volume, restored from the bucket backup: 922 identical objects |
 | Data | Local equal to hosted before an update starts | Verified identical | Needs a repeatable check (SYNC-008) |
 | Schema | Deployed app tolerates extra properties | Merged, **not yet deployed** | SYNC-000 deploy |
 | Network | The doc sites, their sitemaps and YouTube reachable | Yes | |
@@ -246,7 +246,7 @@ Principles:
 - The tracked `Makefile` hardcoded the GCP project ID as the default for `make deploy`.
   **Fixed:** `GCP_PROJECT` comes from the environment or `.env` and has no default; the
   target stops with a clear message when it is unset.
-- The collection snapshot (18.5 MB, taken 2026-09-25 from Weaviate 1.28.4) is on the Mac
+- The collection snapshot (18.5 MB, taken 2026-09-25 from Weaviate 1.28.4; a current copy from 1.39.13 is in the state bucket) is on the Mac
   (`../multimodal-rag-weaviate-snapshot`) and shared through an approved Drive link
   (README).
 - The project's only bucket is `run-sources-<project>-europe-west4`, created by
