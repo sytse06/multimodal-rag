@@ -82,6 +82,7 @@ class TestWeaviateStoreDeleteBySourceType:
         patch_target = "multimodal_rag.store.weaviate.weaviate.connect_to_local"
         with patch(patch_target, return_value=mock_client):
             store = WeaviateStore.__new__(WeaviateStore)
+            store._read_only = False
             store._client = mock_client
             store._embeddings = mock_embeddings
         return store, mock_client
@@ -189,6 +190,7 @@ class TestWeaviateStoreCompatibility:
         self, vector: list[float], properties: dict[str, str] | None = None
     ) -> WeaviateStore:
         store = WeaviateStore.__new__(WeaviateStore)
+        store._read_only = False
         collection = MagicMock()
         collection.config.get.return_value = SimpleNamespace(
             properties=[
@@ -272,6 +274,7 @@ class TestWeaviateStoreCompatibility:
 class TestEnsureCollection:
     def test_creates_required_and_optional_properties(self) -> None:
         store = WeaviateStore.__new__(WeaviateStore)
+        store._read_only = False
         client = MagicMock()
         client.collections.exists.return_value = False
         store._client = client
@@ -286,6 +289,7 @@ class TestEnsureCollection:
 
     def test_skips_an_existing_collection(self) -> None:
         store = WeaviateStore.__new__(WeaviateStore)
+        store._read_only = False
         client = MagicMock()
         client.collections.exists.return_value = True
         store._client = client

@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 from pydantic import SecretStr
 
+from multimodal_rag.env_check import duplicate_env_keys
 from multimodal_rag.ingest.cookies import youtube_cookies
 from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
 from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
@@ -57,6 +58,19 @@ def _ingest_chunks(
 def run() -> None:
     settings = AppSettings()
     configure_logging(settings)
+    if settings.weaviate_mode != "local":
+        logger.error(
+            "Ingestion writes to local Docker only (WEAVIATE_MODE=%s). Hosted content"
+            " changes through promotion; export WEAVIATE_MODE=local to continue.",
+            settings.weaviate_mode,
+        )
+        sys.exit(1)
+    for key, lines in duplicate_env_keys(Path(".env")).items():
+        logger.warning(
+            "%s is defined on .env lines %s with different values; the last one wins",
+            key,
+            ", ".join(str(n) for n in lines),
+        )
     with youtube_cookies(settings) as cookies_file:
         _run(settings, cookies_file)
 

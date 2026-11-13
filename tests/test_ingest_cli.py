@@ -19,6 +19,7 @@ def _make_settings(vision_model: str = "") -> MagicMock:
     settings.chunk_size = 400
     settings.firecrawl_api_key = "fake"
     settings.weaviate_url = "http://localhost:8080"
+    settings.weaviate_mode = "local"
     settings.mistral_api_key = ""
     settings.vision_model = vision_model
     settings.youtube_cookies_file = ""
