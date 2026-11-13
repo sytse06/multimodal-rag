@@ -264,19 +264,27 @@ SYNC-005, SYNC-007 and SYNC-008.
 ### Decisions (2026-11-13)
 
 1. **One bucket** for the registry and the run state, with the prefixes above, separate
-   from the deploy bucket. Not yet created.
-2. **Region:** a region other than europe-west4, the Cloud Run region, so a regional
-   problem does not take out both. The exact region is still to be chosen, and it must be
-   chosen before the bucket is created because a bucket's location cannot be changed.
+   from the deploy bucket. **Done:** `gs://multimodal-rag-state-gen-lang-client-0552956404`,
+   private, public access blocked, versioning on (`STATE_BUCKET` in `.env`).
+2. **Region:** `us-central1`, chosen over `europe-west1`. Outside europe-west4 (the Cloud
+   Run region), so one regional problem does not take out both. The data therefore leaves
+   the EU; the chunks come from public docs and videos. A bucket's location cannot be
+   changed later.
 3. **Access:** the admin and operator only. Cloud Run's service account has no access.
-4. **Snapshot retention:** keep the last 2 versions (a lifecycle rule on `snapshots/`).
+4. **Snapshot retention:** keep the last 2 versions. **Done** as a bucket-wide lifecycle
+   rule (current version plus one older); per-object, not per-snapshot, so it is not yet
+   scoped to `snapshots/`.
 5. **Cookies:** moved to Secret Manager. **Done.** The secret `YOUTUBE_COOKIES` exists, and
    ingestion fetches it into a private temporary file for the run and deletes it
    afterwards (`YOUTUBE_COOKIES_SECRET` and `GCP_PROJECT` in `.env`). A secret wins over a
    local file. To rotate: `gcloud secrets versions add YOUTUBE_COOKIES --data-file=<file>`.
 6. **Deploy variable:** the Makefile no longer hardcodes the project. **Done.**
 
-Open: the exact bucket region.
+**Backup:** `make snapshot-backup [TARGET=cloud]` exports the collection to a temporary
+directory and uploads it to `snapshots/<UTC timestamp>-<target>/`, data first and
+`manifest.json` last, verifying each object's MD5. A prefix without a manifest is an
+aborted upload. First backup taken 2026-11-13: 922 chunks, 768 dimensions, Weaviate
+1.39.13, SHA-256 `261ee24a61a6...`.
 
 ## 11. Reproducibility
 

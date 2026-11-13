@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -42,6 +42,7 @@ help:
 	@echo "  make purge-video            - Delete all video chunks"
 	@echo "  make purge-web              - Delete all web chunks"
 	@echo "  make snapshot-export       - Export the fixed collection outside Git"
+	@echo "  make snapshot-backup       - Export the collection and upload it to the state bucket"
 	@echo "  make snapshot-restore      - Restore a snapshot into local Weaviate"
 	@echo "  make snapshot-bootstrap-cloud - Restore a snapshot into hosted Weaviate"
 	@echo ""
@@ -202,6 +203,11 @@ snapshot-export:
 	@uv run python -m multimodal_rag.store.snapshot \
 		--output "$${OUTPUT_DIR:-../multimodal-rag-weaviate-snapshot}"
 	@echo -e "$(GREEN)✅ Snapshot exported$(NC)"
+
+snapshot-backup:
+	@echo -e "$(BLUE)☁️  Backing up Weaviate snapshot to the state bucket...$(NC)"
+	@uv run python -m multimodal_rag.store.backup $(if $(TARGET),--target $(TARGET),)
+	@echo -e "$(GREEN)✅ Snapshot backed up$(NC)"
 
 snapshot-restore:
 	@echo -e "$(BLUE)📦 Restoring Weaviate snapshot...$(NC)"
