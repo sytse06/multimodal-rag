@@ -59,3 +59,21 @@ def test_environment_variable_not_in_dotenv_still_applies(
     monkeypatch.setenv("STATE_BUCKET", "my-bucket")
 
     assert AppSettings().state_bucket == "my-bucket"
+
+
+def test_vision_model_in_dotenv_is_read(
+    env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("VISION_MODEL", raising=False)
+    env_file.write_text(env_file.read_text() + "VISION_MODEL=google/gemini-2.5-flash\n")
+
+    assert AppSettings().vision_model == "google/gemini-2.5-flash"
+
+
+def test_vision_model_environment_variable_overrides_dotenv(
+    env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_file.write_text(env_file.read_text() + "VISION_MODEL=from-dotenv\n")
+    monkeypatch.setenv("VISION_MODEL", "from-environment")
+
+    assert AppSettings().vision_model == "from-environment"

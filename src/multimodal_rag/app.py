@@ -14,6 +14,7 @@ from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.config import AppSettings, ChatProvider, ModelSelection
 from multimodal_rag.models.llm import create_chat_model, create_embeddings
 from multimodal_rag.models.providers import (
+    is_registered,
     model_choices,
     provider_choices,
     selection_from_key,
@@ -125,6 +126,13 @@ def build_app(settings: AppSettings, *, preview: bool = False) -> gr.Blocks:
     warnings.filterwarnings("ignore", message=".*copy keyword is deprecated.*")
 
     configure_logging(settings)
+    if not is_registered(settings.chat.provider, settings.chat.model):
+        logger.warning(
+            "The default model %s:%s is not in the model registry; check LLM_PROVIDER"
+            " and LLM_MODEL (provider-specific model ids differ between providers)",
+            settings.chat.provider,
+            settings.chat.model,
+        )
 
     if not preview:
         embeddings = create_embeddings(settings)

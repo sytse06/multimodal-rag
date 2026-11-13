@@ -76,6 +76,13 @@ CHAT_MODEL_REGISTRY: tuple[ModelSpec, ...] = (
 )
 
 
+def is_registered(provider: str, model: str) -> bool:
+    return any(
+        spec.provider == provider and spec.model == model
+        for spec in CHAT_MODEL_REGISTRY
+    )
+
+
 def provider_available(settings: AppSettings, provider: str) -> bool:
     """Return whether a provider has enough validated configuration to use."""
     if provider == "ollama":

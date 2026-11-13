@@ -39,6 +39,8 @@ OPTIONAL_PROPERTIES = {
 class WeaviateStore:
     """Manages SupportChunk storage and retrieval in Weaviate."""
 
+    _read_only = True  # fail closed if __init__ did not run
+
     def __init__(
         self,
         weaviate_url: str,
@@ -46,8 +48,10 @@ class WeaviateStore:
         weaviate_mode: str = "local",
         weaviate_api_key: str = "",
         weaviate_tenant: str = "",
+        allow_hosted_write: bool = False,
     ) -> None:
         self._embeddings = embeddings
+        self._read_only = weaviate_mode == "cloud" and not allow_hosted_write
         self._tenant = weaviate_tenant.strip() or None
         try:
             parsed = urlparse(weaviate_url)
@@ -91,8 +95,22 @@ class WeaviateStore:
     def __exit__(self, *args: object) -> None:
         self.close()
 
+    def _require_writable(self, action: str) -> None:
+        """Refuse writes to a hosted collection unless the caller opted in.
+
+        Ingestion and the purge commands write to the local collection only; hosted
+        content changes through the promotion step, which passes allow_hosted_write.
+        """
+        if self._read_only:
+            raise PermissionError(
+                f"Refusing to {action}: the target is the hosted Weaviate cluster."
+                " Run against local Docker; hosted content is changed only by"
+                " promotion."
+            )
+
     def ensure_collection(self) -> None:
         """Create the SupportChunk collection if it doesn't exist."""
+        self._require_writable("create or extend the collection")
         if self._client.collections.exists(COLLECTION_NAME):
             logger.info("Collection %s already exists", COLLECTION_NAME)
             return
@@ -170,6 +188,7 @@ class WeaviateStore:
 
     def delete_by_source(self, source_url: str) -> int:
         """Delete all chunks matching source_url. Returns count deleted."""
+        self._require_writable("delete chunks")
         collection = self._collection()
         result = collection.data.delete_many(
             where=Filter.by_property("source_url").equal(source_url)
@@ -180,6 +199,7 @@ class WeaviateStore:
 
     def delete_by_source_type(self, source_type: str) -> int:
         """Delete all chunks matching source_type ('video' or 'web'). Returns count."""
+        self._require_writable("delete chunks")
         collection = self._collection()
         result = collection.data.delete_many(
             where=Filter.by_property("source_type").equal(source_type)
@@ -190,6 +210,7 @@ class WeaviateStore:
 
     def delete_collection(self) -> None:
         """Delete the SupportChunk collection."""
+        self._require_writable("delete the collection")
         if self._client.collections.exists(COLLECTION_NAME):
             self._client.collections.delete(COLLECTION_NAME)
             logger.info("Deleted collection %s", COLLECTION_NAME)
@@ -199,6 +220,7 @@ class WeaviateStore:
 
     def add_chunks(self, chunks: list[SupportChunk]) -> int:
         """Add SupportChunks to Weaviate with embeddings. Returns count added."""
+        self._require_writable("add chunks")
         if not chunks:
             return 0
 

@@ -368,16 +368,22 @@ class ProviderEndpointSettings(BaseModel):
 
 
 class _EnvOverridesDotEnv(DotEnvSettingsSource):
-    """A .env source in which a real environment variable wins.
+    """A .env source for the legacy flat variables.
 
-    The legacy flat variables (WEAVIATE_URL and similar) are not model fields, so
-    pydantic-settings only reads them from .env. Without this, an exported variable
-    is silently ignored whenever .env defines the same name.
+    The flat variables (WEAVIATE_URL and similar) are not model fields, so
+    pydantic-settings only reads them from .env, and two things go wrong without this
+    class. A real environment variable is ignored whenever .env defines the same name.
+    And a name that starts with a nested field's name (VISION_MODEL, because of the
+    ``vision`` field) is swallowed as if it belonged to that field and never reaches
+    the legacy lookup, so VISION_MODEL in .env had no effect.
     """
 
     def __call__(self) -> dict[str, Any]:
         data = super().__call__()
         fields = self.settings_cls.model_fields
+        for name, value in self.env_vars.items():
+            if value and name not in data and name not in fields:
+                data[name] = value
         return {
             key: os.environ.get(key.upper(), value)
             if key not in fields and isinstance(value, str)

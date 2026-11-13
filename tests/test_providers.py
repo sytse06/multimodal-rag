@@ -4,6 +4,7 @@ from multimodal_rag.models.config import AppSettings
 from multimodal_rag.models.providers import (
     available_models,
     available_providers,
+    is_registered,
     model_choices,
     provider_available,
     provider_choices,
@@ -116,3 +117,9 @@ def test_provider_availability_never_exposes_credentials() -> None:
     assert all(
         "super-secret" not in repr(model) for model in available_models(settings)
     )
+
+
+def test_is_registered_matches_provider_and_model_together() -> None:
+    assert is_registered("gemini", "gemini-3.6-flash")
+    assert not is_registered("openrouter", "gemini-3.6-flash")
+    assert not is_registered("nvidia", "nemotron-3-ultra-550b-a55b")
