@@ -753,8 +753,35 @@ found and fixed three defects after the first deploy: Gemini token usage (report
 chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
 OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has started: SYNC-000
 (schema readiness) is merged to `main` and its spike is done, with the Cloud Run deploy
-pending; SYNC-001 to SYNC-006 have not started. The design and the supporting evidence
-are in `docs/chunk-parent-design.md`.
+pending; SYNC-001 to SYNC-008 have not started. The design and the supporting evidence
+are in `docs/chunk-parent-design.md`; the operating model is in
+`docs/content-update-workflow.md`.
+
+### Personas and update workflow
+
+Full detail, facts and assumptions: `docs/content-update-workflow.md`.
+
+| Persona | Role in Phase 2 |
+|---|---|
+| Support colleague | Uses the hosted app with the read-only viewer key. Needs no outage while content is updated. Never runs ingestion. |
+| Maintainer | Owns the sources, runs the refresh and the promotion, holds the Firecrawl, Mistral, vision and admin keys, and decides what goes live. |
+| Operator | Deploys the app, keeps the schema compatible, reads the Phase 1 logs. The same person as the maintainer today. |
+| Content owner | Edits the documentation and videos. Not a system user; their change rate sizes the workload (about 11 edits, 45 new pages and 14 removals in eight months). |
+
+The sync is **two stages**, because the local Docker collection and the hosted collection
+are identical today (922 UUIDs, identical text) and play different roles:
+
+- **Stage A, refresh local** (SYNC-001 to SYNC-004, SYNC-008): the maintainer fetches the
+  sources, hashes the inputs, plans the change against the local collection, applies it
+  to the local collection only, and validates it. Local is a disposable staging copy.
+- **Stage B, promote to hosted** (SYNC-005, SYNC-007): the maintainer backs up the hosted
+  collection, diffs local against hosted, applies the difference with the admin key
+  without deleting the collection, and verifies that the two are identical again.
+
+Prerequisites for a run, and the gaps found today (an untracked source list that omits
+the three knowledge bases, four duplicate `VISION_MODEL` lines, one `.env` shared by both
+targets, local Weaviate 1.28.4 against hosted 1.39.13), are in section 4 of the workflow
+note and in SYNC-008.
 
 ### Phase 1: Observability
 
@@ -864,17 +891,27 @@ Depends on SYNC-000.
   written without these fields would erase backfilled values
 - Hash inputs, never generated outputs: LLM-written text is stored once and keyed on the
   hash of its inputs, so re-running a check never changes stored descriptions
-- Establish a baseline for the existing data. The sitemap `lastmod` shows 135 of the 146
-  matched pages unchanged since the March ingest, 11 modified, 14 stored pages absent from
-  the sitemaps and 45 sitemap pages not stored. Re-chunk a sample of the unchanged pages
-  with current code to measure pipeline drift, and a few modified pages to confirm that
-  real edits are localised
+- Use the sitemap `lastmod` as the cheap trigger and the hashes as the verification (design
+  note D8). The first run crawls only the 11 pages modified since the March ingest, adds
+  the 45 sitemap pages not yet stored, and treats the 14 stored pages absent from the
+  sitemaps as removal candidates; the 135 unchanged pages are not crawled. Store
+  `source_lastmod` with the chunks so later runs can gate on it; pages without a
+  `lastmod` are always crawled, and an occasional `--verify` run crawls everything
+- Convert the existing 922 chunks without a crawl: every chunk gets `document_id` and a
+  `content_hash` computed from its stored text, web chunks get `source_lastmod` where the
+  page is unchanged, screenshot chunks get `image_url` re-derived from the live page with
+  `legacy` markers for the fields that cannot be known, and videos get a baseline
+  fingerprint. Run it on the local collection with metadata-only updates, verify that
+  texts and vectors are unchanged, then promote (design note, Conversion of the existing
+  chunks)
 - Give screenshot-description chunks provenance. In the hosted collection 381 of 922
   chunks (41%) are keyed on `uuid5(image_url)` while `image_url` is not stored, so a sync
   cannot tell which chunk belongs to which image. Add `image_url`, `image_hash`,
   `description_model` and `prompt_version`, and backfill `image_url` by re-deriving
   `uuid5(image_url)` from each live page; a one-page test matched 3 of 4 stored chunks,
   and 19 of 19 and 7 of 7 on two more pages
+- Extend the vision factory: `create_vision_llm` goes through OpenRouter only, so add the
+  Gemini provider path and record the model that wrote each description
 - Re-describe screenshots with a page-anchored prompt on `gemini-3.6-flash`
   (`thinking_level="low"`, a `max_output_tokens` cap, a repetition guard, decorative
   images skipped, the application named only if visible), and replace the three runaway
@@ -900,11 +937,13 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 
 **Branch:** `feature/SYNC-002-sync-plan`
 
-- For each source, fetch the stored chunks by `source_url` (IDs, text, and `content_hash`
-  where backfilled), build the new chunk set, and compute added, changed, and removed.
+- For each source, fetch the stored chunks of the **local** collection by `source_url`
+  (IDs, text, and `content_hash` where backfilled), build the new chunk set, and compute
+  added, changed, and removed.
   Until `content_hash` is backfilled, compare against the stored text and use the sitemap
   `lastmod` against `ingested_at` as the independent change signal
-- `make sync-plan` is a dry run that prints per-source counts and writes nothing
+- `make sync-plan` is a dry run that prints per-source counts, the expected number of
+  embedding and vision calls, and writes nothing
 - Reuse per-source error isolation: one failed source never aborts the run
 
 **Scope:** `src/multimodal_rag/ingest/`, new sync module, `Makefile`
@@ -914,7 +953,8 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 **Branch:** `feature/SYNC-003-sync-apply`
 
 - Insert/update first, delete stale last, so a source is never empty or partial mid-run
-- `make sync` requires an explicit `--target cloud` and a confirmation prompt
+- `make sync` writes to the local Docker collection only, refuses a hosted URL, and asks
+  for confirmation; hosted writes happen only through `make promote` (SYNC-007)
 - Abort without writing if the plan would delete more than a configurable share of the
   collection
 - Re-embed only added and changed chunks; refuse to run if the configured embedding model
@@ -938,7 +978,8 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 
 **Branch:** `feature/SYNC-005-backup-verify`
 
-- Automatic snapshot (`make snapshot-export`) before any cloud write
+- Automatic snapshot of the hosted collection (`make snapshot-export`) before any
+  promotion
 - After sync, verify the object count against the plan and run one known retrieval query
   on the hosted collection
 - Admin key used only for sync; the viewer key stays in Cloud Run; no keys in logs or Git
@@ -956,6 +997,58 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 - Update README, `docs/pipeline.md`, and `docs/gcp-deployment.txt` with the sync
   procedure and the OBS-002 log queries
 - Update the "out of scope" lists in Epics 9 and 10 once sync ships
+
+#### SYNC-007 — Promote Local to Hosted
+
+**Branch:** `feature/SYNC-007-promote`
+
+- `make promote-plan` compares the local and hosted collections by UUID and stored
+  `content_hash` and prints added, changed and removed counts; it writes nothing
+- `make promote` applies the difference to the hosted collection with the admin key:
+  insert and update first, delete last, never delete the collection, and abort above a
+  configurable deletion share
+- Take a snapshot of the hosted collection first, and verify afterwards that the UUID set
+  and text of local and hosted are identical, the count matches, and one known query
+  retrieves correctly
+- Document the rollback: restore the snapshot with `--replace`, which deletes and
+  recreates the hosted collection and so causes an outage; it is for failures only
+- A promotion that stops part-way is safe to repeat, because the diff is recomputed
+
+**Scope:** sync module, `store/weaviate.py`, `Makefile`
+
+#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: cookies and deploy variable done)
+
+**Branch:** `feature/SYNC-008-preflight`
+
+- Keep the source registry (the three knowledge bases and the 25 videos) together with
+  run state, sitemap captures and snapshots in one dedicated private, versioned bucket,
+  with a prefix per kind of data, in a region other than Cloud Run's, accessible to the
+  admin and operator only, and a lifecycle rule keeping the last 2 snapshots; each run manifest
+  records the registry generation it used. The repository is public, so only an example
+  file lives there. Keep credentials, including the YouTube cookies, in Secret Manager
+  (workflow note, section 10)
+- `make sources-pull` and `make sources-push` move the registry between the bucket and a
+  local cache; the push validates the schema and refuses if the remote changed since the
+  pull. Cloud Run's service account gets no access to the bucket
+- Done: the tracked `Makefile` no longer hardcodes the GCP project; `GCP_PROJECT` comes
+  from the environment or `.env`, and `make deploy` stops with a message when it is unset
+- Done: the YouTube cookies are in Secret Manager (`YOUTUBE_COOKIES`), fetched into a
+  private temporary file for each ingest run via `YOUTUBE_COOKIES_SECRET`, and explicit
+  ignore rules cover cookie files; the existing cookies are from March and must be
+  refreshed before the next run
+- Keep one `VISION_MODEL` value, and separate the local and hosted settings so a run
+  cannot write to the wrong target
+- Align the compose image with the hosted Weaviate version (1.28.4 against 1.39.13)
+- `make sync-preflight` reports missing tools (Docker, Ollama and `nomic-embed-text`,
+  ffmpeg, yt-dlp), missing keys without printing them, version drift, the Gemini quota
+  and spend-cap situation, and whether local and hosted are identical; it changes nothing
+- A golden-question regression is the release gate between Stage A and Stage B: the
+  hand-written UI questions and a title-derived set are run before and after, and any
+  answer that gets worse is reviewed before promotion
+- Write the maintainer runbook: prerequisites, the two stages, rollback and who decides
+  what
+
+**Scope:** `config/`, `Makefile`, `compose.yaml`, `docs/`, preflight module
 
 **Acceptance criteria:**
 
@@ -984,8 +1077,13 @@ Sync
 - A failed crawl or failed source never deletes existing content
 - An unchanged source costs no embedding calls
 - The deployed app serves new content without a redeploy
-- A pre-sync snapshot exists before every cloud write
+- A pre-sync snapshot of the hosted collection exists before every promotion
 - Cloud Run never holds write credentials
+- A maintainer can run a preflight that reports missing tools, keys, quota, version drift
+  and local-versus-hosted differences before anything changes
+- The local and hosted collections are verified identical after every promotion
+- Colleagues see no outage while a promotion runs
+- A failed promotion can be rolled back from the pre-promotion snapshot
 
 **Out of scope:** scheduled or unattended sync (candidate Epic 12), distributed tracing or
 an external log platform beyond Cloud Logging, embedding-model migration, multi-tenant
@@ -1007,8 +1105,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 10 | in progress (Phase 1 done and verified; SYNC-000 merged, deploy pending; 6 open) | 69 |
-| **Total** | **48** | **10 completed, 1 in progress** | **316 current** |
+| 11 — Observability and Hosted Content Sync | 12 | in progress (Phase 1 done and verified; SYNC-000 merged, deploy pending; 8 open) | 69 |
+| **Total** | **50** | **10 completed, 1 in progress** | **325 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
