@@ -12,7 +12,11 @@ from multimodal_rag.models.chunks import (
     WebChunk,
 )
 from multimodal_rag.store.embeddings import _MAX_WORDS, _RETRY_MAX_WORDS, embed_texts
-from multimodal_rag.store.weaviate import EXPECTED_PROPERTIES, WeaviateStore
+from multimodal_rag.store.weaviate import (
+    EXPECTED_PROPERTIES,
+    OPTIONAL_PROPERTIES,
+    WeaviateStore,
+)
 
 
 class TestEmbedTexts:
@@ -181,13 +185,15 @@ class TestWeaviateStoreConnection:
 
 
 class TestWeaviateStoreCompatibility:
-    def _make_store(self, vector: list[float]) -> WeaviateStore:
+    def _make_store(
+        self, vector: list[float], properties: dict[str, str] | None = None
+    ) -> WeaviateStore:
         store = WeaviateStore.__new__(WeaviateStore)
         collection = MagicMock()
         collection.config.get.return_value = SimpleNamespace(
             properties=[
                 SimpleNamespace(name=name, data_type=SimpleNamespace(value=value))
-                for name, value in EXPECTED_PROPERTIES.items()
+                for name, value in (properties or EXPECTED_PROPERTIES).items()
             ]
         )
         collection.query.fetch_objects.return_value = SimpleNamespace(
@@ -224,6 +230,69 @@ class TestWeaviateStoreCompatibility:
 
         with pytest.raises(ValueError, match="vector dimension"):
             store.validate_compatibility(expected_vector_dimension=3)
+
+    def test_accepts_the_optional_sync_properties(self) -> None:
+        store = self._make_store(
+            [0.1, 0.2], {**EXPECTED_PROPERTIES, **OPTIONAL_PROPERTIES}
+        )
+
+        store.validate_compatibility(expected_vector_dimension=2)
+
+    def test_accepts_unknown_extra_properties(self) -> None:
+        store = self._make_store(
+            [0.1, 0.2], {**EXPECTED_PROPERTIES, "future_field": "text"}
+        )
+
+        store.validate_compatibility(expected_vector_dimension=2)
+
+    def test_rejects_a_missing_required_property(self) -> None:
+        properties = {k: v for k, v in EXPECTED_PROPERTIES.items() if k != "text"}
+        store = self._make_store([0.1, 0.2], properties)
+
+        with pytest.raises(ValueError, match="schema is incompatible.*'text'"):
+            store.validate_compatibility(expected_vector_dimension=2)
+
+    def test_rejects_a_wrong_type_on_a_required_property(self) -> None:
+        store = self._make_store(
+            [0.1, 0.2], {**EXPECTED_PROPERTIES, "timestamp_seconds": "text"}
+        )
+
+        with pytest.raises(ValueError, match="timestamp_seconds"):
+            store.validate_compatibility(expected_vector_dimension=2)
+
+    def test_rejects_a_wrong_type_on_a_known_optional_property(self) -> None:
+        store = self._make_store(
+            [0.1, 0.2], {**EXPECTED_PROPERTIES, "image_url": "int"}
+        )
+
+        with pytest.raises(ValueError, match="image_url"):
+            store.validate_compatibility(expected_vector_dimension=2)
+
+
+class TestEnsureCollection:
+    def test_creates_required_and_optional_properties(self) -> None:
+        store = WeaviateStore.__new__(WeaviateStore)
+        client = MagicMock()
+        client.collections.exists.return_value = False
+        store._client = client
+
+        store.ensure_collection()
+
+        created = client.collections.create.call_args.kwargs["properties"]
+        assert {p.name: p.dataType.value for p in created} == {
+            **EXPECTED_PROPERTIES,
+            **OPTIONAL_PROPERTIES,
+        }
+
+    def test_skips_an_existing_collection(self) -> None:
+        store = WeaviateStore.__new__(WeaviateStore)
+        client = MagicMock()
+        client.collections.exists.return_value = True
+        store._client = client
+
+        store.ensure_collection()
+
+        client.collections.create.assert_not_called()
 
 
 class TestSupportChunkConversion:
