@@ -57,6 +57,8 @@ class TestCreateChatModel:
         )
         llm = create_chat_model(settings)
         assert isinstance(llm, ChatOpenAI)
+        # Without this the streamed response carries no token usage.
+        assert llm.stream_usage is True
 
     @patch.dict(
         "os.environ",
