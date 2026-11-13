@@ -718,8 +718,8 @@ an origin-changing proxy) are in `docs/gcp-deployment.txt`.
 - A known retrieval query and one chat inference complete against the existing collection
   without Weaviate writes — met, verified against the live Weaviate Cloud collection
   through the deployed service in a browser
-- OpenAI and Gemini are selectable when their secrets are configured — met for OpenAI;
-  Gemini is wired and configured but not yet smoke-tested end-to-end
+- OpenAI and Gemini are selectable when their secrets are configured — met; both serve
+  live requests on Cloud Run (verified during Epic 11, November 2026)
 - Missing runtime configuration and incompatible collection/vector dimensions produce
   actionable startup errors — met (`space-entrypoint.sh` fails fast on missing
   `WEAVIATE_URL`/`WEAVIATE_VIEWER_API_KEY`; `validate_compatibility()` fails fast on
@@ -750,7 +750,8 @@ logging.
 verified against live traffic on Cloud Run revision 00021 (2026-11-13). Verification
 found and fixed three defects after the first deploy: Gemini token usage (reported per
 chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
-OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has not started.
+OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has not started; its
+design and the supporting evidence are in `docs/chunk-parent-design.md`.
 
 ### Phase 1: Observability
 
@@ -812,38 +813,80 @@ Current behaviour that motivates this phase: web chunk IDs derive from either
 uses a plain batch insert, and no change detection exists. Re-ingesting edited content
 can therefore leave stale chunks or fail to update them, and removed content lingers.
 
-#### SYNC-001 — Change Semantics Spike and Deterministic Chunk Identity
+#### SYNC-000 — Schema Readiness
+
+**Branch:** `feature/SYNC-000-schema-readiness`
+
+Gate for every later sync story. The collection schema is checked for an exact property
+match: `WeaviateStore.validate_compatibility` runs at app startup and rejects any extra
+property. Adding a property to the hosted collection before the deployed app is updated
+would make Cloud Run fail its startup check and return 503.
+
+- Change `validate_compatibility` to require the 8 original properties and allow extra
+  ones; new properties are optional until a feature needs them
+- Add the planned optional properties to `ensure_collection`, so freshly created
+  collections match (`restore_snapshot` already builds its schema from the manifest)
+- Update the schema tests, including the `EXPECTED_PROPERTIES` fixture
+- Deploy this to Cloud Run and verify startup **before** any property is added to the
+  hosted collection
+- Spike on a local Docker collection restored from the snapshot, not on the hosted one:
+  what `batch.add_object` does when the UUID already exists; whether adding a property
+  needs a reindex; and whether a partial `data.update` leaves the stored vector
+  untouched. Record the results in `docs/chunk-parent-design.md`
+
+**Scope:** `src/multimodal_rag/store/weaviate.py`, `tests/test_store.py`
+
+#### SYNC-001 — Deterministic Chunk Identity, Provenance, and Baseline
 
 **Branch:** `feature/SYNC-001-chunk-identity`
 
-- Verify against hosted Weaviate what `batch.add_object` does when the UUID already
-  exists, and document the result
-- Make web chunk IDs deterministic and explicit (decide between `url|index` and
-  `url|content-hash`)
-- Add a `content_hash` property per chunk, behind an explicit schema-migration step
+Depends on SYNC-000.
+
+- Keep the existing position keys for web text (`url|index`) and detect change with a
+  per-chunk `content_hash`; when a page's chunk positions shift, replace the page's text
+  chunks as a set (design note D3)
+- Add `document_id` (`uuid5(source_url)`) and `content_hash` as additive chunk
+  properties
+- Hash inputs, never generated outputs: LLM-written text is stored once and keyed on the
+  hash of its inputs, so re-running a check never changes stored descriptions
+- Establish a baseline for the existing data. The sitemap `lastmod` shows 135 of the 146
+  matched pages unchanged since the March ingest, 11 modified, 14 stored pages absent from
+  the sitemaps and 45 sitemap pages not stored. Re-chunk a sample of the unchanged pages
+  with current code to measure pipeline drift, and a few modified pages to confirm that
+  real edits are localised
 - Give screenshot-description chunks provenance. In the hosted collection 381 of 922
   chunks (41%) are keyed on `uuid5(image_url)` while `image_url` is not stored, so a sync
-  cannot tell which chunk belongs to which image. Add an `image_url` property (no
-  reindex needed) and backfill it by re-deriving `uuid5(image_url)` from each live page;
-  a one-page test matched 3 of 4 stored chunks, 19 of 19 and 7 of 7 on two more pages
+  cannot tell which chunk belongs to which image. Add `image_url`, `image_hash`,
+  `description_model` and `prompt_version`, and backfill `image_url` by re-deriving
+  `uuid5(image_url)` from each live page; a one-page test matched 3 of 4 stored chunks,
+  and 19 of 19 and 7 of 7 on two more pages
 - Re-describe screenshots with a page-anchored prompt on `gemini-3.6-flash`
   (`thinking_level="low"`, a `max_output_tokens` cap, a repetition guard, decorative
-  images skipped), and replace the three runaway chunks (81k to 229k characters)
+  images skipped, the application named only if visible), and replace the three runaway
+  chunks (81k to 229k characters)
+- Strip the YouTube player boilerplate (41 chunks on 21 pages) before chunking and keep
+  the embedded video IDs as page metadata
+- Add a video fingerprint (video ID, duration, title, caption hash) and a pipeline
+  version; reprocess a video only when either changes, and sanity-check the stored
+  windows against current durations
 - Take a snapshot before any cloud write and replace objects by explicit UUID, with the
-  re-embedded vector; do not rely on `batch.add_object` overwriting an existing UUID
-  until the duplicate-UUID behaviour above is verified
+  re-embedded vector, unless the SYNC-000 spike shows a duplicate UUID overwrites cleanly
 
-Evidence, pilot results and the full procedure: `docs/screenshot-description-pilot.md`.
+Evidence and procedures: `docs/screenshot-description-pilot.md` and
+`docs/chunk-parent-design.md`.
 
 **Scope:** `src/multimodal_rag/models/chunks.py`, `src/multimodal_rag/store/weaviate.py`,
-`src/multimodal_rag/ingest/web_images.py`
+`src/multimodal_rag/ingest/web.py`, `src/multimodal_rag/ingest/web_images.py`,
+`src/multimodal_rag/ingest/youtube.py`
 
 #### SYNC-002 — Per-source Diff and Plan
 
 **Branch:** `feature/SYNC-002-sync-plan`
 
-- For each source, fetch existing chunk IDs and hashes by `source_url`, build the new
-  chunk set, and compute added, changed, and removed
+- For each source, fetch the stored chunks by `source_url` (IDs, text, and `content_hash`
+  where backfilled), build the new chunk set, and compute added, changed, and removed.
+  Until `content_hash` is backfilled, compare against the stored text and use the sitemap
+  `lastmod` against `ingested_at` as the independent change signal
 - `make sync-plan` is a dry run that prints per-source counts and writes nothing
 - Reuse per-source error isolation: one failed source never aborts the run
 
@@ -869,6 +912,8 @@ Evidence, pilot results and the full procedure: `docs/screenshot-description-pil
 - Pages that disappear upstream, or sources dropped from `config/sources.yaml`, are
   removed only after an explicit flag or confirmation
 - A failed crawl never deletes existing content
+- The current data supplies real cases for tests: 14 stored pages are no longer in the
+  sitemaps (removed or renamed) and 45 sitemap pages are not yet stored
 
 **Scope:** sync module, `config/sources.yaml` handling
 
@@ -945,8 +990,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 9 | in progress (Phase 1 done, deployed and verified; 6 open) | 62 |
-| **Total** | **47** | **10 completed, 1 in progress** | **309 current** |
+| 11 — Observability and Hosted Content Sync | 10 | in progress (Phase 1 done, deployed and verified; 7 open) | 62 |
+| **Total** | **48** | **10 completed, 1 in progress** | **309 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.

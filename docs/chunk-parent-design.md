@@ -2,10 +2,12 @@
 
 Status: **proposal**. Nothing in this note is implemented, and no schema change has been
 made to the hosted collection. It records the findings and the design considerations from
-the Epic 11 investigation so the SYNC-001 work can start from them.
+the Epic 11 investigation so the SYNC-000 and SYNC-001 work can start from them.
 
 Measurements were taken on 2026-11-09 against the hosted `SupportChunk` collection with
 the read-only viewer key. Related evidence: `docs/screenshot-description-pilot.md`.
+Revised on 2026-11-13 after review against the code (schema checks, hashing per layer,
+baseline for the existing data, update loop).
 
 ## 1. Where the code stands today
 
@@ -38,6 +40,10 @@ Every UUID is `uuid5(NAMESPACE_URL, <key string>)`, a name-based hash of a key s
 
 The key tells you which slot a chunk occupies, not what it says, and nothing stored says
 whether the text in a slot has changed.
+
+The 381 screenshot chunks are the web chunks whose UUID cannot be recomputed from stored
+data. 380 of them open with "This screenshot..." or "This image..." and one differs, so the
+figures 381 and "about 380" elsewhere in this note refer to the same set.
 
 ### Where hashing is used
 
@@ -158,7 +164,7 @@ hosted data. **Open** until SYNC-002 shows how much state the diff needs.
 **Leaning: keep the existing position keys** for web text (327 are already stored this
 way) and detect change with a per-chunk `content_hash`. When a page's chunk count or
 positions shift, replace the whole page's text chunks by `document_id` instead of diffing
-slot by slot. **Open**, to be confirmed in SYNC-001 with the duplicate-UUID test (D6).
+slot by slot. **Open**, to be confirmed with the SYNC-000 spike (D6) and the baseline check (D8).
 
 ### D4. Meaning of the video link
 
@@ -180,27 +186,77 @@ legitimate text is not removed.
 - Replace objects by explicit UUID, with a re-embedded vector computed from
   `"<source_name>: <text>"`, the same input `add_chunks` uses.
 - Do not rely on `batch.add_object` overwriting an existing UUID. That behaviour is
-  untested and is the first SYNC-001 check (it needs the admin key).
+  untested and is part of the SYNC-000 spike, run on a local Docker collection first.
 
-### D7. Hash choices
+### D7. What to hash, per layer
 
-- Per page: `content_hash`, a SHA-256 of the crawled markdown after boilerplate removal.
-- Per chunk: `content_hash`, a SHA-256 of the stored text.
-- Per image (optional): a hash of the image bytes, so a changed image can be told from an
-  unchanged one even when the URL stays the same.
-- Store full hex digests for these. The 8-character form is only for log correlation.
+Principle: **decide on hashes of inputs, never on regenerated outputs.** LLM-written text
+(screenshot descriptions, transcripts, frame descriptions) differs on every call, so
+comparing outputs would flag everything as changed on every run. Generated text is an
+artefact: stored once, keyed on the hash of its inputs, and replaced only when those
+inputs change.
+
+| Layer | What is hashed | Reprocess when |
+|---|---|---|
+| Web text | SHA-256 of the cleaned page markdown (per page) and of each chunk's stored text (`content_hash`) | the page hash changes; then diff chunks |
+| Screenshot | SHA-256 of the image bytes (`image_hash`), plus `description_model` and `prompt_version` | image bytes, model or prompt version change |
+| Video | SHA-256 fingerprint of video ID, duration, title and caption-text hash (`source_fingerprint`), plus `pipeline_version` (transcription model, frame interval, vision model and prompt) | fingerprint or pipeline version changes |
+
+- Remove boilerplate such as the YouTube player text before hashing (D5), or the hash
+  would change with the player UI.
+- Temperature 0 and a seed reduce LLM variation but do not remove it. The caching rule
+  makes variation irrelevant for sync.
+- Embeddings are recomputed only when a chunk's stored text changes (`content_hash`).
+- Store full hex digests. The 8-character form is for log correlation only.
+- Screenshot hashing costs nothing extra: all screenshot chunks are rewritten in the
+  re-description anyway, and that is the only chance to record the image bytes, because
+  the old images are gone.
+- Videos rarely change at the same URL, so skip them by default and reprocess only on a
+  changed fingerprint or an explicit flag. Transcription and frame description are the
+  costliest steps.
+
+### D8. Baseline for the existing data
+
+The hosted collection has no content hash and does not store the source page, so a new
+crawl is compared with the output of the March pipeline. A difference can mean the page
+changed, the pipeline changed or the crawl varied.
+
+Evidence that separates these causes:
+
+- The doc sites publish a sitemap with `lastmod` per URL. Of the 160 stored web pages, 146
+  appear in the sitemaps and all 146 have a `lastmod`. 11 were modified after the March
+  ingest (the latest `ingested_at` is 2026-03-16) and 135 were not. 14 stored pages are
+  not in the sitemaps (removed or renamed) and 45 sitemap pages are not stored.
+- For the 135 unchanged pages, comparing a re-chunk made with current code against the
+  stored text measures pure pipeline drift. On modified pages a real edit should differ in
+  a few localised chunks, while drift differs everywhere.
+- Stored text chunks are position-keyed and contiguous from 0 on all 160 pages, so a
+  chunk-by-chunk text comparison needs no hash. Over-detection costs a re-embed of a few
+  hundred chunks on local Ollama and does not affect correctness.
+- Not recoverable: screenshots (the old image bytes are gone and `image_url` is not
+  stored, so re-describe all) and videos (no source state, so take a new fingerprint and
+  compare current durations with the stored windows).
+- Caveats: `lastmod` is the CMS's claim, and whether it changes when only an image is
+  replaced has not been checked. The re-chunk comparison has not been run.
 
 ## 5. Proposed model
 
 ### Chunk (existing collection, additive properties)
 
-| Property | Type | Purpose |
-|---|---|---|
-| `document_id` | text | `uuid5(NAMESPACE_URL, source_url)`; parent key |
-| `image_url` | text | set on screenshot chunks; null otherwise |
-| `content_hash` | text | SHA-256 of the stored text |
+| Property | Type | Applies to | Purpose |
+|---|---|---|---|
+| `document_id` | text | all | `uuid5(NAMESPACE_URL, source_url)`; parent key |
+| `content_hash` | text | all | SHA-256 of the stored text |
+| `image_url` | text | screenshots | source image; null otherwise |
+| `image_hash` | text | screenshots | SHA-256 of the image bytes |
+| `description_model` | text | screenshots | vision model that wrote the text |
+| `prompt_version` | text | screenshots | version of the description prompt |
+| `source_fingerprint` | text | video | video fingerprint (D7) |
+| `pipeline_version` | text | video | transcription and vision settings |
 
-Existing chunks get null until backfilled. Adding a property needs no reindex.
+Existing chunks read null until backfilled. Whether adding a property needs a reindex is
+unverified (see the SYNC-000 spike). Whether many optional properties or one nested
+object property is better is open (section 9).
 
 ### Page record (only if D2 stage 2 is taken)
 
@@ -213,17 +269,24 @@ other documents.
 
 These decide the order of work and are the main risk.
 
-1. **`validate_compatibility` requires an exact property match.** `EXPECTED_PROPERTIES` in
-   `store/weaviate.py` lists the eight current properties and the check is
-   `actual != EXPECTED_PROPERTIES`. If `document_id`, `image_url` or `content_hash` is
-   added to the hosted collection **before** the deployed app is updated, the running app
-   fails its startup validation with "schema is incompatible" and the container exits.
-   Weaviate Cloud problems already produce a 503 that way (see the deployment notes).
-   **Order:** first change the check to require the expected properties without rejecting
-   extra ones, deploy it, and only then add properties to the hosted schema.
+1. **The schema is checked for an exact property match.**
+   - `WeaviateStore.validate_compatibility` compares the collection's properties with
+     `EXPECTED_PROPERTIES` (the 8 current ones) and raises on any difference. The app
+     calls it at startup (`app.py`). If a property is added to the hosted collection
+     **before** the deployed app is updated, the running app fails its startup check and
+     the container exits (503), as Weaviate Cloud outages already do.
+   - `ensure_collection` creates the same fixed 8-property schema, so fresh local
+     collections would lack any new property.
+   - `tests/test_store.py` builds its fixture from `EXPECTED_PROPERTIES`.
+   - `restore_snapshot` builds the schema from the manifest and validates against it, so
+     it is self-consistent: an old snapshot restores to the old schema, a new one to the
+     new schema.
+   - **Rule:** require the 8 original properties and allow extras. The new properties are
+     optional until a feature needs them. **Order:** change the check, deploy it, verify
+     startup, and only then add properties to the hosted schema.
 2. **Snapshot and restore are tied to one collection.** `store/snapshot.py` exports
-   `COLLECTION_NAME` only and stores the schema in the manifest. Older snapshots lack the
-   new properties. A `Document` collection would need to be exported and restored too.
+   `COLLECTION_NAME` only and stores the schema in the manifest. A `Document` collection
+   would need to be exported and restored too.
 3. **Keys.** Property additions and writes need the admin key. Cloud Run keeps the
    read-only viewer key.
 4. **Fixed-collection contract (Epics 9 and 10).** Additive chunk properties keep the one
@@ -232,27 +295,77 @@ These decide the order of work and are the main risk.
 
 ## 7. Staged plan
 
-1. Relax `validate_compatibility` to tolerate extra properties, test it, deploy.
-2. Add `document_id`, `image_url` and `content_hash` to the hosted schema (additive).
-3. Backfill `document_id` from `source_url` for all 922 chunks and `image_url` by
-   re-deriving `uuid5(image_url)` from the live pages (the pilot matched 3 of 4, 19 of 19
-   and 7 of 7 on three pages; full coverage is unmeasured). Snapshot first.
-4. Verify duplicate-UUID behaviour of `batch.add_object` (SYNC-001).
-5. Re-describe screenshots and remove the three runaway chunks, per the pilot note.
-6. Strip player boilerplate and record `embedded_video_ids`.
+1. **SYNC-000, schema readiness:** relax `validate_compatibility` (8 required, extras
+   allowed), add the optional properties to `ensure_collection`, update the tests, deploy,
+   and verify startup.
+2. **Spike on a local Docker collection:** what `batch.add_object` does on a duplicate
+   UUID, whether adding a property needs a reindex, and whether a partial `data.update`
+   leaves the stored vector untouched.
+3. Snapshot, then add the properties to the hosted schema (additive).
+4. Backfill `document_id` (a metadata-only update, if step 2 confirms it) and
+   `image_url` (re-deriving `uuid5(image_url)` from the live pages; the pilot matched
+   3 of 4, 19 of 19 and 7 of 7 on three pages, full coverage is unmeasured).
+5. **Baseline validation:** re-chunk the unchanged pages and compare (D8); compare video
+   durations with the stored windows.
+6. Re-describe screenshots and remove the three runaway chunks (pilot note), strip the
+   player boilerplate and record `embedded_video_ids`.
 7. Decide on the `Document` collection (D2) from what SYNC-002 needs.
 
-## 8. Open questions
+## 8. Update loop (outline)
+
+A maintainer-run, per-source diff-and-apply pass with the page as the unit of work
+(`make sync-plan`, then `make sync`).
+
+```text
+start run (new correlation ID, admin key, target=cloud)
+  validate_compatibility()                     # model and 768-d dimension must match
+  for each source in config/sources.yaml:      # failures isolated per source
+      crawl source -> pages (markdown), or video -> metadata and captions
+      for each page:
+          clean markdown (strip player text, keep the video id)
+          page_hash = sha256(cleaned markdown)
+          compare with the stored chunks for document_id
+              unchanged            -> skip: no embedding, no image calls
+              changed or new       -> chunk, hash each chunk, diff
+          images: extract image_urls, diff against the stored image_url values
+      pages stored but absent from the crawl -> candidates for removal
+  build the plan: added / changed / removed per source
+  sync-plan: print counts, write nothing, stop
+  sync: snapshot -> insert/update -> delete stale last -> verify
+```
+
+| Situation | Action |
+|---|---|
+| Page hash equals stored hash | Skip entirely |
+| Text chunks differ | Re-embed only added and changed chunks. If positions shifted, replace the page's text chunks as a set. |
+| Image URL already stored, same bytes, model and prompt version | Keep the stored description |
+| New image URL, changed bytes, or new model or prompt version | Describe, embed, insert with `image_url` and the input hashes |
+| Stored `image_url` no longer on the page | Delete that chunk |
+| Page gone from the crawl, or source dropped | Delete only after an explicit flag or confirmation |
+| Source or page failed to crawl | Leave its stored chunks untouched |
+
+Safety rails: snapshot before any cloud write, insert and update before delete, an abort
+threshold on the share of the collection to be deleted, replace by explicit UUID with a
+re-embedded vector, verify the object count and one known retrieval query afterwards,
+admin key used only for sync, and a report saved outside Git. Cloud Run needs no
+redeploy because it reads the live collection with the viewer key.
+
+## 9. Open questions
 
 - Is a page-level record needed in the hosted data, or is a local sync manifest enough?
+- Many optional chunk properties, or one nested object property for the per-layer
+  provenance fields?
 - Position keys or content keys for web text after an insert (D3)?
+- Does the CMS `lastmod` change when only an image is replaced? If not, image changes
+  need the image-bytes hash even for unchanged pages.
 - What to do with stored screenshot chunks that no live image matches (the 873-character
   chunk on `article/449`): keep or delete?
 - Should the video edge also be exposed in the UI (a "watch the video" link), and does it
   belong in this epic?
 
-## 9. Reproducibility
+## 10. Reproducibility
 
 The analysis scripts were exploratory and are not in the repository. They need the hosted
 cluster URL, the viewer key, local Ollama with `nomic-embed-text` for the retrieval tests,
-and numpy for the similarity test.
+numpy for the similarity test, and plain HTTP access to the doc sites' `sitemap.xml` for
+the baseline counts.
