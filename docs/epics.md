@@ -1105,11 +1105,11 @@ instances 1 limits throughput, not spend.
   slot: it bounds spend but makes a second user wait behind the first. No per-client rate
   limit exists, and the Gradio API can be called directly, bypassing the interface, so
   limits must be enforced server-side
-- Cap the question length (candidate: 1,000 characters) and reject longer input with a
+- Cap the question length (agreed: 1,000 characters) and reject longer input with a
   clear message before any embedding or LLM call
-- Cap the queue (`max_size`, candidate: 10) so a burst gets a "busy, try again" answer
+- Cap the queue (`max_size`, agreed: 10) so a burst gets a "busy, try again" answer
   instead of an unbounded wait
-- A per-client sliding-window rate limit keyed on the forwarded client address (candidate:
+- A per-client sliding-window rate limit keyed on the forwarded client address (agreed:
   10 questions per minute and 100 per day), in memory per instance, which is enough while
   max instances is 1; log each rejection as a structured event without the question
 - Raise the question concurrency only after the rate limit is in place, and record the
