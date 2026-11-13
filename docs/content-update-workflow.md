@@ -167,7 +167,7 @@ it is the bootstrap path for a brand new hosted cluster.
 
 | Gap | Story |
 |---|---|
-| Deployed app rejects extra properties | SYNC-000 (merged, deploy pending) |
+| Deployed app rejects extra properties | SYNC-000 (done, deployed 2026-11-13, revision 00024) |
 | Identity, provenance and hashes; vision path limited to OpenRouter | SYNC-001 |
 | Plan against the stored collection | SYNC-002 |
 | Apply to the local collection only | SYNC-003 |
