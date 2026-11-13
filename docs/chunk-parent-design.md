@@ -7,7 +7,8 @@ the Epic 11 investigation so the SYNC-000 and SYNC-001 work can start from them.
 Measurements were taken on 2026-11-09 against the hosted `SupportChunk` collection with
 the read-only viewer key. Related evidence: `docs/screenshot-description-pilot.md`.
 Revised on 2026-11-13 after review against the code (schema checks, hashing per layer,
-baseline for the existing data, update loop).
+baseline for the existing data, update loop) and again after the SYNC-000 spike, which
+corrected the assumption about duplicate UUIDs (see section 6).
 
 ## 1. Where the code stands today
 
@@ -164,7 +165,7 @@ hosted data. **Open** until SYNC-002 shows how much state the diff needs.
 **Leaning: keep the existing position keys** for web text (327 are already stored this
 way) and detect change with a per-chunk `content_hash`. When a page's chunk count or
 positions shift, replace the whole page's text chunks by `document_id` instead of diffing
-slot by slot. **Open**, to be confirmed with the SYNC-000 spike (D6) and the baseline check (D8).
+slot by slot. The SYNC-000 spike confirmed that a same-slot edit overwrites cleanly (section 6). **Open** for position shifts, to be confirmed by the baseline check (D8).
 
 ### D4. Meaning of the video link
 
@@ -185,8 +186,8 @@ legitimate text is not removed.
 - Take a snapshot (`make snapshot-export`) before any cloud write, as SYNC-005 requires.
 - Replace objects by explicit UUID, with a re-embedded vector computed from
   `"<source_name>: <text>"`, the same input `add_chunks` uses.
-- Do not rely on `batch.add_object` overwriting an existing UUID. That behaviour is
-  untested and is part of the SYNC-000 spike, run on a local Docker collection first.
+- An overwrite is a **full replace** (verified, section 6): every write must carry every
+  property, or the omitted ones become null. Use `data.update` for metadata-only changes.
 
 ### D7. What to hash, per layer
 
@@ -254,9 +255,9 @@ Evidence that separates these causes:
 | `source_fingerprint` | text | video | video fingerprint (D7) |
 | `pipeline_version` | text | video | transcription and vision settings |
 
-Existing chunks read null until backfilled. Whether adding a property needs a reindex is
-unverified (see the SYNC-000 spike). Whether many optional properties or one nested
-object property is better is open (section 9).
+Existing chunks read null until backfilled. Adding a property to a populated collection
+needs no reindex (verified on small scratch collections, section 6). Whether many optional
+properties or one nested object property is better is open (section 9).
 
 ### Page record (only if D2 stage 2 is taken)
 
@@ -293,23 +294,54 @@ These decide the order of work and are the main risk.
    collection, the 768-dimensional embeddings and the query path unchanged. A new
    collection would reopen that contract.
 
+### SYNC-000 spike results (2026-11-13)
+
+Run on throwaway collections in local Docker, on Weaviate 1.28.4 (the compose file) and
+1.39.13 (the version the hosted cluster reports), with 5 objects per collection. 18 of 18
+checks passed on both versions. The hosted collection itself was not touched.
+
+| Question | Result |
+|---|---|
+| Does the old exact-match check fail once a property is added? | Yes. The new check passes on the original and the extended schema. |
+| Can a property be added to a populated collection? | Yes. Object count and vectors are unchanged and old objects read null. |
+| Is a reindex needed? | No for reads, vector search and filtering after a backfill. |
+| Does a partial `data.update` keep the vector and other properties? | Yes. The vector was identical before and after, and a backfilled property was filterable. |
+| What does `batch.add_object` (the `add_chunks` path) do on an existing UUID? | It **replaces the whole object**: text and vector are overwritten, with no error and no duplicate row. |
+| Does that overwrite keep properties it does not supply? | **No.** A `document_id` and `image_url` set earlier became null after a batch write that omitted them. |
+| `data.insert` on an existing UUID? | Rejected with a 422. |
+| `data.replace` by UUID? | Replaces text, vector and the new property. |
+| Does `ensure_collection` build the extended schema, and does a fresh collection pass the new check? | Yes. |
+
+Consequences:
+
+- Re-ingesting an edited chunk in the same slot does update it. The earlier worry that
+  edits could be silently skipped was wrong for that case. Stale chunks remain possible
+  when positions shift, when content is removed and for screenshot chunks.
+- A plain re-ingest erases any property it does not write. `SupportChunk` and
+  `add_chunks` must write `document_id`, `content_hash` and `image_url` **before** any
+  backfill, or the next `make ingest` would wipe the backfilled values.
+- Not covered: the hosted 922-object collection, a Cloud Run revision, and the old app
+  code against an extended schema (the old rule was reproduced, not run).
+
 ## 7. Staged plan
 
 1. **SYNC-000, schema readiness:** relax `validate_compatibility` (8 required, extras
-   allowed), add the optional properties to `ensure_collection`, update the tests, deploy,
-   and verify startup.
-2. **Spike on a local Docker collection:** what `batch.add_object` does on a duplicate
-   UUID, whether adding a property needs a reindex, and whether a partial `data.update`
-   leaves the stored vector untouched.
-3. Snapshot, then add the properties to the hosted schema (additive).
-4. Backfill `document_id` (a metadata-only update, if step 2 confirms it) and
-   `image_url` (re-deriving `uuid5(image_url)` from the live pages; the pilot matched
-   3 of 4, 19 of 19 and 7 of 7 on three pages, full coverage is unmeasured).
-5. **Baseline validation:** re-chunk the unchanged pages and compare (D8); compare video
+   allowed), add the optional properties to `ensure_collection`, update the tests. Code
+   merged to `main`. **Next: deploy to Cloud Run and verify startup.**
+2. **Spike on local Docker:** done on 1.28.4 and 1.39.13 (section 6).
+3. **Make ingestion write the new fields:** `SupportChunk` and `add_chunks` set
+   `document_id`, `content_hash` and `image_url` on every insert. This must precede the
+   backfill, because an overwrite erases omitted properties.
+4. Snapshot, then add the properties to the hosted schema (additive). Only after step 1
+   is deployed and verified.
+5. Backfill `document_id` and `content_hash` with `data.update` (metadata-only), and
+   `image_url` by re-deriving `uuid5(image_url)` from the live pages. The pilot matched
+   3 of 4, 19 of 19 and 7 of 7 on three pages; full coverage is unmeasured.
+6. **Baseline validation:** re-chunk the unchanged pages and compare (D8); compare video
    durations with the stored windows.
-6. Re-describe screenshots and remove the three runaway chunks (pilot note), strip the
+7. Re-describe screenshots and remove the three runaway chunks (pilot note), strip the
    player boilerplate and record `embedded_video_ids`.
-7. Decide on the `Document` collection (D2) from what SYNC-002 needs.
+8. Decide on the `Document` collection (D2) from what SYNC-002 needs.
 
 ## 8. Update loop (outline)
 
@@ -345,8 +377,10 @@ start run (new correlation ID, admin key, target=cloud)
 | Source or page failed to crawl | Leave its stored chunks untouched |
 
 Safety rails: snapshot before any cloud write, insert and update before delete, an abort
-threshold on the share of the collection to be deleted, replace by explicit UUID with a
-re-embedded vector, verify the object count and one known retrieval query afterwards,
+threshold on the share of the collection to be deleted, replace by explicit UUID writing
+every property (an overwrite is a full replace) with a re-embedded vector when the text
+changes, `data.update` for metadata-only changes, verify the object count and one known
+retrieval query afterwards,
 admin key used only for sync, and a report saved outside Git. Cloud Run needs no
 redeploy because it reads the live collection with the viewer key.
 

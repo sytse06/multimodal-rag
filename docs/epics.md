@@ -642,7 +642,8 @@ writes, automatic re-ingestion, and embedding-model migration.
 ### DATA-005 — Runtime Compatibility Validation
 
 - Validate that the configured collection exists before inference
-- Validate the expected schema and vector dimension
+- Validate the expected schema and vector dimension (since SYNC-000 the eight original
+  properties are required with matching types, and extra properties are allowed)
 - Validate optional tenant availability and read permissions
 - Fail with a clear configuration or compatibility message instead of an opaque query
   error
@@ -750,8 +751,10 @@ logging.
 verified against live traffic on Cloud Run revision 00021 (2026-11-13). Verification
 found and fixed three defects after the first deploy: Gemini token usage (reported per
 chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
-OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has not started; its
-design and the supporting evidence are in `docs/chunk-parent-design.md`.
+OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has started: SYNC-000
+(schema readiness) is merged to `main` and its spike is done, with the Cloud Run deploy
+pending; SYNC-001 to SYNC-006 have not started. The design and the supporting evidence
+are in `docs/chunk-parent-design.md`.
 
 ### Phase 1: Observability
 
@@ -786,7 +789,8 @@ design and the supporting evidence are in `docs/chunk-parent-design.md`.
   latency be available for operational logging. `InferenceEvent` already carries these
   values, but nothing writes them to the logs.
 - Document two Cloud Logging queries: error rate by model (provider capacity errors) and
-  p95 latency by model
+  p95 latency by model. Documented in the README; the filter queries were run, and Log
+  Analytics is enabled on `_Default`, but the p95 SQL itself has not been run
 
 **Scope:** `src/multimodal_rag/query/generator.py`, `app.py`, `models/inference.py`
 
@@ -810,10 +814,14 @@ design and the supporting evidence are in `docs/chunk-parent-design.md`.
 
 Current behaviour that motivates this phase: web chunk IDs derive from either
 `url|index` or `url|text` (`SupportChunk.from_web_chunk`), `WeaviateStore.add_chunks`
-uses a plain batch insert, and no change detection exists. Re-ingesting edited content
-can therefore leave stale chunks or fail to update them, and removed content lingers.
+uses a plain batch insert, and no change detection exists. A spike on Weaviate 1.28.4 and
+1.39.13 (the hosted version) showed that re-ingesting a chunk in the same position
+overwrites it completely, but stale chunks still arise when positions shift, when content
+is removed, and for screenshot chunks keyed on image URLs that change. Removed content
+lingers. Because an overwrite replaces the whole object, a plain re-ingest also erases
+any property it does not write, such as backfilled provenance fields.
 
-#### SYNC-000 — Schema Readiness
+#### SYNC-000 — Schema Readiness (code merged, spike done, deploy pending)
 
 **Branch:** `feature/SYNC-000-schema-readiness`
 
@@ -829,10 +837,15 @@ would make Cloud Run fail its startup check and return 503.
 - Update the schema tests, including the `EXPECTED_PROPERTIES` fixture
 - Deploy this to Cloud Run and verify startup **before** any property is added to the
   hosted collection
-- Spike on a local Docker collection restored from the snapshot, not on the hosted one:
-  what `batch.add_object` does when the UUID already exists; whether adding a property
-  needs a reindex; and whether a partial `data.update` leaves the stored vector
-  untouched. Record the results in `docs/chunk-parent-design.md`
+- Spike on throwaway collections in local Docker, not on the hosted one: what
+  `batch.add_object` does when the UUID already exists; whether adding a property needs a
+  reindex; and whether a partial `data.update` leaves the stored vector untouched. Done on
+  Weaviate 1.28.4 and 1.39.13 (the hosted version), 18 of 18 checks on both. Results:
+  `batch.add_object` on an existing UUID **replaces the whole object** (text, vector, and
+  any property not supplied becomes null); `data.insert` rejects a duplicate (422);
+  `data.replace` swaps an object by UUID; `data.update` merges and keeps the vector;
+  `add_property` works on a populated collection with no reindex for reads or filters.
+  Recorded in `docs/chunk-parent-design.md`
 
 **Scope:** `src/multimodal_rag/store/weaviate.py`, `tests/test_store.py`
 
@@ -846,7 +859,9 @@ Depends on SYNC-000.
   per-chunk `content_hash`; when a page's chunk positions shift, replace the page's text
   chunks as a set (design note D3)
 - Add `document_id` (`uuid5(source_url)`) and `content_hash` as additive chunk
-  properties
+  properties, and make `SupportChunk` and `add_chunks` write them on every insert.
+  This must ship **before** any backfill: a re-ingest replaces whole objects, so a chunk
+  written without these fields would erase backfilled values
 - Hash inputs, never generated outputs: LLM-written text is stored once and keyed on the
   hash of its inputs, so re-running a check never changes stored descriptions
 - Establish a baseline for the existing data. The sitemap `lastmod` shows 135 of the 146
@@ -869,8 +884,10 @@ Depends on SYNC-000.
 - Add a video fingerprint (video ID, duration, title, caption hash) and a pipeline
   version; reprocess a video only when either changes, and sanity-check the stored
   windows against current durations
-- Take a snapshot before any cloud write and replace objects by explicit UUID, with the
-  re-embedded vector, unless the SYNC-000 spike shows a duplicate UUID overwrites cleanly
+- Take a snapshot before any cloud write. Write every property on each object, because
+  an overwrite is a full replace (`data.replace` or `batch.add_object` by explicit UUID,
+  with the re-embedded vector when the text changes), and use `data.update` for
+  metadata-only changes such as the backfill
 
 Evidence and procedures: `docs/screenshot-description-pilot.md` and
 `docs/chunk-parent-design.md`.
@@ -990,8 +1007,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 10 | in progress (Phase 1 done, deployed and verified; 7 open) | 62 |
-| **Total** | **48** | **10 completed, 1 in progress** | **309 current** |
+| 11 — Observability and Hosted Content Sync | 10 | in progress (Phase 1 done and verified; SYNC-000 merged, deploy pending; 6 open) | 69 |
+| **Total** | **48** | **10 completed, 1 in progress** | **316 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
