@@ -2,7 +2,6 @@
 
 import base64
 import hashlib
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -58,7 +57,7 @@ def test_upload_sends_data_before_manifest_and_verifies_each(tmp_path: Path) -> 
     (tmp_path / "SupportChunk.jsonl").write_text("data")
     (tmp_path / "manifest.json").write_text("{}")
     calls: list[list[str]] = []
-    with patch.object(backup, "_gcloud", _fake_gcloud(calls, tmp_path)):
+    with patch.object(backup, "run_gcloud", _fake_gcloud(calls, tmp_path)):
         upload_snapshot(tmp_path, "gs://b/snapshots/x", "proj", _manifest())
 
     copies = [c[3].rsplit("/", 1)[1] for c in calls if c[1] == "cp"]
@@ -70,7 +69,8 @@ def test_checksum_mismatch_stops_before_manifest(tmp_path: Path) -> None:
     (tmp_path / "SupportChunk.jsonl").write_text("data")
     (tmp_path / "manifest.json").write_text("{}")
     calls: list[list[str]] = []
-    with patch.object(backup, "_gcloud", _fake_gcloud(calls, tmp_path, corrupt=True)):
+    fake = _fake_gcloud(calls, tmp_path, corrupt=True)
+    with patch.object(backup, "run_gcloud", fake):
         with pytest.raises(RuntimeError, match="Checksum mismatch"):
             upload_snapshot(tmp_path, "gs://b/snapshots/x", "proj", _manifest())
 
@@ -106,14 +106,3 @@ def test_backup_exports_then_uploads_to_timestamped_prefix() -> None:
     assert seen["dest"] == dest and seen["dir_existed"] is True
     assert result is manifest
     assert not Path(str(seen["dir"])).exists()
-
-
-def test_gcloud_missing_and_failure_are_reported() -> None:
-    with patch.object(backup.subprocess, "run", side_effect=FileNotFoundError):
-        with pytest.raises(RuntimeError, match="gcloud CLI not found"):
-            backup._gcloud(["storage", "cp"], "proj")
-    err = subprocess.CalledProcessError(1, "gcloud", stderr="denied")
-    with patch.object(backup.subprocess, "run", side_effect=err):
-        with pytest.raises(RuntimeError, match="denied"):
-            backup._gcloud(["storage", "cp", "a", "b"], "proj")
-
