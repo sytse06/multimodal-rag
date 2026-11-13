@@ -5,34 +5,17 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
-import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from multimodal_rag.gcloud import run_gcloud
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.store.restore import _connect_target
 from multimodal_rag.store.snapshot import SnapshotManifest, export_snapshot
 
 SNAPSHOT_PREFIX = "snapshots"
-
-
-def _gcloud(args: list[str], project: str) -> str:
-    command = ["gcloud", *args]
-    if project:
-        command += ["--project", project]
-    try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, check=True, timeout=600
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError("gcloud CLI not found; install Google Cloud SDK") from exc
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError(
-            f"gcloud {' '.join(args[:3])} failed: {exc.stderr.strip()}"
-        ) from exc
-    return result.stdout.strip()
 
 
 def _md5_base64(path: Path) -> str:
@@ -50,8 +33,8 @@ def upload_snapshot(
     for name in (manifest.snapshot_file, "manifest.json"):
         local = snapshot_dir / name
         remote = f"{destination}/{name}"
-        _gcloud(["storage", "cp", str(local), remote], project)
-        stored = _gcloud(
+        run_gcloud(["storage", "cp", str(local), remote], project)
+        stored = run_gcloud(
             ["storage", "objects", "describe", remote, "--format=value(md5_hash)"],
             project,
         )

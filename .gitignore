@@ -21,6 +21,8 @@ dist/
 .coverage
 .DS_Store
 config/sources.yaml
+config/sources.yaml.prev
+config/.sources.generation
 config/sources_original.yaml
 logs/
 kb_output/

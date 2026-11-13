@@ -1,0 +1,13 @@
+# Example source registry. The real file is config/sources.yaml (git-ignored) and lives
+# in the private state bucket: `make sources-pull` fetches it, `make sources-push`
+# publishes your edits.
+youtube:
+  - url: https://www.youtube.com/watch?v=VIDEO_ID
+    name: "Product tutorials: Quickstart"
+  - url: https://youtu.be/VIDEO_ID
+    name: "Silent screen recording"
+    skip_voxtral: true
+
+knowledge_bases:
+  - url: https://support.example.com/knowledge-base
+    name: "Example support knowledge base"

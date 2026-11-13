@@ -159,7 +159,8 @@ it is the bootstrap path for a brand new hosted cluster.
 5. The freshness colleagues expect is acceptable at days to weeks, not minutes.
 6. The source registry and the run state share one private, versioned bucket (section 10),
    and the public repository holds only an example file.
-7. New videos and knowledge bases are added by editing that file.
+7. New videos and knowledge bases are added by editing that file. It lists roots only:
+   the pages under a knowledge base come from its sitemap, not from this file.
 8. The first run is gated by the sitemap `lastmod`: only the 11 modified pages are crawled,
    alongside the 45 new pages and the 14 removal candidates.
 
