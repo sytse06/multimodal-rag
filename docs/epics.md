@@ -735,7 +735,7 @@ separately in Epic 11.
 
 ---
 
-## Epic 11: Operational Observability and Hosted Content Sync (in progress)
+## Epic 11: Operational Observability, Hosted Content Sync and Production Hardening (in progress)
 
 Makes the live tool observable and safe to operate, then lets a maintainer propagate
 source content changes into the hosted `SupportChunk` collection without a rebuild or an
@@ -752,8 +752,10 @@ verified against live traffic on Cloud Run revision 00021 (2026-11-13). Verifica
 found and fixed three defects after the first deploy: Gemini token usage (reported per
 chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
 OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has started: SYNC-000
-(schema readiness) is merged to `main` and its spike is done, with the Cloud Run deploy
-pending; SYNC-001 to SYNC-008 have not started. The design and the supporting evidence
+(schema readiness) is done and deployed (revision 00024, 2026-11-13) and the local
+Weaviate now matches the hosted version; SYNC-001 to SYNC-008 are open (SYNC-008 is
+partly done). Phase 3 (production hardening, OPS-001 to OPS-008) was added after an audit
+of the live service on 2026-11-13; none of it has started. The design and the supporting evidence
 are in `docs/chunk-parent-design.md`; the operating model is in
 `docs/content-update-workflow.md`.
 
@@ -848,7 +850,7 @@ is removed, and for screenshot chunks keyed on image URLs that change. Removed c
 lingers. Because an overwrite replaces the whole object, a plain re-ingest also erases
 any property it does not write, such as backfilled provenance fields.
 
-#### SYNC-000 — Schema Readiness (code merged, spike done, deploy pending)
+#### SYNC-000 — Schema Readiness (done, deployed 2026-11-13)
 
 **Branch:** `feature/SYNC-000-schema-readiness`
 
@@ -1050,6 +1052,163 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 
 **Scope:** `config/`, `Makefile`, `compose.yaml`, `docs/`, preflight module
 
+### Phase 3: Production hardening
+
+An audit of the live service on 2026-11-13 found the application layer sound (non-root
+container, read-only Weaviate key at runtime, secrets in Secret Manager, structured and
+redacted logs, a verified off-machine backup) and the operating layer mostly unbuilt. The
+findings behind each story are in the evidence line. Priority order: OPS-001 to OPS-004
+first, because they bound cost and blast radius; the rest follow. None of these change the
+embedding contract or the collection.
+
+| Story | Gap | Evidence (2026-11-13) | Priority |
+|-------|-----|-----------------------|----------|
+| OPS-001 | No spend cap or budget alert | Billing Budgets API not enabled, no budget found | 1 |
+| OPS-002 | Public endpoint calls paid LLM APIs | `allUsers` holds `roles/run.invoker`; no length cap, queue cap or per-client limit; decision: open with limits | 1 |
+| OPS-003 | Runtime uses the default compute service account | `71323613645-compute@developer.gserviceaccount.com` | 1 |
+| OPS-004 | No monitoring or alerting | Cloud Monitoring API not enabled | 1 |
+| OPS-005 | No liveness probe, service config not in code, stale `RESTART` env var | Startup probe only; env and secrets set by hand | 2 |
+| OPS-006 | No CI | No `.github/workflows` directory | 2 |
+| OPS-007 | Backups are manual and the cluster tier is unchecked | `make snapshot-backup` is not scheduled | 2 |
+| OPS-008 | Ingested web content reaches the LLM context unfiltered | Crawl output goes straight into prompts | 3 |
+
+#### OPS-001 — Spend Cap and Budget Alerts
+
+**Branch:** `feature/OPS-001-spend-guard`
+
+- Set a hard monthly limit on the Gemini key in AI Studio (the "Hydroman" project, which is
+  separate from the Google Cloud project) and a usage limit on the OpenAI project; record
+  both values in the runbook
+- Enable the Billing Budgets API and create a budget on the Cloud project with alerts at
+  50, 90 and 100 percent, sent to the maintainer and the operator
+- A log-based metric on the existing `event="inference"` records, so token totals per
+  provider per day are visible without new instrumentation
+- Document what happens at the cap: the app answers with an error, not silently with a
+  different provider
+
+**Scope:** cloud configuration, `docs/gcp-deployment.txt`, runbook; no application code
+unless the cap needs a friendly error message
+
+#### OPS-002 — Public Endpoint Abuse Control
+
+**Branch:** `feature/OPS-002-abuse-control`
+
+The service is open to the internet (`allUsers`) and every question costs LLM tokens. Max
+instances 1 limits throughput, not spend.
+
+- **Decision (2026-11-13):** keep the endpoint open and add limits first. Sign-in stays an
+  option if the limits prove insufficient; the trigger is unexplained spend or a burst the
+  limits did not stop (watched through OPS-001 and OPS-004)
+- Verified today: `GRADIO_SHARE` is off and not set on Cloud Run. The question box has no
+  length cap. The Gradio queue has no maximum size. The only limit is
+  `concurrency_limit=1` on the question event, which serialises all visitors through one
+  slot: it bounds spend but makes a second user wait behind the first. No per-client rate
+  limit exists, and the Gradio API can be called directly, bypassing the interface, so
+  limits must be enforced server-side
+- Cap the question length (candidate: 1,000 characters) and reject longer input with a
+  clear message before any embedding or LLM call
+- Cap the queue (`max_size`, candidate: 10) so a burst gets a "busy, try again" answer
+  instead of an unbounded wait
+- A per-client sliding-window rate limit keyed on the forwarded client address (candidate:
+  10 questions per minute and 100 per day), in memory per instance, which is enough while
+  max instances is 1; log each rejection as a structured event without the question
+- Raise the question concurrency only after the rate limit is in place, and record the
+  value and the reason
+- Test the limits with a scripted burst against a staging revision, not production
+
+**Scope:** `app.py`, Cloud Run IAM, runbook, tests for the length and queue limits
+
+#### OPS-003 — Dedicated Runtime Service Account
+
+**Branch:** `feature/OPS-003-service-account`
+
+- Create a runtime service account with `secretmanager.secretAccessor` on the three
+  secrets the service reads, and the log writer role, nothing else
+- Switch the service to it (`--service-account`, set in the `Makefile` deploy target so a
+  deploy cannot drift back) and remove the default compute account from the service
+- Report the roles the default compute account holds on the project and remove any it
+  does not need; this is a read first, a change only with the maintainer's approval
+- Confirm after the switch: the app starts, reads its secrets and writes logs; the
+  `YOUTUBE_COOKIES` and bucket stay inaccessible to it
+
+**Scope:** IAM, `Makefile`, runbook
+
+#### OPS-004 — Monitoring and Alerting
+
+**Branch:** `feature/OPS-004-monitoring`
+
+- Enable the Cloud Monitoring API
+- An uptime check on the service URL, with an alert after consecutive failures
+- Alerts on: the 5xx rate, instance startup failures, `event="inference"` records with a
+  failed status, and p95 inference latency above an agreed threshold
+- One notification channel to the maintainer and the operator; name who acts on what
+- The p95 latency SQL from OBS-002, run once against Log Analytics and the result recorded
+
+**Scope:** cloud configuration, runbook
+
+#### OPS-005 — Probes, Service Config as Code and Rollback
+
+**Branch:** `feature/OPS-005-service-config`
+
+- Add a liveness probe next to the existing startup probe, using a cheap health route
+  that does not call Weaviate or an LLM
+- Export the service definition (env var names and secret references, never values) to
+  the repository and deploy from it, so env and secrets stop being set by hand. Remove the
+  stale `RESTART` variable
+- Write down and rehearse the rollback: send traffic to the previous revision with one
+  command, and keep at least two earlier revisions
+- Record the minimum-instance decision (scale to zero costs a cold start; one warm
+  instance costs money) with the reason
+
+**Scope:** service config file, `Makefile`, `app.py` (health route), runbook
+
+#### OPS-006 — Continuous Integration
+
+**Branch:** `feature/OPS-006-ci`
+
+- A GitHub Actions workflow on pull requests and pushes to `main`: `ruff`, `mypy --strict`,
+  the test suite, and `uv lock --check`
+- Dependency vulnerability scanning (Dependabot alerts or `pip-audit`); GitGuardian already
+  covers secrets
+- Branch protection on `main` requiring the checks, with no automatic deploy: a person
+  still runs `make deploy`
+- Keep the tests free of network and cloud calls, as they are now
+
+**Scope:** `.github/workflows/`, repository settings, `README`
+
+#### OPS-007 — Backup Cadence, Restore Drill and Cluster Tier
+
+**Branch:** `feature/OPS-007-backup-cadence`
+
+- State the recovery point and who runs the backup. The backup needs the admin key, which
+  Cloud Run must never hold, so it runs from the maintainer machine: before every
+  promotion (already required by SYNC-005) and on a fixed cadence in between
+- Rehearse a restore from the bucket into a fresh local volume and compare it with the
+  hosted collection. Done once on 2026-11-13: 922 objects, identical UUIDs, text and
+  vectors. Repeat it on the cadence and after any server upgrade
+- Check the Weaviate Cloud cluster tier in its console: lifetime, durability promises,
+  built-in backups and the cost of moving up. Record the answer here
+- Verify the bucket versioning and the keep-2 rule actually retain the expected objects
+  after several backups
+
+**Scope:** runbook, `docs/content-update-workflow.md`; no application code
+
+#### OPS-008 — Trust Boundary for Ingested Content
+
+**Branch:** `feature/OPS-008-ingest-trust`
+
+Crawled pages and transcripts are placed in the LLM context. Anyone who can edit a source
+page can plant instructions that reach an answer.
+
+- Treat retrieved text as data in the prompt: delimit it and instruct the model to ignore
+  instructions inside it, covered by a prompt test with a planted instruction
+- List the trusted sources and record who can edit each one; only the maintainer's
+  registry decides what gets crawled
+- Review the SYNC-002 diff report for unexpected new instructions-like text before
+  promotion, as part of the release gate
+
+**Scope:** `query/generator.py`, prompt tests, runbook
+
 **Acceptance criteria:**
 
 Observability
@@ -1068,6 +1227,21 @@ Observability
   detected as a secret (documented in the README).
 - Context truncation is logged whenever it happens — met by tests; no live truncation has
   occurred yet (largest observed context 7.3k of the 10k budget)
+
+Operations
+
+- A spend cap and a budget alert exist for every paid provider, and the caps are in the
+  runbook (OPS-001)
+- The public endpoint is either gated or limited, and a scripted burst stays within the
+  limits (OPS-002)
+- The runtime uses a dedicated service account with only the roles it needs (OPS-003)
+- A failed uptime check or an error-rate breach alerts a named person (OPS-004)
+- A bad revision can be rolled back with one documented command that has been rehearsed
+  (OPS-005)
+- Every pull request runs lint, types and tests, and `main` is protected (OPS-006)
+- A restore from the bucket into a fresh volume has been rehearsed and matches the hosted
+  collection (OPS-007)
+- A planted instruction in a retrieved page does not change an answer (OPS-008)
 
 Sync
 
@@ -1105,8 +1279,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 12 | in progress (Phase 1 done and verified; SYNC-000 merged, deploy pending; 8 open) | 69 |
-| **Total** | **50** | **10 completed, 1 in progress** | **325 current** |
+| 11 — Observability, Hosted Content Sync and Production Hardening | 20 | in progress (Phase 1 and SYNC-000 done and deployed; 16 open) | 87 |
+| **Total** | **58** | **10 completed, 1 in progress** | **334 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
