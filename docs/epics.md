@@ -746,13 +746,15 @@ The tool is in use, so Phase 1 (observability) ships first. It is small, low-ris
 shippable on its own. Phase 2 (sync) writes to production data and reuses the Phase 1
 logging.
 
-**Status:** Phase 1 (OBS-001 to OBS-003) is complete, merged to `main`, and deployed to
-Cloud Run (revision 00019, which includes the Gemini zero-usage fix). Phase 2 (sync) has
-not started.
+**Status:** Phase 1 (OBS-001 to OBS-003) is complete, merged to `main`, deployed and
+verified against live traffic on Cloud Run revision 00021 (2026-11-13). Verification
+found and fixed three defects after the first deploy: Gemini token usage (reported per
+chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
+OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has not started.
 
 ### Phase 1: Observability
 
-#### OBS-001 — Central Logging Configuration and Correlation (done, deployed)
+#### OBS-001 — Central Logging Configuration and Correlation (done, deployed, verified)
 
 **Branch:** `feature/OBS-001-logging-config`
 
@@ -770,7 +772,7 @@ not started.
 **Scope:** new `src/multimodal_rag/logging_config.py`, `app.py`, `ingest/__main__.py`,
 `query/generator.py`
 
-#### OBS-002 — Inference Metrics Logging (done, deployed)
+#### OBS-002 — Inference Metrics Logging (done, deployed, verified)
 
 **Branch:** `feature/OBS-002-inference-metrics`
 
@@ -787,7 +789,7 @@ not started.
 
 **Scope:** `src/multimodal_rag/query/generator.py`, `app.py`, `models/inference.py`
 
-#### OBS-003 — Logging Privacy and Secret Safety (done, deployed)
+#### OBS-003 — Logging Privacy and Secret Safety (done, deployed, verified)
 
 **Branch:** `feature/OBS-003-logging-safety`
 
@@ -898,11 +900,19 @@ Evidence, pilot results and the full procedure: `docs/screenshot-description-pil
 Observability
 
 - Every generation produces one structured log record with provider, model, status,
-  tokens, and latency, and no question or answer text
+  tokens, and latency, and no question or answer text — met, verified live for Gemini and
+  OpenAI on revision 00021 (real token counts, totals equal input plus output). NVIDIA
+  NIM and OpenRouter usage reporting is not verified. A stream abandoned without
+  cancelling logs no record.
 - Cloud Run logs are JSON with severity and a correlation ID; local logs stay
-  human-readable
-- No user query text or secret appears in INFO logs, verified by tests
-- Context truncation is logged whenever it happens
+  human-readable — met, one correlation ID traced from retrieval through inference in
+  Cloud Logging
+- No user query text or secret appears in INFO logs, verified by tests — met. Retrieval
+  logs `query_len` and `query_hash` only (checked live); redaction is covered by tests for
+  each provider's error path. Limit: a provider error that echoes prompt text is not
+  detected as a secret (documented in the README).
+- Context truncation is logged whenever it happens — met by tests; no live truncation has
+  occurred yet (largest observed context 7.3k of the 10k budget)
 
 Sync
 
@@ -935,8 +945,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability and Hosted Content Sync | 9 | in progress (Phase 1 done and deployed; 6 open) | 60 |
-| **Total** | **47** | **10 completed, 1 in progress** | **307 current** |
+| 11 — Observability and Hosted Content Sync | 9 | in progress (Phase 1 done, deployed and verified; 6 open) | 62 |
+| **Total** | **47** | **10 completed, 1 in progress** | **309 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
