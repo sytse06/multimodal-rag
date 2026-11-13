@@ -73,12 +73,15 @@ def create_chat_model(
             if selection.model.startswith("gpt-6")
             else {"temperature": settings.chat.temperature}
         )
+        # langchain-openai only requests streamed usage by default when no base_url is
+        # passed; we always pass one, so ask for it explicitly.
         return ChatOpenAI(
             model=selection.model,
             api_key=api_key,
             base_url=endpoint,
             timeout=settings.chat.timeout,
             max_retries=settings.chat.max_retries,
+            stream_usage=True,
             **sampling,
         )
     if provider == "nvidia":
