@@ -1,0 +1,18 @@
+# Canary questions for the retrieval gate (make sync-gate). Each lists the sources that
+# answer it; the gate checks that at least one still ranks in the top results after a
+# content update. When a page is renamed or removed the gate fails and names the question:
+# update the expected source here.
+canaries:
+  - question: "How can I zoom out in my schematic?"
+    expect:
+      - https://hydrosym.paro.nl/article/372-navigating-in-hydrosym
+      - https://hydrosym.paro.nl/article/376-hydrosym-quick-start-hydrosym-documentation-paro-software
+
+  - question: "How can I best separate multiple oilflows in my schematic?"
+    expect:
+      - https://www.youtube.com/watch?v=ZPBbfCn2FMg
+
+  - question: "What advantages are there to import my HydroSym schematic in HydroMan and how do I do it?"
+    expect:
+      - https://youtu.be/Pvg8F7xPm_o
+      - https://hydroman.paro.nl/article/294-do-i-have-to-create-schematics-in-hydrosym
