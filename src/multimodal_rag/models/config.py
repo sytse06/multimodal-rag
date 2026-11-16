@@ -256,6 +256,7 @@ class InfrastructureSettings(BaseModel):
     youtube_cookies_secret: str = ""
     gcp_project: str = ""
     state_bucket: str = ""
+    weaviate_hosted_url: str = ""
 
     @field_validator("weaviate_url", mode="before")
     @classmethod
@@ -545,6 +546,7 @@ class AppSettings(BaseSettings):
                 ),
                 "gcp_project": cls._value(data, "gcp_project", ""),
                 "state_bucket": cls._value(data, "state_bucket", ""),
+                "weaviate_hosted_url": cls._value(data, "weaviate_hosted_url", ""),
             }
         if "ingestion" not in data:
             data["ingestion"] = {
@@ -680,6 +682,10 @@ class AppSettings(BaseSettings):
     @property
     def state_bucket(self) -> str:
         return self.infrastructure.state_bucket
+
+    @property
+    def weaviate_hosted_url(self) -> str:
+        return self.infrastructure.weaviate_hosted_url
 
     @property
     def chunk_size(self) -> int:
