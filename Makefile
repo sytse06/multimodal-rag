@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report sync-preflight sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report sync-preflight sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -42,6 +42,7 @@ help:
 	@echo "  make purge-video            - Delete all video chunks"
 	@echo "  make purge-web              - Delete all web chunks"
 	@echo "  make sync-preflight        - Read-only readiness report (LOCAL_ONLY=1 skips cloud)"
+	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
 	@echo "  make snapshot-export       - Export the fixed collection outside Git"
@@ -203,6 +204,9 @@ ingest:
 
 sync-preflight:
 	@uv run python -m multimodal_rag.preflight $(if $(LOCAL_ONLY),--local-only,)
+
+sync-gate:
+	@uv run python -m multimodal_rag.retrieval_gate
 
 sources-pull:
 	@uv run python -m multimodal_rag.ingest.registry pull $(if $(FORCE),--force,)

@@ -1078,9 +1078,19 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   `WEAVIATE_HOSTED_URL` setting now holds the cluster address, separate from the local
   `WEAVIATE_URL`; backup and restore with `TARGET=cloud` use it, so no environment
   override is needed
-- A golden-question regression is the release gate between Stage A and Stage B: the
-  hand-written UI questions and a title-derived set are run before and after, and any
-  answer that gets worse is reviewed before promotion
+- Done (decision 2026-11-16): the release gate between Stage A and Stage B is a
+  retrieval gate, not an answer review. `make sync-gate` retrieves for each question in
+  `config/canaries.yaml` against hosted (before) and local (after) and compares the best
+  rank of an expected source: it fails when no expected source is in the top 10 and warns
+  when the rank falls by 3 or more. It calls no LLM, so it is deterministic and free.
+  Three canaries, chosen by the maintainer: zoom out in a schematic, separate multiple
+  oil flows, and the advantages and steps of importing a HydroSym schematic into
+  HydroMan. A person reads answers only when a canary fails. Reason: the pilot's one
+  clear regression (library manager window) was a ranking displacement, visible at
+  retrieval, and 12 hand-judged answers per run would not be run. Changed-page
+  self-retrieval (each page SYNC-002 reports as changed is queried by its title) reuses
+  the same code and arrives with SYNC-002. Known weak canary: the import question ranks
+  its best source at 6 of 10, so it is the first to flip
 - Write the maintainer runbook: prerequisites, the two stages, rollback and who decides
   what
 

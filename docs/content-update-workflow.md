@@ -85,7 +85,7 @@ Content owners edit pages and videos
         |
 Stage A: refresh the LOCAL collection      Maintainer, laptop, local Docker
    preflight -> fetch -> clean -> hash -> diff against local -> plan -> apply to local
-        gates: plan reviewed, quality limits met, golden questions pass
+        gates: plan reviewed, quality limits met, retrieval gate passes (`make sync-gate`)
         |
 Stage B: promote to HOSTED                 Maintainer, admin key
    snapshot hosted -> diff local against hosted -> plan -> apply -> verify
@@ -101,7 +101,7 @@ Colleagues use the hosted app (viewer key). No redeploy and no outage.
 | 2. Plan | `make sync-plan` | Maintainer | Per-source counts of added, changed, unchanged and removed pages, images and videos, plus the expected number of embedding and vision calls. Nothing written. |
 | 3. Review | | Maintainer | Approve the plan, restrict it to some sources, or stop. |
 | 4. Apply | `make sync` | Maintainer | Writes to the **local** collection only and refuses a hosted URL. Insert and update first, delete last. |
-| 5. Validate | `make sync-check` | Maintainer | Schema compatible, no oversize or repetitive chunks, counts match the plan, golden questions give acceptable answers. |
+| 5. Validate | `make sync-check` | Maintainer | Schema compatible, no oversize or repetitive chunks, counts match the plan, `make sync-gate` passes (canary questions still find their sources; a person reads answers only when one fails). |
 
 ### Stage B: promote to hosted
 
