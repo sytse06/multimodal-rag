@@ -1029,7 +1029,7 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
 
 **Scope:** sync module, `store/weaviate.py`, `Makefile`
 
-#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: registry, bucket, cookies, deploy variable and compose done)
+#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: registry, bucket, cookies, deploy variable, compose and preflight done)
 
 **Branch:** `feature/SYNC-008-preflight`
 
@@ -1067,9 +1067,17 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   is not in the model registry. Still open here: a Gemini vision path (the vision client
   always uses OpenRouter) and thinking and output limits on that client
 - Align the compose image with the hosted Weaviate version (done 2026-11-13: both 1.39.13)
-- `make sync-preflight` reports missing tools (Docker, Ollama and `nomic-embed-text`,
-  ffmpeg, yt-dlp), missing keys without printing them, version drift, the Gemini quota
-  and spend-cap situation, and whether local and hosted are identical; it changes nothing
+- Done: `make sync-preflight` (`LOCAL_ONLY=1` skips the cloud checks) reports missing
+  tools (Docker, ffmpeg, gcloud, yt-dlp, Ollama with `nomic-embed-text`), missing keys
+  without printing them, duplicate `.env` keys, whether the default and vision models
+  exist, YouTube cookie expiry, whether the local registry copy matches the bucket, the
+  age of the latest backup, Weaviate version drift, and whether local and hosted are
+  identical (UUID and content fingerprint per chunk, read-only key). It changes nothing,
+  turns any crashing probe into a failed check, and exits non-zero on a failure. The
+  Gemini quota and spend cap cannot be queried, so it prints a manual line. A dedicated
+  `WEAVIATE_HOSTED_URL` setting now holds the cluster address, separate from the local
+  `WEAVIATE_URL`; backup and restore with `TARGET=cloud` use it, so no environment
+  override is needed
 - A golden-question regression is the release gate between Stage A and Stage B: the
   hand-written UI questions and a title-derived set are run before and after, and any
   answer that gets worse is reviewed before promotion

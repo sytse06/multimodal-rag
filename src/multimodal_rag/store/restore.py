@@ -50,13 +50,15 @@ def _connect_target(settings: AppSettings, target: str) -> Any:
         )
     if target != "cloud":
         raise ValueError(f"Unsupported restore target: {target}")
+    hosted_url = settings.weaviate_hosted_url or settings.weaviate_url
+    parsed = urlparse(str(hosted_url))
     api_key = settings.weaviate_admin_api_key.get_secret_value()
     if parsed.scheme != "https":
         raise ValueError("Cloud restore requires an https Weaviate URL")
     if not api_key:
         raise ValueError("Cloud restore requires WEAVIATE_ADMIN_API_KEY")
     return weaviate.connect_to_weaviate_cloud(
-        cluster_url=settings.weaviate_url,
+        cluster_url=str(hosted_url),
         auth_credentials=AuthApiKey(api_key),
     )
 
