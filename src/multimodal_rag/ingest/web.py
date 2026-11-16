@@ -1,7 +1,9 @@
 """Web knowledge base crawling and chunking."""
 
+import hashlib
 import logging
 import re
+from dataclasses import dataclass
 
 from firecrawl import FirecrawlApp
 from firecrawl.v2.types import ScrapeOptions
@@ -9,6 +11,93 @@ from firecrawl.v2.types import ScrapeOptions
 from multimodal_rag.models.chunks import WebChunk
 
 logger = logging.getLogger(__name__)
+
+# Bump when a normalising rule changes: it is part of every page fingerprint.
+NORMALISER_VERSION = 1
+# The byline sits right under the title, so it is only looked for in the page head.
+HEADER_REGION = 600
+# The real footer is a few hundred characters of fixed wording. A cut that would remove
+# more than this is not trusted: the marker phrase probably moved into the article, so
+# nothing is cut and the page is flagged for review instead of being truncated. It is
+# an absolute size, not a share, because a short article's footer can be most of it.
+MAX_FOOTER_CHARS = 1500
+
+# "HydroManUpdated 27 November 20252 min readPrint": product, date, reading time and
+# the Print button, joined because they come from separate page elements.
+_BYLINE = re.compile(
+    r"^\w*Updated \d{1,2} [A-Za-z]+ \d{5,6} min read\s*Print[ \t]*$", re.M
+)
+# Everything after this line is page furniture: the feedback widget, "Last updated on",
+# the search box empty state and the "Still have questions?" call to action.
+FOOTER_MARKER = "Did this answer your question?"
+_TITLE = re.compile(r"^# (.+?)\s*$", re.M)
+_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_BLANK_RUNS = re.compile(r"\n{3,}")
+
+
+@dataclass(frozen=True)
+class NormalisedPage:
+    markdown: str
+    title: str | None
+    byline_removed: bool
+    footer_removed: bool
+    footer_suspicious: bool = False
+
+
+def normalise_page(markdown: str, *, strip_images: bool = False) -> NormalisedPage:
+    """Remove the template's header byline and footer from a scraped page.
+
+    The page title is returned separately so the chunker can keep it in the first
+    chunk. Images stay by default because the screenshot pipeline reads them from the
+    page content; ``strip_images`` is for the text chunks only.
+    """
+    title_match = _TITLE.search(markdown)
+    title = title_match.group(1) if title_match else None
+    head, tail = markdown[:HEADER_REGION], markdown[HEADER_REGION:]
+    head, byline_hits = _BYLINE.subn("", head, count=1)
+    body = head + tail
+    cut = body.find(FOOTER_MARKER)
+    suspicious = cut >= 0 and len(body) - cut > MAX_FOOTER_CHARS
+    if cut >= 0 and not suspicious:
+        body = body[:cut]
+    if strip_images:
+        body = _IMAGE.sub("", body)
+    body = _BLANK_RUNS.sub("\n\n", body).strip()
+    return NormalisedPage(
+        markdown=body,
+        title=title,
+        byline_removed=byline_hits > 0,
+        footer_removed=cut >= 0 and not suspicious,
+        footer_suspicious=suspicious,
+    )
+
+
+def page_fingerprint(markdown: str) -> str:
+    """SHA-256 of the normalised page, so the same content always hashes the same."""
+    page = normalise_page(markdown)
+    return hashlib.sha256(
+        f"normaliser-v{NORMALISER_VERSION}\n{page.markdown}".encode()
+    ).hexdigest()
+
+
+def chunk_page(
+    markdown: str,
+    source_url: str,
+    source_name: str,
+    target_tokens: int = 400,
+    *,
+    strip_images: bool = False,
+) -> list[WebChunk]:
+    """Normalise a scraped page, chunk it, and keep its title in the first chunk."""
+    page = normalise_page(markdown, strip_images=strip_images)
+    chunks = split_by_sections(
+        page.markdown, source_url, source_name, target_tokens=target_tokens
+    )
+    if chunks and page.title:
+        chunks[0] = chunks[0].model_copy(
+            update={"text": f"{page.title}\n\n{chunks[0].text}"}
+        )
+    return chunks
 
 
 def crawl_knowledge_base(
