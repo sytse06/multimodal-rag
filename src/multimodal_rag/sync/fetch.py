@@ -67,7 +67,7 @@ def load_run(run_dir: Path) -> list[FetchedPage]:
     ]
 
 
-def _file_name(url: str) -> str:
+def file_name(url: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", url.split("://", 1)[-1]).strip("_") + ".md"
 
 
@@ -76,7 +76,7 @@ def save_run(run_dir: Path, pages: list[FetchedPage]) -> None:
     (run_dir / "pages").mkdir(parents=True, exist_ok=True)
     summary = []
     for page in pages:
-        name = _file_name(page.url)
+        name = file_name(page.url)
         if page.markdown is not None:
             (run_dir / "pages" / name).write_text(page.markdown, encoding="utf-8")
         summary.append(

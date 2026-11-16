@@ -52,12 +52,14 @@ class Inventory:
     source: str
     hosts: dict[str, dict[str, Any]]
     items: list[Item]
+    ledger_generation: str | None = None  # None until the baseline is saved
 
 
 def build_inventory(
     settings: AppSettings, *, verify: bool = False, init_ledger: bool = False
 ) -> Inventory:
     stored = read_ledger(settings.state_bucket, settings.gcp_project)
+    generation: str | None = None
     if stored is None:
         ledger, source = load_baseline(settings), "baseline built from local, not saved"
         if init_ledger:
@@ -93,7 +95,7 @@ def build_inventory(
         mine = [i for i in items if urlparse(i.url).netloc == host]
         for kind in Kind:
             info[kind.value] = sum(1 for i in mine if i.kind is kind)
-    return Inventory(ledger, source, hosts, items)
+    return Inventory(ledger, source, hosts, items, generation)
 
 
 def run_inventory(

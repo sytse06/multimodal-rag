@@ -1,0 +1,8 @@
+# Limits that decide whether a sync plan may proceed without a person reviewing it.
+# A plan outside any limit exits with code 10 (needs review) and lists the reasons.
+# Removing pages is never decided here: removal candidates always wait for an explicit
+# confirmation, however small they are.
+max_pages_to_fetch: 30
+max_new_pages: 30
+max_content_changed_pages: 30
+max_deleted_chunk_share: 0.10 # of all page-text chunks in the collection

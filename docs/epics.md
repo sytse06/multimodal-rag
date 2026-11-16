@@ -977,7 +977,7 @@ SYNC-010 requires stored values.
 
 **Scope:** `models/chunks.py`, `store/weaviate.py`, `ingest/web.py`
 
-#### SYNC-002 — Page Ledger, Inventory and Plan (read-only; build first)
+#### SYNC-002 — Page Ledger, Inventory and Plan (built; read-only)
 
 **Branch:** `feature/SYNC-002-sync-plan`
 
@@ -1051,12 +1051,32 @@ changed and what the crawl missed.
   over-reports, and the stored index holds 4 links to the staging domain on 3 pages. The
   12 pages not stored chunk into 1 to 7 chunks each. One page (article 276) is a
   one-sentence stub whose content is probably an embedded video
-- **Plan artifact**: JSON with registry and ledger generations, per-page actions,
-  chunk-level changes, expected Firecrawl pages and embedding calls, the policy result
-  and the plan hash. Also emit the changed-page canaries for the retrieval gate
-  (`retrieval_gate.from_changed_pages`)
-- `make sync-plan` prints a summary; `--json` and exit codes per the design rules. It
-  takes the run lock and writes the manifest, including the registry generation
+- **Plan artifact (built):** canonical JSON with a SHA-256 hash, the registry and ledger
+  generations it was built from, and per page: kind, reason, whether the content really
+  changed, the title, the fingerprint, stored and fresh chunk counts, the fetched file
+  with its checksum, and every position as write, skip or delete with its UUID. It also
+  carries the removal candidates (with the screenshot chunks a delete would orphan), the
+  fetch failures, the template findings, the canaries for pages whose content changed
+  (`retrieval_gate.from_changed_pages` form) and the policy result. `staleness()` tells
+  an apply why it must refuse a plan: a hash that does not match, or a registry or
+  ledger that moved. Template-only positions are written, so the index gets clean
+  chunks, but such a page does not count as content-changed
+- **Policy (built):** `config/sync-policy.yaml` limits pages to fetch, new pages, pages
+  with changed content and the share of page-text chunks deleted (30, 30, 30 and 10%).
+  A plan outside a limit, with fetch failures, with template findings, or with a
+  registry that moved since the pull needs review. Removal candidates never decide the
+  status: they always wait for an explicit confirmation (SYNC-004)
+- **`make sync-plan` (built)** fetches (or reuses `FROM_RUN=`), builds the plan, writes
+  `plan.json` and `manifest.json` next to the pages, and uploads the run to
+  `runs/<run id>/` in the bucket (`NO_UPLOAD=1` to skip); `--json` prints the plan, and
+  the exit code is 0 within policy, 10 needs review, 1 failure. It writes nothing to
+  Weaviate. The run lock is taken by the apply (SYNC-003), where it matters
+- **First plan, 2026-11-16:** the baseline ledger is saved (`ledger/pages.json`, created
+  once). The plan for the 23 pages: 12 new and 5 with changed content, 6 template-only,
+  42 positions to write, 9 skipped, no deletes, 61 screenshot chunks on those pages left
+  untouched, 17 canaries, policy within limits, one removal candidate waiting for
+  confirmation. The kept run was read back from the bucket: the hash is valid and every
+  page matches its checksum
 - Reuse per-source error isolation: one failed source never aborts the run
 
 Tests and docs ship with this story.
