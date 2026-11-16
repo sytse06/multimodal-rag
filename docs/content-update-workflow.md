@@ -51,10 +51,16 @@ All verified on 2026-11-13.
 
 ### Change rate of the sources
 
-From the sites' sitemaps against the March ingest: of 160 stored pages, 146 appear in the
-sitemaps; 11 were modified since the ingest, 135 were not; 14 stored pages are gone from the
-sitemaps and 45 sitemap pages are not stored. That is roughly 11 edits, 45 new pages and 14
-removals over eight months. Content changes are small and infrequent.
+From the sites' sitemaps against the March ingest, counting only the `/article/` pages the
+crawler fetches and matching hosts exactly: of 160 stored pages, 159 appear in the
+sitemaps; 11 were modified since the ingest (hydrosym 6, hydroman 5) and 148 were not; 1
+stored page is gone from the sitemaps (hydrosym article 437, probably renamed) and 12
+sitemap pages are not stored. Of those 12, 7 were published after the ingest and 5 are old
+build release notes dated 2025-11-10 that the March crawl missed, which is consistent with
+the crawl limit of 100 (hydrosym has 109 article pages) but does not prove it. That is
+roughly 11 edits, 7 new pages and 1 removal over eight months. Content changes are small
+and infrequent. (An earlier count of 45 new pages and 14 removals matched hosts by
+substring and counted sitemap pages outside the crawler's scope.)
 
 ## 4. Prerequisites for an update run
 
@@ -161,8 +167,8 @@ it is the bootstrap path for a brand new hosted cluster.
    and the public repository holds only an example file.
 7. New videos and knowledge bases are added by editing that file. It lists roots only:
    the pages under a knowledge base come from its sitemap, not from this file.
-8. The first run is gated by the sitemap `lastmod`: only the 11 modified pages are crawled,
-   alongside the 45 new pages and the 14 removal candidates.
+8. The first run is gated by the sitemap `lastmod`: only the 11 modified pages are fetched,
+   alongside the 12 pages not yet stored and the 1 removal candidate.
 
 ## 9. Gaps to close, mapped to stories
 

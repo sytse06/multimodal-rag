@@ -33,3 +33,6 @@ kb_output/
 graphify-out/*
 !graphify-out/memory/
 !graphify-out/memory/*.md
+
+# Fetched pages and sync run output (private)
+runs/

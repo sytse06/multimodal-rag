@@ -248,10 +248,18 @@ everything (for example quarterly) to catch silent drift.
 
 | Group | Pages | Action |
 |---|---|---|
-| Modified after the ingest | 11 | Crawl, re-chunk, compare with the stored chunks, replace what changed |
-| Unchanged since the ingest | 135 | **Not crawled.** Converted only (see Conversion of the existing chunks) |
-| In the sitemaps, not stored | 45 | Crawl and add |
-| Stored, not in the sitemaps | 14 | Removal candidates. Confirm each: some may be renames that reappear among the 45, so match by title before deleting. |
+| Modified after the ingest | 11 | Fetch, re-chunk and replace the page's whole text-chunk set (text comparison with the March chunks is not valid, see below) |
+| Unchanged since the ingest | 148 | **Not fetched.** Converted only (see Conversion of the existing chunks) |
+| In the sitemaps, not stored | 12 | Fetch and add (7 are new since March, 5 are old pages the crawl missed) |
+| Stored, not in the sitemaps | 1 | Removal candidate. Confirm it: article 437 looks renamed and may reappear as article 525, so match by title before deleting. |
+
+Corrected 2026-11-16: the earlier counts (135, 45 and 14) matched hosts by substring and
+counted sitemap pages outside the crawler's `/article/` scope. Also found then: the site
+template changed after March (a new title and "Updated ... min read" header, a "Still
+stuck?" footer, and the embedded YouTube player text that March captured is gone), so a
+fresh scrape does not reproduce the stored chunks even for pages unchanged since before
+March. Stored text cannot be the change signal; `lastmod` is the trigger and a fetched
+page is replaced as a whole set.
 
 **Consequence for pipeline drift.** With the `lastmod` gate, drift only matters for a page
 when that page changes, and replacing that page's text chunks as a set (D3) absorbs it at
@@ -300,7 +308,7 @@ so the hash is valid. The conversion needs no crawl and no re-embedding.
 
 | Chunk type | Count | `document_id` | `content_hash` | `source_lastmod` | Other fields |
 |---|---|---|---|---|---|
-| Web text | 327 | `uuid5(source_url)` | SHA-256 of the stored text | the sitemap value for the 135 unchanged pages; **null** for the 11 modified pages (they stay flagged as stale) and the 14 absent pages | none |
+| Web text | 327 | `uuid5(source_url)` | SHA-256 of the stored text | the sitemap value for the 148 unchanged pages; **null** for the 11 modified pages (they stay flagged as stale) and the 1 absent page | none |
 | Web screenshot | 381 | `uuid5(source_url)` | SHA-256 of the stored (old) description | as for web text | `image_url` re-derived from the live page (plain HTTP). `image_hash`, `description_model` and `prompt_version` are set to `legacy` or left null, never guessed; they are filled at the re-description. Unmatched chunks are flagged for a decision, not deleted. |
 | Video | 214 | `uuid5(video URL)` | SHA-256 of the stored text | not applicable | `source_fingerprint` from current YouTube metadata (a new baseline, not proof that nothing changed since March); `pipeline_version = legacy` |
 
@@ -393,8 +401,8 @@ Consequences:
    and validate: counts, texts and vectors unchanged, new properties set.
 6. **Promote the conversion to hosted** as a metadata diff, and verify that local and
    hosted are identical.
-7. **First lastmod-gated run:** the 11 modified pages, the 45 new pages and the 14 removal
-   candidates, into local, validated, then promoted. Optionally spot-check pipeline drift
+7. **First lastmod-gated run:** the 11 modified pages, the 12 pages not yet stored and the
+   1 removal candidate, into local, validated, then promoted. Optionally spot-check pipeline drift
    on a few unchanged pages.
 8. **Re-describe screenshots** and remove the three runaway chunks (pilot note), strip the
    player boilerplate and record `embedded_video_ids`, in local, then promote.
