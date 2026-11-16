@@ -185,7 +185,7 @@ legitimate text is not removed.
 
 ### D6. How writes are applied
 
-- Take a snapshot (`make snapshot-export`) before any cloud write, as SYNC-005 requires.
+- Take a snapshot (`make snapshot-export`) before any cloud write, as SYNC-007 requires.
 - Replace objects by explicit UUID, with a re-embedded vector computed from
   `"<source_name>: <text>"`, the same input `add_chunks` uses.
 - An overwrite is a **full replace** (verified, section 6): every write must carry every

@@ -169,14 +169,16 @@ it is the bootstrap path for a brand new hosted cluster.
 | Gap | Story |
 |---|---|
 | Deployed app rejects extra properties | SYNC-000 (done, deployed 2026-11-13, revision 00024) |
-| Identity, provenance and hashes; vision path limited to OpenRouter | SYNC-001 |
-| Plan against the stored collection | SYNC-002 |
-| Apply to the local collection only | SYNC-003 |
+| Stored identity, hashes and conversion (deferred); screenshot provenance and the Gemini vision path | SYNC-001, SYNC-010 |
+| Page ledger, inventory and plan artifact | SYNC-002 |
+| Apply a plan to the local collection, then the gate | SYNC-003 |
 | Removed pages and sources | SYNC-004 |
-| Snapshot, verification, credentials | SYNC-005 |
-| Tests and documentation | SYNC-006 |
-| Promote local to hosted, equality check, rollback | SYNC-007 |
-| Preflight, tracked sources, one vision model, target separation, golden-question gate | SYNC-008 |
+| Snapshot, verification, credentials (folded into SYNC-003, SYNC-007, OPS-003) | SYNC-005 (dissolved) |
+| Tests and documentation (ship with each story) | SYNC-006 (dissolved) |
+| Promote local to hosted by copying vectors, equality check, rollback | SYNC-007 |
+| Automate the web lane (needs a decision on the Weaviate plan first) | SYNC-009 (stub, after OPS-001, 003, 004) |
+| Video lane: new and changed videos | SYNC-011 |
+| Preflight, tracked sources, one vision model, target separation, retrieval gate | SYNC-008 |
 
 ## 10. Where sources, secrets and state live
 
@@ -260,7 +262,7 @@ Principles:
 Reproducible sources, managed secrets, persisted run state, idempotent runs (the hashes),
 observable runs (the Phase 1 logs), a rollback (snapshot and restore), and access control
 by role. Today the pipeline has the idempotent IDs and the logs; the rest is the work in
-SYNC-005, SYNC-007 and SYNC-008.
+SYNC-002, SYNC-003, SYNC-007 and SYNC-008.
 
 ### Decisions (2026-11-13)
 

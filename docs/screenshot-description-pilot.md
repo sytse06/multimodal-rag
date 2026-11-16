@@ -227,7 +227,7 @@ describe about 380 images, sent sequentially with a pause between calls and a ba
    objects read as null).
 3. **Dry run for all pages**, no writes: write old and new descriptions to a local file
    and review a sample, especially for wrong product names.
-4. **Snapshot** with `make snapshot-export` before any cloud write (the SYNC-005 rule).
+4. **Snapshot** with `make snapshot-export` before any cloud write (the SYNC-007 rule).
 5. **Apply by explicit UUID** with the admin key: replace the text, the vector (computed
    from `"<source_name>: <text>"`, as `add_chunks` does) and `image_url`. Do not rely on
    `batch.add_object` overwriting an existing UUID; that behaviour is untested.
@@ -241,8 +241,9 @@ on every screenshot chunk, and no regression on the 12 UI questions.
 
 ## Relation to Epic 11
 
-This work belongs ahead of the diff logic in SYNC-001, because a sync cannot classify
-screenshot chunks without `image_url`. The oversized-chunk cap also protects generation
+This work was planned ahead of the diff logic in SYNC-001. Since 2026-11-16 it is SYNC-010,
+an experiment that waits behind the retrieval gate: the first syncs touch web text only and
+leave screenshot chunks untouched, so they do not need `image_url`. The oversized-chunk cap also protects generation
 and could be added independently as a limit on one chunk's share of the context budget.
 
 ## Reproducibility

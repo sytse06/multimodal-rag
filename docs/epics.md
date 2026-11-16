@@ -753,9 +753,14 @@ found and fixed three defects after the first deploy: Gemini token usage (report
 chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
 OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has started: SYNC-000
 (schema readiness) is done and deployed (revision 00024, 2026-11-13) and the local
-Weaviate now matches the hosted version; SYNC-001 to SYNC-008 are open (SYNC-008 is
-partly done). Phase 3 (production hardening, OPS-001 to OPS-008) was added after an audit
-of the live service on 2026-11-13; none of it has started. The design and the supporting evidence
+Weaviate now matches the hosted version. Phase 2 was reworked on 2026-11-16 so that
+automating the sync (SYNC-009) needs a scheduler and a policy, not a rewrite: plan and
+apply are separate artifacts, state lives in a ledger in the bucket, and the first
+syncs need no change to the hosted schema (see "Design rules for an automatable sync" and
+"Order of work"). SYNC-002 is next; SYNC-008 is partly done; SYNC-001 and SYNC-010 are
+deferred; SYNC-005 and SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to
+OPS-008) was added after an audit of the live service on 2026-11-13 and waits until the
+sync works; none of it has started. The design and the supporting evidence
 are in `docs/chunk-parent-design.md`; the operating model is in
 `docs/content-update-workflow.md`.
 
@@ -773,12 +778,13 @@ Full detail, facts and assumptions: `docs/content-update-workflow.md`.
 The sync is **two stages**, because the local Docker collection and the hosted collection
 are identical today (922 UUIDs, identical text) and play different roles:
 
-- **Stage A, refresh local** (SYNC-001 to SYNC-004, SYNC-008): the maintainer fetches the
-  sources, hashes the inputs, plans the change against the local collection, applies it
-  to the local collection only, and validates it. Local is a disposable staging copy.
-- **Stage B, promote to hosted** (SYNC-005, SYNC-007): the maintainer backs up the hosted
-  collection, diffs local against hosted, applies the difference with the admin key
-  without deleting the collection, and verifies that the two are identical again.
+- **Stage A, refresh local** (SYNC-002 to SYNC-004, SYNC-008): the maintainer captures the
+  sitemaps, plans the change against the page ledger, applies the reviewed plan to the
+  local collection only, and runs the retrieval gate. Local is a disposable staging copy.
+- **Stage B, promote to hosted** (SYNC-007): the maintainer backs up the hosted
+  collection, diffs local against hosted, copies the difference (vectors included) with
+  the admin key without deleting the collection, and verifies that the two are identical
+  again.
 
 Prerequisites for a run, and the gaps found today (an untracked source list that omits
 the three knowledge bases, four duplicate `VISION_MODEL` lines, one `.env` shared by both
@@ -850,6 +856,57 @@ is removed, and for screenshot chunks keyed on image URLs that change. Removed c
 lingers. Because an overwrite replaces the whole object, a plain re-ingest also erases
 any property it does not write, such as backfilled provenance fields.
 
+#### Design rules for an automatable sync
+
+The first runs are human-run, but the stories are built so that automating them
+(SYNC-009) needs a scheduler and a policy, not a rewrite. These rules apply to every
+story below.
+
+1. **Plan and apply are separate artifacts.** `sync-plan` writes a JSON plan with a
+   content hash, bound to the registry generation and the ledger generation it was built
+   from. `sync-apply` takes that plan file and executes exactly it; it refuses when
+   either generation has moved. What a person reviewed is what runs.
+2. **Policy is configuration.** `config/sync-policy.yaml` holds the limits that decide
+   whether a plan may proceed: deletion share, changed pages, new pages, Firecrawl pages,
+   embedding calls. A person approves by running apply; automation may approve only a
+   plan inside policy, and anything outside it stops for review.
+3. **State is a ledger, not chunk properties.** The bucket holds a page ledger (URL,
+   `lastmod`, text fingerprint, chunk count) written only after a verified run. The next
+   run diffs against it. It needs no change to the hosted schema.
+4. **Every run writes a manifest** to `runs/<timestamp>/`: registry and ledger
+   generations, plan hash, fetched page content, per-page results, gate result, snapshot
+   reference, counts. It is both the audit trail and the reproducible input of the apply.
+5. **Machine-readable by default.** Every sync command has `--json` and distinct exit
+   codes: 0 done or nothing to do, 10 plan outside policy (needs review), 1 failure. The
+   existing preflight and gate are retrofitted (SYNC-008).
+6. **One run at a time.** A lock object in the bucket, taken with a generation
+   precondition (as the registry push already does), blocks overlapping runs.
+7. **The core is target-agnostic.** Apply and verify take a target. Local Docker is the
+   staging target today and the write guard keeps hosted writes inside promotion, but
+   nothing in the core assumes Docker, so a hosted staging collection can be added later.
+8. **Two lanes.** The web lane (sitemap and `lastmod` driven) is the automatable one. The
+   video lane (new URL driven) stays maintainer-triggered: YouTube blocks datacenter IPs
+   and the cookies expire.
+9. **Determinism.** Hash inputs, never regenerated outputs; fingerprints exclude
+   `ingested_at`; a run never re-describes an image that did not change.
+
+#### Order of work
+
+The story numbers are stable identifiers, not the order. Build in this order:
+
+| Order | Story | What | Hosted impact |
+|-------|-------|------|---------------|
+| 1 | SYNC-002 | Page ledger, inventory and plan (read-only) | None |
+| 2 | SYNC-003 | Apply a plan to the local collection, then the retrieval gate | None |
+| 3 | SYNC-004 | Removals, behind explicit confirmation | None |
+| 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | The only hosted write |
+| 5 | SYNC-008 (rest) | Runbook, `--json` and exit codes on preflight and gate | None |
+| 6 | SYNC-011 | Video lane: new videos first, changed videos later | Local, then promotion |
+| Later | SYNC-001, SYNC-010 | Stored identity and conversion; screenshot re-description | Schema change only when taken |
+| After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | Via promotion |
+
+SYNC-005 and SYNC-006 are dissolved into the stories that need them.
+
 #### SYNC-000 — Schema Readiness (done, deployed 2026-11-13)
 
 **Branch:** `feature/SYNC-000-schema-readiness`
@@ -878,156 +935,168 @@ would make Cloud Run fail its startup check and return 503.
 
 **Scope:** `src/multimodal_rag/store/weaviate.py`, `tests/test_store.py`
 
-#### SYNC-001 — Deterministic Chunk Identity, Provenance, and Baseline
+#### SYNC-001 — Stored Identity, Conversion and Chunk Quality (deferred)
 
 **Branch:** `feature/SYNC-001-chunk-identity`
 
-Depends on SYNC-000.
+Depends on SYNC-000. **Not a prerequisite for the first syncs.** The plan computes a
+fingerprint from the stored text on both sides, which is deterministic at this scale
+(160 pages, 922 chunks) and needs no schema change; embeddings run locally, so skipping
+unchanged chunks saves no cost. Take this story when scale, a verification need, or
+SYNC-010 requires stored values.
 
-- Keep the existing position keys for web text (`url|index`) and detect change with a
-  per-chunk `content_hash`; when a page's chunk positions shift, replace the page's text
-  chunks as a set (design note D3)
-- Add `document_id` (`uuid5(source_url)`) and `content_hash` as additive chunk
-  properties, and make `SupportChunk` and `add_chunks` write them on every insert.
-  This must ship **before** any backfill: a re-ingest replaces whole objects, so a chunk
-  written without these fields would erase backfilled values
-- Hash inputs, never generated outputs: LLM-written text is stored once and keyed on the
-  hash of its inputs, so re-running a check never changes stored descriptions
-- Use the sitemap `lastmod` as the cheap trigger and the hashes as the verification (design
-  note D8). The first run crawls only the 11 pages modified since the March ingest, adds
-  the 45 sitemap pages not yet stored, and treats the 14 stored pages absent from the
-  sitemaps as removal candidates; the 135 unchanged pages are not crawled. Store
-  `source_lastmod` with the chunks so later runs can gate on it; pages without a
-  `lastmod` are always crawled, and an occasional `--verify` run crawls everything
-- Convert the existing 922 chunks without a crawl: every chunk gets `document_id` and a
-  `content_hash` computed from its stored text, web chunks get `source_lastmod` where the
-  page is unchanged, screenshot chunks get `image_url` re-derived from the live page with
-  `legacy` markers for the fields that cannot be known, and videos get a baseline
-  fingerprint. Run it on the local collection with metadata-only updates, verify that
-  texts and vectors are unchanged, then promote (design note, Conversion of the existing
-  chunks)
-- Give screenshot-description chunks provenance. In the hosted collection 381 of 922
-  chunks (41%) are keyed on `uuid5(image_url)` while `image_url` is not stored, so a sync
-  cannot tell which chunk belongs to which image. Add `image_url`, `image_hash`,
-  `description_model` and `prompt_version`, and backfill `image_url` by re-deriving
-  `uuid5(image_url)` from each live page; a one-page test matched 3 of 4 stored chunks,
-  and 19 of 19 and 7 of 7 on two more pages
-- Extend the vision factory: `create_vision_llm` goes through OpenRouter only, so add the
-  Gemini provider path and record the model that wrote each description
-- Re-describe screenshots with a page-anchored prompt on `gemini-3.6-flash`
-  (`thinking_level="low"`, a `max_output_tokens` cap, a repetition guard, decorative
-  images skipped, the application named only if visible), and replace the three runaway
-  chunks (81k to 229k characters)
+- Add `document_id` (`uuid5(source_url)`), `content_hash` and `source_lastmod` as
+  additive properties, written on **every** insert. This must ship before any backfill:
+  a re-ingest replaces whole objects, so a chunk written without these fields would erase
+  backfilled values
+- Hash inputs, never generated outputs (design note D7)
+- Convert the existing 922 chunks without a crawl: `document_id` and a `content_hash`
+  from stored text for every chunk, `source_lastmod` where the page is unchanged, `legacy`
+  markers for fields that cannot be known. Run it on the local collection with
+  metadata-only `data.update`, verify texts and vectors are unchanged, then promote
+  (design note, Conversion of the existing chunks)
 - Strip the YouTube player boilerplate (41 chunks on 21 pages) before chunking and keep
-  the embedded video IDs as page metadata
-- Add a video fingerprint (video ID, duration, title, caption hash) and a pipeline
-  version; reprocess a video only when either changes, and sanity-check the stored
-  windows against current durations
-- Take a snapshot before any cloud write. Write every property on each object, because
-  an overwrite is a full replace (`data.replace` or `batch.add_object` by explicit UUID,
-  with the re-embedded vector when the text changes), and use `data.update` for
-  metadata-only changes such as the backfill
+  the embedded video IDs as page metadata; the change takes effect as pages are recrawled
+- Write every property on each object, because an overwrite is a full replace
+  (`data.replace` or `batch.add_object` by explicit UUID); use `data.update` for
+  metadata-only changes
 
-Evidence and procedures: `docs/screenshot-description-pilot.md` and
-`docs/chunk-parent-design.md`.
+**Scope:** `models/chunks.py`, `store/weaviate.py`, `ingest/web.py`
 
-**Scope:** `src/multimodal_rag/models/chunks.py`, `src/multimodal_rag/store/weaviate.py`,
-`src/multimodal_rag/ingest/web.py`, `src/multimodal_rag/ingest/web_images.py`,
-`src/multimodal_rag/ingest/youtube.py`
-
-#### SYNC-002 — Per-source Diff and Plan
+#### SYNC-002 — Page Ledger, Inventory and Plan (read-only; build first)
 
 **Branch:** `feature/SYNC-002-sync-plan`
 
-- For each source, fetch the stored chunks of the **local** collection by `source_url`
-  (IDs, text, and `content_hash` where backfilled), build the new chunk set, and compute
-  added, changed, and removed.
-  Until `content_hash` is backfilled, compare against the stored text and use the sitemap
-  `lastmod` against `ingested_at` as the independent change signal
-- `make sync-plan` is a dry run that prints per-source counts, the expected number of
-  embedding and vision calls, and writes nothing
+Writes nothing to Weaviate. It answers, before any change is built, how much has really
+changed and what the crawl missed.
+
+- **Baseline ledger.** Build it once from the local collection (verified identical to
+  hosted by the preflight): per stored page its URL, knowledge base, text fingerprint
+  (SHA-256 over the chunk texts in position order, without `ingested_at`), chunk count
+  and `ingested_at`. Write it to the bucket under `ledger/`. Today the only record of
+  the 160 stored pages (hydrosym 99, hydroman 48, hydrocam 13) is `source_url` on each
+  chunk
+- **Inventory.** Capture each knowledge-base sitemap (URL and `lastmod`) to
+  `captures/<timestamp>/`. The registry holds only root URLs; the pages come from the
+  sitemap, never from the crawl
+- **Classify** each page: modified (`lastmod` newer than the ledger, or than
+  `ingested_at` for the baseline), new (in the sitemap, not stored), removal candidate
+  (stored, not in the sitemap), unchanged. Pages without a `lastmod` are always
+  refetched; `--verify` refetches everything. Expect roughly 11 modified, 45 new and 14
+  removal candidates, with 135 unchanged and not fetched
+- **The crawl cap is a defect.** `ingest/__main__.py` crawls `limit=100` per knowledge
+  base and hydrosym holds 99 pages, so many of the 45 "new" pages are probably pages past
+  that cap (unverified). Sync never uses the cap: the plan lists the pages, and only
+  those are fetched. The plan reports sitemap pages the old crawl never reached
+- **Fetch and chunk** each modified and new page once, store the fetched content under
+  `runs/<timestamp>/pages/`, and compute the chunk-level difference against the stored
+  chunks: added, changed and removed chunk UUIDs with fingerprints. Apply then uses this
+  stored content and fetches nothing, so it is reproducible
+- **Plan artifact**: JSON with registry and ledger generations, per-page actions,
+  chunk-level changes, expected Firecrawl pages and embedding calls, the policy result
+  and the plan hash. Also emit the changed-page canaries for the retrieval gate
+  (`retrieval_gate.from_changed_pages`)
+- `make sync-plan` prints a summary; `--json` and exit codes per the design rules. It
+  takes the run lock and writes the manifest, including the registry generation
 - Reuse per-source error isolation: one failed source never aborts the run
-- The page inventory comes from the sitemap, not from the crawl. The registry holds only
-  the root URL of each knowledge base; no page list exists anywhere, and Firecrawl found
-  the pages at crawl time. Today the only record of the 160 stored pages (hydrosym 99,
-  hydroman 48, hydrocam 13) is the `source_url` on each chunk. Write that inventory to the
-  bucket as the baseline capture before the first sync, then compare each new sitemap
-  capture against it
-- The crawl is capped at `limit=100` per knowledge base (`ingest/__main__.py`), and
-  hydrosym holds 99 pages. The 45 sitemap pages that are not stored are probably pages
-  past that cap, not only new content (unverified). Treat the cap as a defect: the plan
-  reports sitemap pages the crawl did not reach, and the apply step fetches exactly the
-  pages the plan lists
 
-**Scope:** `src/multimodal_rag/ingest/`, new sync module, `Makefile`
+Tests and docs ship with this story.
 
-#### SYNC-003 — Safe Apply
+**Scope:** new `src/multimodal_rag/sync/` package (ledger, inventory, plan, policy,
+manifest), `config/sync-policy.yaml`, `Makefile`
+
+#### SYNC-003 — Apply a Plan to the Target Collection (local by default)
 
 **Branch:** `feature/SYNC-003-sync-apply`
 
-- Insert/update first, delete stale last, so a source is never empty or partial mid-run
-- `make sync` writes to the local Docker collection only, refuses a hosted URL, and asks
-  for confirmation; hosted writes happen only through `make promote` (SYNC-007)
-- Abort without writing if the plan would delete more than a configurable share of the
-  collection
-- Re-embed only added and changed chunks; refuse to run if the configured embedding model
-  or dimension does not match the collection (`validate_compatibility`)
+- `make sync-apply PLAN=<file>` verifies the plan hash and that the registry and ledger
+  generations still match, takes the run lock, and refuses a stale plan. The core has no
+  prompt; the `make` wrapper asks for confirmation unless `--yes`
+- The target is a parameter and defaults to local Docker. A hosted target is refused by
+  the store's write guard; hosted writes happen only in SYNC-007
+- Per page, replace the chunks as a set: write changed and new positions with their
+  vectors (embedded now, from the stored content), leave unchanged chunks untouched,
+  and delete leftover trailing positions last. Insert and update first, delete last, so a
+  page is never empty or partial mid-run. Write every property on each object
+- **Frozen layers:** the web lane never changes or deletes a screenshot or video chunk,
+  and a test says so
+- Enforce the policy limits again at apply time, including an abort when the plan would
+  delete more than the allowed share of the collection
+- Refuse to run if the embedding model or dimension does not match the collection
+- Verify counts against the plan, then run `make sync-gate` with the plan's changed-page
+  canaries and the fixed canaries. The ledger is updated **only** after verification and
+  the gate pass; the manifest records the result
 
-**Scope:** `src/multimodal_rag/store/weaviate.py`, sync module, `Makefile`
+Tests and docs ship with this story.
 
-#### SYNC-004 — Removed Sources and Pages
+**Scope:** `src/multimodal_rag/sync/`, `store/weaviate.py`, `Makefile`
+
+#### SYNC-004 — Removed Pages and Sources
 
 **Branch:** `feature/SYNC-004-removals`
 
-- Pages that disappear upstream, or sources dropped from `config/sources.yaml`, are
-  removed only after an explicit flag or confirmation
-- A failed crawl never deletes existing content
-- The current data supplies real cases for tests: 14 stored pages are no longer in the
-  sitemaps (removed or renamed) and 45 sitemap pages are not yet stored
+- Removal candidates come from the plan (ledger pages absent from the sitemap, and
+  sources dropped from the registry). They are deleted only with an explicit
+  `--confirm-removals` that lists the URLs; automation never confirms removals
+- A failed or implausible sitemap fetch never deletes anything: if the sitemap request
+  fails, is empty, or lists far fewer pages than the ledger, the lane aborts for that
+  knowledge base
+- The current data supplies real cases for tests: 14 stored pages are absent from the
+  sitemaps (removed or renamed) and 45 sitemap pages are not stored
 
-**Scope:** sync module, `config/sources.yaml` handling
+**Scope:** `src/multimodal_rag/sync/`, registry handling
 
-#### SYNC-005 — Backup, Verification, and Credentials
+#### SYNC-005 — Backup, Verification and Credentials (dissolved)
 
-**Branch:** `feature/SYNC-005-backup-verify`
+Folded into the stories that need it. The snapshot before a hosted write, and the
+post-write verification, belong to SYNC-007 (the backup tool, `make snapshot-backup`,
+already exists). Verification of a local apply belongs to SYNC-003. Run reports and
+structured logs are the manifest of SYNC-002. The key rule (the admin key is used only by
+sync and promotion; the serving app keeps the viewer key) is enforced by the write guard
+and by OPS-003 and SYNC-009.
 
-- Automatic snapshot of the hosted collection (`make snapshot-export`) before any
-  promotion
-- After sync, verify the object count against the plan and run one known retrieval query
-  on the hosted collection
-- Admin key used only for sync; the viewer key stays in Cloud Run; no keys in logs or Git
-- Sync emits the Phase 1 structured logs (per-source plan and apply results, correlation
-  ID per run) and saves a report outside Git
+#### SYNC-006 — Documentation and Tests (dissolved)
 
-**Scope:** sync module, `Makefile`, `.env.example`
-
-#### SYNC-006 — Documentation and Tests
-
-**Branch:** `feature/SYNC-006-docs-tests`
-
-- Mocked tests for diff computation, apply ordering, abort thresholds, failed-crawl
-  safety, and key separation
-- Update README, `docs/pipeline.md`, and `docs/gcp-deployment.txt` with the sync
-  procedure and the OBS-002 log queries
-- Update the "out of scope" lists in Epics 9 and 10 once sync ships
+Tests and documentation ship with each story, not at the end. The consolidated
+procedure is the maintainer runbook in SYNC-008. The README, `docs/pipeline.md` and
+`docs/gcp-deployment.txt` updates, and the "out of scope" lists in Epics 9 and 10, are
+done at the end of SYNC-007.
 
 #### SYNC-007 — Promote Local to Hosted
 
 **Branch:** `feature/SYNC-007-promote`
 
-- `make promote-plan` compares the local and hosted collections by UUID and stored
-  `content_hash` and prints added, changed and removed counts; it writes nothing
-- `make promote` applies the difference to the hosted collection with the admin key:
-  insert and update first, delete last, never delete the collection, and abort above a
-  configurable deletion share
-- Take a snapshot of the hosted collection first, and verify afterwards that the UUID set
-  and text of local and hosted are identical, the count matches, and one known query
-  retrieves correctly
+- `make promote-plan` compares the local and hosted collections by UUID and text
+  fingerprint (the same fingerprint as the preflight) and writes a promotion plan in the
+  same plan format, with counts of added, changed and removed objects. It writes nothing
+  to either collection
+- `make promote PLAN=<file>` applies that plan to the hosted collection with the admin
+  key. This module is the only caller that passes `allow_hosted_write`. It takes the run
+  lock and refuses a plan whose hosted generation has moved
+- **Copy the vectors from the local collection; never re-embed.** Local and hosted then
+  hold identical vectors, and the promotion needs no embedding service
+- Take a snapshot of the hosted collection first (`make snapshot-backup TARGET=cloud`)
+  and record it in the manifest. Insert and update first, delete last, never delete the
+  collection, and abort above the policy's deletion share. A pure addition (for example
+  a new video) is the simplest case: nothing existing is touched
+- Verify afterwards that the UUID set and fingerprints of local and hosted are
+  identical, the count matches, and the retrieval gate passes against hosted
 - Document the rollback: restore the snapshot with `--replace`, which deletes and
-  recreates the hosted collection and so causes an outage; it is for failures only
-- A promotion that stops part-way is safe to repeat, because the diff is recomputed
+  recreates the hosted collection and so causes an outage; it is for failures only. A
+  promotion that stops part-way is safe to repeat, because the diff is recomputed
+- **Hosted tier constraint (checked 2026-11-16):** the hosted cluster is on the free
+  plan, which allows **one collection** (a second one is refused with
+  `USAGE_LIMIT_EXCEEDED … collections count limit of 1`) and the `hfresh` vector index
+  only. A candidate collection with an alias flip, which is the vendor's blue/green
+  pattern, therefore cannot run on this cluster, and that is why promotion mutates the
+  live collection in place. Aliases do work on the local 1.39.13 server and are
+  available on the paid Flex plan (1,000 collections). Multi-tenancy (up to 3 tenants on
+  free) is not used: `SupportChunk` is not multi-tenant, enabling it means recreating the
+  collection, and a tenant cannot be restored on its own. Revisit if the plan changes
 
-**Scope:** sync module, `store/weaviate.py`, `Makefile`
+Tests and docs ship with this story.
+
+**Scope:** `src/multimodal_rag/sync/`, `store/weaviate.py`, `Makefile`
 
 #### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: registry, bucket, cookies, deploy variable, compose and preflight done)
 
@@ -1045,8 +1114,8 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   since the pull (object generation check). The first registry is in the bucket: 25 videos
   and the 3 knowledge-base roots, restored from the March original because the working
   file had lost them. The registry holds roots only, not pages (see SYNC-002). Cloud
-  Run's service account gets no access to the bucket. Still open: each run manifest
-  recording the registry generation
+  Run's service account gets no access to the bucket. The run manifest that records
+  the registry generation is written by SYNC-002
 - Done: the tracked `Makefile` no longer hardcodes the GCP project; `GCP_PROJECT` comes
   from the environment or `.env`, and `make deploy` stops with a message when it is unset
 - Done: the YouTube cookies are in Secret Manager (`YOUTUBE_COOKIES`), fetched into a
@@ -1091,10 +1160,97 @@ Evidence and procedures: `docs/screenshot-description-pilot.md` and
   self-retrieval (each page SYNC-002 reports as changed is queried by its title) reuses
   the same code and arrives with SYNC-002. Known weak canary: the import question ranks
   its best source at 6 of 10, so it is the first to flip
+- Retrofit `--json` output and the shared exit codes (0, 10, 1) to `make sync-preflight`
+  and `make sync-gate`, so the automation story can call them
 - Write the maintainer runbook: prerequisites, the two stages, rollback and who decides
   what
 
 **Scope:** `config/`, `Makefile`, `compose.yaml`, `docs/`, preflight module
+
+#### SYNC-009 — Automate the Web Lane (stub; not started)
+
+**Branch:** `feature/SYNC-009-automate`
+
+Goal: a scheduled run of the web lane that plans, checks the plan against the policy,
+applies, runs the gate and promotes only when the policy and the gate both pass; anything
+else stops and notifies a person. This is a stub. It is not built until its preconditions
+are met, and the first one is unresolved.
+
+Preconditions, each a decision or a ticket of its own:
+
+1. **Where it runs.** A job (for example a Cloud Run Job) with its own service account,
+   with the admin key readable only by that job. The serving app keeps the viewer key. The
+   epic's rule "Cloud Run never holds write credentials" becomes "the serving app never
+   holds them" and must be reworded when this is built
+2. **Embeddings.** Vectors come from local Ollama `nomic-embed-text`, and a cloud job has
+   none. Either the job ships an embedding service that produces vectors equivalent to the
+   local ones (to be measured by embedding the same texts in both and comparing), or the
+   job cannot run apply. **This is the blocker and needs a spike first**
+3. **Staging and the Weaviate plan.** The two-stage model uses local Docker, which a
+   scheduled job cannot. On the free plan (one collection, no native backups, no
+   replication, best-effort availability, suspension after 7 idle days) the only options
+   are direct in-place promotion with a snapshot and the gate as the protection, or
+   moving to the Flex plan (from $45 per month: 1,000 collections, so aliases and
+   blue/green work, plus 7-day backups, replication and a 99.5% availability promise).
+   Decide the plan before building; an unattended sync on the free plan is not
+   recommended. If aliases are adopted, `SupportChunk` would have to become an alias
+   name, which means moving the data once and changing the app and the snapshot tooling
+4. **Alerting and cost.** OPS-004 (failure and needs-review notifications), OPS-001 (spend
+   caps) and OPS-003 (dedicated service accounts) are done before any schedule is enabled
+5. **Policy tuned from experience.** At least three consecutive manual runs inside the
+   policy with no gate failure before it is trusted unattended
+6. **Overlap and repeatability.** A test shows two concurrent runs cannot both proceed, and
+   that a repeated run is a no-op
+
+Limits that stay: the video lane is never scheduled; removals are never confirmed by
+automation; screenshots are never regenerated by an automated run.
+
+**Scope:** to be set once preconditions are met
+
+#### SYNC-010 — Screenshot Provenance and Re-description (experiment; deferred)
+
+**Branch:** `feature/SYNC-010-screenshots`
+
+Depends on SYNC-001 for the stored fields. Not a prerequisite for sync: the pilot found
+that screenshot descriptions did not improve any answer and two got worse, so this is an
+experiment to run behind the retrieval gate, not a precondition.
+
+- In the hosted collection 381 of 922 chunks (41%) are keyed on `uuid5(image_url)` while
+  `image_url` is not stored. Add `image_url`, `image_hash`, `description_model` and
+  `prompt_version`, and backfill `image_url` by re-deriving `uuid5(image_url)` from each
+  live page (a one-page test matched 3 of 4 stored chunks, and 19 of 19 and 7 of 7 on two
+  more pages)
+- Add the Gemini provider path to the vision factory (it goes through OpenRouter only)
+  with `thinking_level="low"` and a `max_output_tokens` cap, and record the model that
+  wrote each description
+- Re-describe with the page-anchored prompt, with a repetition guard, decorative images
+  skipped and the application named only if visible; replace the three runaway chunks
+  (81k to 229k characters). Needs Gemini quota for roughly 380 images; run a 5-image
+  trial first
+- Re-measure with the retrieval gate and the 57-query retrieval measurement; keep the
+  change only if retrieval does not get worse
+
+Evidence: `docs/screenshot-description-pilot.md`.
+
+**Scope:** `models/chunks.py`, `ingest/web_images.py`, `models/llm.py`
+
+#### SYNC-011 — Video Lane: New and Changed Videos
+
+**Branch:** `feature/SYNC-011-video-lane`
+
+Today `make ingest` reprocesses every video and re-crawls every knowledge base on each
+run, with no per-source option. Both cases below write to the local collection and reach
+hosted through SYNC-007.
+
+- **New videos (first):** ingest only registry sources with no stored chunks. Chunk IDs
+  (`url|fused|start_seconds`) are new, so nothing collides and nothing existing changes.
+  Promotion treats it as a pure addition
+- **Changed videos (later):** a fingerprint (video ID, duration, title, caption hash) and
+  a pipeline version; reprocess a video only when either changes, and sanity-check the
+  stored windows against current durations
+- Maintainer-triggered only; never part of an automated run
+
+**Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
 
 ### Phase 3: Production hardening
 
@@ -1226,12 +1382,24 @@ instances 1 limits throughput, not spend.
 
 - State the recovery point and who runs the backup. The backup needs the admin key, which
   Cloud Run must never hold, so it runs from the maintainer machine: before every
-  promotion (already required by SYNC-005) and on a fixed cadence in between
+  promotion (already required by SYNC-007) and on a fixed cadence in between
 - Rehearse a restore from the bucket into a fresh local volume and compare it with the
   hosted collection. Done once on 2026-11-13: 922 objects, identical UUIDs, text and
   vectors. Repeat it on the cadence and after any server upgrade
-- Check the Weaviate Cloud cluster tier in its console: lifetime, durability promises,
-  built-in backups and the cost of moving up. Record the answer here
+- **Free-plan lifecycle (checked 2026-11-16, pricing page and cluster docs):** a free
+  cluster is suspended after 7 days of inactivity (reactivated in the Weaviate Cloud
+  console, and until then the app cannot read its data) and permanently deleted after 30
+  days of total inactivity, with one warning email a day before. The docs do not say what
+  counts as activity, so whether colleagues' questions keep the cluster alive is unknown.
+  The free plan has no native backups, no replication and best-effort availability, so
+  the GCS snapshot is the only recovery path
+- Do now, ahead of the rest of Phase 3: confirm which address receives Weaviate's
+  warning emails; add the cluster state to `make sync-preflight`; test whether a
+  scheduled read-only query counts as activity before relying on it; keep the newest
+  snapshot younger than the suspension window
+- Record the decision on moving to the Flex plan ($45 per month minimum: 7-day backups,
+  replication, 99.5% availability, 1,000 collections) and the trigger for it, which is
+  SYNC-009 or the first suspension
 - Verify the bucket versioning and the keep-2 rule actually retain the expected objects
   after several backups
 
@@ -1296,14 +1464,21 @@ Sync
 - An unchanged source costs no embedding calls
 - The deployed app serves new content without a redeploy
 - A pre-sync snapshot of the hosted collection exists before every promotion
-- Cloud Run never holds write credentials
+- The serving app never holds write credentials
+- Apply executes exactly the plan that was reviewed, and refuses a plan whose registry or
+  ledger generation has moved
+- Every run leaves a manifest, and the page ledger changes only after a verified run
+- A promotion copies vectors from local and makes no embedding calls
+- Two runs cannot overlap
+- Every sync command has machine-readable output and distinct exit codes
 - A maintainer can run a preflight that reports missing tools, keys, quota, version drift
   and local-versus-hosted differences before anything changes
 - The local and hosted collections are verified identical after every promotion
 - Colleagues see no outage while a promotion runs
 - A failed promotion can be rolled back from the pre-promotion snapshot
 
-**Out of scope:** scheduled or unattended sync (candidate Epic 12), distributed tracing or
+**Out of scope:** running the sync unattended on a schedule (SYNC-009 is a stub that waits
+for its preconditions; the video lane is never scheduled), distributed tracing or
 an external log platform beyond Cloud Logging, embedding-model migration, multi-tenant
 sync, and live webhooks from the content source.
 
@@ -1323,8 +1498,8 @@ sync, and live webhooks from the content source.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability, Hosted Content Sync and Production Hardening | 20 | in progress (Phase 1 and SYNC-000 done and deployed; 16 open) | 87 |
-| **Total** | **58** | **10 completed, 1 in progress** | **334 current** |
+| 11 — Observability, Hosted Content Sync and Production Hardening | 21 | in progress (Phase 1 and SYNC-000 done and deployed; SYNC-002 next; 17 open) | ~148 |
+| **Total** | **59** | **10 completed, 1 in progress** | **395 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
