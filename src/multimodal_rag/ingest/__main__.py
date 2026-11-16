@@ -13,8 +13,9 @@ from pydantic import SecretStr
 
 from multimodal_rag.env_check import duplicate_env_keys
 from multimodal_rag.ingest.cookies import youtube_cookies
+from multimodal_rag.ingest.template import check_template
 from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
-from multimodal_rag.ingest.web import crawl_knowledge_base, split_by_sections
+from multimodal_rag.ingest.web import chunk_page, crawl_knowledge_base
 from multimodal_rag.ingest.web_images import fetch_image_chunks
 from multimodal_rag.ingest.youtube import fetch_transcript_chunks
 from multimodal_rag.logging_config import configure_logging
@@ -183,14 +184,20 @@ def _run(settings: AppSettings, cookies_file: str) -> None:
                 total_failed += 1
                 continue
 
+            # Ingest and sync share one normaliser and chunker, so they cannot diverge.
+            report = check_template({p["url"]: p["content"] for p in pages})
+            if report.needs_review:
+                for line in report.lines():
+                    logger.warning("[%s] %s", kb_label, line.strip())
+
             for page in pages:
                 page_url = page["url"]
                 page_label = f"kb:{kb.name}|{page_url}"
                 try:
-                    web_chunks = split_by_sections(
-                        content=page["content"],
-                        source_url=page_url,
-                        source_name=kb.name,
+                    web_chunks = chunk_page(
+                        page["content"],
+                        page_url,
+                        kb.name,
                         target_tokens=settings.chunk_size,
                     )
                     chunks = [SupportChunk.from_web_chunk(c) for c in web_chunks]

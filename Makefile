@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report sync-preflight sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report sync-preflight sync-inventory sync-preview sync-plan sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -42,6 +42,9 @@ help:
 	@echo "  make purge-video            - Delete all video chunks"
 	@echo "  make purge-web              - Delete all web chunks"
 	@echo "  make sync-preflight        - Read-only readiness report (LOCAL_ONLY=1 skips cloud)"
+	@echo "  make sync-inventory        - Read-only: what changed upstream since the ledger (VERIFY=1, INIT=1)"
+	@echo "  make sync-preview          - Read-only: fetch changed pages and show the chunk difference"
+	@echo "  make sync-plan             - Build and keep a hashed sync plan (FROM_RUN=, NO_UPLOAD=1)"
 	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
@@ -204,6 +207,15 @@ ingest:
 
 sync-preflight:
 	@uv run python -m multimodal_rag.preflight $(if $(LOCAL_ONLY),--local-only,)
+
+sync-inventory:
+	@uv run python -m multimodal_rag.sync.report $(if $(VERIFY),--verify,) $(if $(INIT),--init-ledger,)
+
+sync-preview:
+	@uv run python -m multimodal_rag.sync.preview $(if $(VERIFY),--verify,) $(if $(ONLY),--only $(ONLY),) $(if $(FROM_RUN),--from-run $(FROM_RUN),)
+
+sync-plan:
+	@uv run python -m multimodal_rag.sync.plan_cli $(if $(VERIFY),--verify,) $(if $(ONLY),--only $(ONLY),) $(if $(FROM_RUN),--from-run $(FROM_RUN),) $(if $(NO_UPLOAD),--no-upload,)
 
 sync-gate:
 	@uv run python -m multimodal_rag.retrieval_gate

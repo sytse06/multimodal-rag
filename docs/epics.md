@@ -773,7 +773,7 @@ Full detail, facts and assumptions: `docs/content-update-workflow.md`.
 | Support colleague | Uses the hosted app with the read-only viewer key. Needs no outage while content is updated. Never runs ingestion. |
 | Maintainer | Owns the sources, runs the refresh and the promotion, holds the Firecrawl, Mistral, vision and admin keys, and decides what goes live. |
 | Operator | Deploys the app, keeps the schema compatible, reads the Phase 1 logs. The same person as the maintainer today. |
-| Content owner | Edits the documentation and videos. Not a system user; their change rate sizes the workload (about 11 edits, 45 new pages and 14 removals in eight months). |
+| Content owner | Edits the documentation and videos. Not a system user; their change rate sizes the workload (about 11 edits, 7 new pages and 1 removal in eight months). |
 
 The sync is **two stages**, because the local Docker collection and the hosted collection
 are identical today (922 UUIDs, identical text) and play different roles:
@@ -889,6 +889,18 @@ story below.
    and the cookies expire.
 9. **Determinism.** Hash inputs, never regenerated outputs; fingerprints exclude
    `ingested_at`; a run never re-describes an image that did not change.
+10. **`make ingest` and `make sync` are the same pipeline.** They share one normaliser
+    and one chunker (`chunk_page`), so a page chunks identically whichever path wrote
+    it. A test pins that ingest uses the shared function.
+11. **Designed for template change.** The normaliser recognises the site template by its
+    wording, so every run checks that it still does (`check_template`): the share of
+    fetched pages whose byline and footer rules still match must stay at 90% or more; a
+    footer cut larger than 1,500 characters is not trusted and the page is flagged and
+    left whole; and any paragraph that repeats on at least half of the fetched pages
+    (three or more) and was not removed is reported as probable new boilerplate. A
+    finding makes the plan need review (exit code 10) instead of silently chunking the
+    new boilerplate into every page. Ingest logs the same findings as warnings. A short
+    page is reported but is not a template failure
 
 #### Order of work
 
@@ -955,15 +967,17 @@ SYNC-010 requires stored values.
   markers for fields that cannot be known. Run it on the local collection with
   metadata-only `data.update`, verify texts and vectors are unchanged, then promote
   (design note, Conversion of the existing chunks)
-- Strip the YouTube player boilerplate (41 chunks on 21 pages) before chunking and keep
-  the embedded video IDs as page metadata; the change takes effect as pages are recrawled
+- Keep the embedded video IDs as page metadata. The header and footer boilerplate is
+  now removed by the normaliser in SYNC-002; the YouTube player text that March captured
+  is no longer returned by fresh scrapes, and the existing chunks keep it until a
+  rebaseline
 - Write every property on each object, because an overwrite is a full replace
   (`data.replace` or `batch.add_object` by explicit UUID); use `data.update` for
   metadata-only changes
 
 **Scope:** `models/chunks.py`, `store/weaviate.py`, `ingest/web.py`
 
-#### SYNC-002 — Page Ledger, Inventory and Plan (read-only; build first)
+#### SYNC-002 — Page Ledger, Inventory and Plan (built; read-only)
 
 **Branch:** `feature/SYNC-002-sync-plan`
 
@@ -971,33 +985,98 @@ Writes nothing to Weaviate. It answers, before any change is built, how much has
 changed and what the crawl missed.
 
 - **Baseline ledger.** Build it once from the local collection (verified identical to
-  hosted by the preflight): per stored page its URL, knowledge base, text fingerprint
-  (SHA-256 over the chunk texts in position order, without `ingested_at`), chunk count
-  and `ingested_at`. Write it to the bucket under `ledger/`. Today the only record of
-  the 160 stored pages (hydrosym 99, hydroman 48, hydrocam 13) is `source_url` on each
-  chunk
+  hosted by the preflight): per stored page its URL, knowledge base, text-chunk count,
+  frozen-chunk count and `ingested_at`, with the text fingerprint left **null**. Write it
+  to the bucket under `ledger/`, created exactly once (`--if-generation-match=0`). Today
+  the only record of the 160 stored pages (hydrosym 99, hydroman 48, hydrocam 13) is
+  `source_url` on each chunk. **Telling the layers apart:** screenshot description chunks
+  are stored with `source_type="web"` like page text, so no property separates them. A
+  chunk is page text only if its UUID re-derives as `uuid5(url|index)`; all 327 text
+  chunks do, with contiguous positions on every page, and the other 381 (the screenshots)
+  do not. Sync treats every non-derivable chunk as frozen
 - **Inventory.** Capture each knowledge-base sitemap (URL and `lastmod`) to
   `captures/<timestamp>/`. The registry holds only root URLs; the pages come from the
   sitemap, never from the crawl
 - **Classify** each page: modified (`lastmod` newer than the ledger, or than
   `ingested_at` for the baseline), new (in the sitemap, not stored), removal candidate
   (stored, not in the sitemap), unchanged. Pages without a `lastmod` are always
-  refetched; `--verify` refetches everything. Expect roughly 11 modified, 45 new and 14
-  removal candidates, with 135 unchanged and not fetched
+  refetched; `--verify` refetches everything. Measured 2026-11-16 (in-scope `/article/`
+  pages, exact host match): 11 modified, 12 not stored, 1 removal candidate, 148
+  unchanged and not fetched. Two cautions: the plan must filter the sitemap to the same
+  `/article/` scope as the crawler, and it must match on the exact host (hydroman article
+  slugs contain "hydrosym")
 - **The crawl cap is a defect.** `ingest/__main__.py` crawls `limit=100` per knowledge
-  base and hydrosym holds 99 pages, so many of the 45 "new" pages are probably pages past
-  that cap (unverified). Sync never uses the cap: the plan lists the pages, and only
+  base and hydrosym holds 99 pages against 109 in its sitemap. Of the 12 pages not stored, 5
+  are old build release notes (`lastmod` 2025-11-10) that existed at the March ingest, which
+  is consistent with the cap but could equally be empty or failed scrapes; 7 are newer. Sync never uses the cap: the plan lists the pages, and only
   those are fetched. The plan reports sitemap pages the old crawl never reached
+- **Stored text is not a change signal (checked 2026-11-16).** Re-scraping pages that
+  predate the March ingest does not reproduce their stored chunks: the site template
+  changed (a new title and "Updated … min read" header, a "Still stuck?" footer, and the
+  YouTube player text March captured is gone), and the chunk counts differ. So the
+  baseline fingerprint is null, `lastmod` is the only trigger, and a fetched page's text
+  chunks are replaced as a whole set. The fingerprint is recorded from the first fresh,
+  normalised fetch and is comparable from then on. A one-off `--rebaseline` that fetches
+  every page (about 171 Firecrawl credits) would give all pages a comparable fingerprint
+  and one consistent extraction; it is optional and decided at the first run
+- **Normalise before chunking.** The template adds page furniture that is not
+  documentation: a byline (`HydroManUpdated 27 November 20252 min readPrint`) at the top
+  and, from the feedback widget down, "Did this answer your question?", "Last updated
+  on", "No results found" and a "Still have questions? ... support@paro.nl" call to
+  action. Decided 2026-11-16 and built (`ingest/web.py`): remove the byline; cut
+  everything from `Did this answer your question?` to the end; keep the page title in the
+  first chunk; keep images in the fetched content (the screenshot pipeline reads them)
+  with an optional `strip_images` for the text chunks, off by default. The fingerprint is
+  the SHA-256 of the normalised page plus `NORMALISER_VERSION`, so it ignores the byline
+  and footer dates; bump the version when a rule changes. All 160 stored pages already
+  end with the feedback widget, and 46 chunks hold embedded YouTube player text, so the
+  index carries this noise today and only fetched pages get cleaned until a rebaseline.
+  Without the cut, the new call to action would sit in the last chunk of every refetched
+  page and match any "contact support" question equally. `make ingest` still uses the
+  old chunker and is not changed yet
 - **Fetch and chunk** each modified and new page once, store the fetched content under
-  `runs/<timestamp>/pages/`, and compute the chunk-level difference against the stored
-  chunks: added, changed and removed chunk UUIDs with fingerprints. Apply then uses this
-  stored content and fetches nothing, so it is reproducible
-- **Plan artifact**: JSON with registry and ledger generations, per-page actions,
-  chunk-level changes, expected Firecrawl pages and embedding calls, the policy result
-  and the plan hash. Also emit the changed-page canaries for the retrieval gate
-  (`retrieval_gate.from_changed_pages`)
-- `make sync-plan` prints a summary; `--json` and exit codes per the design rules. It
-  takes the run lock and writes the manifest, including the registry generation
+  `runs/<timestamp>/pages/`, and compute the per-position difference against the stored
+  chunks. Apply then uses this stored content and fetches nothing, so it is
+  reproducible. Built as `make sync-preview` (`FROM_RUN=<dir>` reuses a fetch, `ONLY=<url>`
+  limits it); the fetched pages stay under `runs/`, which is git-ignored. A position is
+  identical, **template-only** (it differs only by the new title or the removed footer),
+  changed, added, or removed (trailing positions); frozen screenshot chunks are never part
+  of the diff
+- **First preview, run 2026-11-16 against local Docker:** 23 of 23 pages fetched, the
+  byline and footer rules matched all 23. Of the 11 pages `lastmod` marks modified, **6
+  are identical to the stored text once the title and footer are set aside** and only 5
+  have content that differs: two are links that moved from the staging domain
+  `paro.1902.studio` to `paro.nl`, one lost the YouTube player text March had captured,
+  one has a real edit (new text and images), and one was not inspected. So `lastmod`
+  over-reports, and the stored index holds 4 links to the staging domain on 3 pages. The
+  12 pages not stored chunk into 1 to 7 chunks each. One page (article 276) is a
+  one-sentence stub whose content is probably an embedded video
+- **Plan artifact (built):** canonical JSON with a SHA-256 hash, the registry and ledger
+  generations it was built from, and per page: kind, reason, whether the content really
+  changed, the title, the fingerprint, stored and fresh chunk counts, the fetched file
+  with its checksum, and every position as write, skip or delete with its UUID. It also
+  carries the removal candidates (with the screenshot chunks a delete would orphan), the
+  fetch failures, the template findings, the canaries for pages whose content changed
+  (`retrieval_gate.from_changed_pages` form) and the policy result. `staleness()` tells
+  an apply why it must refuse a plan: a hash that does not match, or a registry or
+  ledger that moved. Template-only positions are written, so the index gets clean
+  chunks, but such a page does not count as content-changed
+- **Policy (built):** `config/sync-policy.yaml` limits pages to fetch, new pages, pages
+  with changed content and the share of page-text chunks deleted (30, 30, 30 and 10%).
+  A plan outside a limit, with fetch failures, with template findings, or with a
+  registry that moved since the pull needs review. Removal candidates never decide the
+  status: they always wait for an explicit confirmation (SYNC-004)
+- **`make sync-plan` (built)** fetches (or reuses `FROM_RUN=`), builds the plan, writes
+  `plan.json` and `manifest.json` next to the pages, and uploads the run to
+  `runs/<run id>/` in the bucket (`NO_UPLOAD=1` to skip); `--json` prints the plan, and
+  the exit code is 0 within policy, 10 needs review, 1 failure. It writes nothing to
+  Weaviate. The run lock is taken by the apply (SYNC-003), where it matters
+- **First plan, 2026-11-16:** the baseline ledger is saved (`ledger/pages.json`, created
+  once). The plan for the 23 pages: 12 new and 5 with changed content, 6 template-only,
+  42 positions to write, 9 skipped, no deletes, 61 screenshot chunks on those pages left
+  untouched, 17 canaries, policy within limits, one removal candidate waiting for
+  confirmation. The kept run was read back from the bucket: the hash is valid and every
+  page matches its checksum
 - Reuse per-source error isolation: one failed source never aborts the run
 
 Tests and docs ship with this story.
@@ -1041,8 +1120,10 @@ Tests and docs ship with this story.
 - A failed or implausible sitemap fetch never deletes anything: if the sitemap request
   fails, is empty, or lists far fewer pages than the ledger, the lane aborts for that
   knowledge base
-- The current data supplies real cases for tests: 14 stored pages are absent from the
-  sitemaps (removed or renamed) and 45 sitemap pages are not stored
+- The current data supplies real cases for tests: 1 stored page (hydrosym article 437) is
+  absent from the sitemap and looks renamed (articles 525 and 527 appeared after the
+  ingest), so the plan flags removal candidates that have a title-similar new page. Its
+  screenshot chunks would be orphaned by a plain delete
 
 **Scope:** `src/multimodal_rag/sync/`, registry handling
 
