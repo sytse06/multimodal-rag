@@ -1140,8 +1140,20 @@ and weights digest) is recorded in the ledger. The preflight now checks the runt
 production's pin and samples stored vectors against fresh embeddings (OK at 0.9999 or
 better, warn from 0.99, fail below), for local and, as information, for hosted; the apply
 refuses on a wrong runtime, on drifted vectors, or on a runtime that differs from the one
-the ledger was last verified against. Not yet verified: that production's Linux build
-embeds like the pinned container (the same version, but not compared directly)
+the ledger was last verified against. Production's Linux build was checked on
+2026-11-17 (below)
+
+**Production check (2026-11-17):** Cloud Run revision 00024's logs show it loading the
+same weights blob (`sha256-970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6`,
+F16, GGUF V3), running the llama-server runner on the `libggml-cpu-haswell` backend (x86
+AVX2) with a context of 2048 (Ollama asks for 8192 and logs a warning). Docker on the Mac
+runs `linux/arm64`, so the same 0.40.14 was also run as `linux/amd64` under emulation: it
+loaded the same haswell backend with the same CPU feature line, and its vectors agree with
+the arm64 container to cosine 0.999992 or better and with the Mac's 0.40.16 to 1.000000
+(40 real chunks, 8 to 707 words, none below 0.9999). Production's logs never print the
+Ollama version, so 0.40.14 rests on the Dockerfile pin and the log format, not on a log
+line. Copying the locally made vectors to hosted is therefore safe at the precision any
+two runtimes of this family give
 
 **Outcome (2026-11-17):** after `make sync-reembed` (947 vectors rewritten, nothing else
 changed, an independent sample of 120 chunks at cosine 1.000000) the gate passed on all 20
