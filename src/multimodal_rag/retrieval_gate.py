@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
 
+from multimodal_rag.checks import Check, Status
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.models.llm import create_embeddings
 from multimodal_rag.models.query import SearchResult
-from multimodal_rag.preflight import Check, Status, format_report
+from multimodal_rag.preflight import format_report
 from multimodal_rag.query.retriever import retrieve
 from multimodal_rag.store.weaviate import WeaviateStore
 
@@ -89,13 +92,10 @@ def run_gate(
     return checks
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--file", type=Path, default=CANARIES_PATH)
-    args = parser.parse_args()
-    settings = AppSettings()
+@contextmanager
+def gate_stores(settings: AppSettings) -> Iterator[tuple[WeaviateStore, WeaviateStore]]:
+    """Open (hosted, local) for the gate: hosted read-only with the viewer key."""
     embeddings = create_embeddings(settings)
-    canaries = load_canaries(args.file)
     with (
         WeaviateStore(
             weaviate_url=settings.weaviate_hosted_url,
@@ -107,6 +107,16 @@ def main() -> None:
             weaviate_url=str(settings.weaviate_url), embeddings=embeddings
         ) as local,
     ):
+        yield hosted, local
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--file", type=Path, default=CANARIES_PATH)
+    args = parser.parse_args()
+    settings = AppSettings()
+    canaries = load_canaries(args.file)
+    with gate_stores(settings) as (hosted, local):
         checks = run_gate(canaries, hosted, local, settings.top_k)
     print(format_report(checks))
     sys.exit(1 if any(c.status is Status.FAIL for c in checks) else 0)

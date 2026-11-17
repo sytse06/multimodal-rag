@@ -110,3 +110,47 @@ def test_duplicate_env_keys_reports_names_and_lines_not_values(tmp_path: Path) -
 
 def test_duplicate_env_keys_handles_a_missing_file(tmp_path: Path) -> None:
     assert duplicate_env_keys(tmp_path / "absent.env") == {}
+
+
+def _local_store() -> WeaviateStore:
+    with patch(
+        "multimodal_rag.store.weaviate.weaviate.connect_to_local",
+        return_value=MagicMock(),
+    ):
+        return WeaviateStore(
+            weaviate_url="http://localhost:8080", embeddings=MagicMock()
+        )
+
+
+def test_add_chunks_raises_when_the_batch_rejects_an_object() -> None:
+    from multimodal_rag.models.chunks import SourceType, SupportChunk
+
+    store = _local_store()
+    collection = MagicMock()
+    collection.batch.failed_objects = [MagicMock(message="vector dimension mismatch")]
+    store._collection = lambda: collection  # type: ignore[method-assign]
+    store._embed = lambda texts: [[0.1] * 3 for _ in texts]  # type: ignore[method-assign]
+    chunk = SupportChunk(
+        text="t", source_type=SourceType.WEB, source_url="https://x", source_name="n"
+    )
+
+    with pytest.raises(RuntimeError, match="rejected 1 of 1.*dimension mismatch"):
+        store.add_chunks([chunk])
+
+
+def test_delete_chunks_counts_only_what_existed_and_ignores_the_rest() -> None:
+    from uuid import uuid4
+
+    store = _local_store()
+    collection = MagicMock()
+    collection.data.delete_by_id.side_effect = [True, False, True]
+    store._collection = lambda: collection  # type: ignore[method-assign]
+
+    assert store.delete_chunks([uuid4(), uuid4(), uuid4()]) == 2
+
+
+def test_delete_chunks_is_refused_on_the_hosted_store() -> None:
+    from uuid import uuid4
+
+    with pytest.raises(PermissionError, match="hosted Weaviate"):
+        _hosted_store().delete_chunks([uuid4()])

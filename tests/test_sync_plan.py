@@ -348,3 +348,60 @@ def test_the_run_is_uploaded_under_runs_with_its_id(tmp_path: Path) -> None:
     assert calls[0][:3] == ["storage", "cp", "-r"]
     assert calls[0][-1] == "gs://bucket/runs/"
     assert where == "gs://bucket/runs/20261116T000000Z/"
+
+
+def test_each_write_carries_the_hash_of_the_text_to_write() -> None:
+    from multimodal_rag.sync.plan import sha256_text
+
+    page = url("1-cut")
+    plan = build_plan(
+        inputs([FetchedPage(page, OLD)], [Item(page, Kind.NEW, "not stored")], {})
+    )
+    fresh = {c.chunk_index: c.text for c in chunk_page(OLD, page, "KB")}
+
+    for position in plan.pages[0].positions:
+        assert position.action == "write"
+        assert position.text_sha256 == sha256_text(fresh[position.index])
+
+
+def test_skipped_and_deleted_positions_carry_no_text_hash() -> None:
+    page = url("1-cut")
+    fresh = chunk_page(OLD, page, "KB")
+    stored = {
+        i: StoredChunk(text_chunk_id(page, i), c.text) for i, c in enumerate(fresh)
+    }
+    stored[7] = StoredChunk(text_chunk_id(page, 7), "old tail")
+    plan = build_plan(
+        inputs(
+            [FetchedPage(page, OLD)],
+            [Item(page, Kind.MODIFIED, "lastmod")],
+            {page: stored},
+            Ledger(pages={page: entry(page, 2)}),
+        )
+    )
+
+    by_action = {p.action: p for p in plan.pages[0].positions}
+    assert by_action["skip"].text_sha256 is None
+    assert by_action["delete"].text_sha256 is None
+
+
+def test_the_sitemap_lastmod_is_kept_per_page() -> None:
+    page = url("1-cut")
+    stamp = datetime(2026, 6, 17, 10, 0, tzinfo=timezone.utc)
+    plan = build_plan(
+        inputs(
+            [FetchedPage(page, OLD)],
+            [Item(page, Kind.NEW, "not stored", lastmod=stamp)],
+            {},
+        )
+    )
+
+    assert plan.pages[0].lastmod == stamp.isoformat()
+
+
+def test_an_older_plan_format_is_refused() -> None:
+    plan = _plan()
+    plan.version = 1
+    plan.plan_hash = compute_hash(plan)
+
+    assert "plan format 1" in staleness(plan, "7", "42")[0]
