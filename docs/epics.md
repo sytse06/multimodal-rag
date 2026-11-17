@@ -1084,10 +1084,82 @@ Tests and docs ship with this story.
 **Scope:** new `src/multimodal_rag/sync/` package (ledger, inventory, plan, policy,
 manifest), `config/sync-policy.yaml`, `Makefile`
 
-#### SYNC-003 — Apply a Plan to the Target Collection (local by default)
+#### SYNC-003 — Apply a Plan to the Target Collection (done on local, 2026-11-17)
 
 **Branch:** `feature/SYNC-003-sync-apply`
 
+**Built (2026-11-17), uncommitted:** `make sync-apply RUN=runs/<id>` validates the plan
+(hash, format 2, normaliser and chunk size, registry and ledger generations, policy again
+at apply time), takes a create-only lock in the bucket, re-derives every chunk from the
+stored pages and proves each write matches the plan's text hash, checks the collection
+still looks as the plan expects (a page already applied is skipped, so an unfinished run
+can be repeated), snapshots local into the run, writes every position and only then
+deletes by explicit UUID, verifies per page and in total (screenshots and videos
+unchanged), runs the retrieval gate with the plan's canaries, and updates the ledger only
+if all of that held. Also fixed along the way: `add_chunks` never checked for rejected
+batch objects and now raises (ingest and sync share that path). The plan now carries the
+sitemap `lastmod` and a text hash per write (format 2).
+
+**First real apply, 2026-11-17: written correctly, stopped by the gate.** 25 inserted, 17
+replaced, 0 deleted, 922 to 947 chunks, verification passed, then the gate failed on the
+weakest canary (the "import into HydroMan" question): after the apply the whole top 10 was
+different and its expected sources left the top 40. The ledger was not updated and local
+holds the applied state; hosted is untouched. **Root cause: vector drift.** The chunks
+written today match their own stored vectors exactly (cosine 1.0000), but the March
+vectors do not reproduce from their own text: mean cosine 0.83 (range 0.64 to 0.92, on
+short chunks through the production embedding helper, either input format, equal norms).
+Today's embedding function differs from the one that made the March vectors, for web
+text, video and screenshot chunks alike, and the `nomic-embed-text` digest is unchanged
+(`0a109f422b47`). Fresh vectors therefore score about 0.1 higher against the same query
+than old ones and outrank them regardless of relevance, so any partial apply biases the
+ranking toward the new chunks. The embedding input changed on 2026-03-13 (`text` to
+`source_name: text`), but that does not explain it. Local Ollama is 0.40.16 and the
+production image pins 0.40.14; what generated the March vectors is not known
+
+**Cause, as far as it is known:** most likely Ollama version drift. Upstream issue
+ollama/ollama#14449 documents `nomic-embed-text` output differing across versions (about
+0.96 cosine on medium text, 0.84 on long, a casing bug from 0.13.1 fixed in the 0.30
+series). The March ingest ran on about v0.17.7 and the Mac app has since auto-updated to
+v0.40.16. Capital-heavy chunks match worst (0.88 at 1 to 3% capitals, 0.77 at 6% and up),
+but even the least capitalised only reach 0.88, so casing is a part and not the whole.
+The model weights are not the cause: the registry's current `:latest`, the Mac and
+production all serve the same blob (`970aa74c0a90`). Not proven: running v0.17.7 side by
+side was blocked by the permission classifier.
+
+**Built in response (2026-11-17):** (1) the embedding runtime is pinned in `compose.yaml`
+(`ollama/ollama:0.40.14`, the Dockerfile's version, kept equal by a test, bound to
+localhost:11435, restarted with Docker; `make ollama-up` starts it and pulls the model),
+and `EMBEDDING_BASE_URL` points embeddings at it without moving the chat models. (2) The
+pinned container and the Mac's 0.40.16 agree to cosine 0.999992 or better on 70 real
+chunks, so production's version family is safe to rely on. (3) `make sync-reembed`
+(`DRY=1` to measure) recomputes every vector from its stored text with the runtime and
+replaces only the vector, snapshots first, and reads everything back to prove properties
+and counts did not change. The dry run over all 947 chunks found 905 off-spec (web mean
+0.86, min 0.67; video mean 0.85, min 0.76). (4) An embedding fingerprint (Ollama version
+and weights digest) is recorded in the ledger. The preflight now checks the runtime against
+production's pin and samples stored vectors against fresh embeddings (OK at 0.9999 or
+better, warn from 0.99, fail below), for local and, as information, for hosted; the apply
+refuses on a wrong runtime, on drifted vectors, or on a runtime that differs from the one
+the ledger was last verified against. Not yet verified: that production's Linux build
+embeds like the pinned container (the same version, but not compared directly)
+
+**Outcome (2026-11-17):** after `make sync-reembed` (947 vectors rewritten, nothing else
+changed, an independent sample of 120 chunks at cosine 1.000000) the gate passed on all 20
+canaries. The weak "import into HydroMan" question went from rank 6 on hosted to **rank 4**
+on local, so consistent vectors improved that answer. The apply then finished its
+"nothing to write" pass and updated the ledger (generation 1794914873468520, 172 pages,
+embedding runtime recorded). Local holds 947 chunks, 25 more than hosted; hosted is
+untouched and its vectors are still the March ones (lowest 0.76, mean 0.83 against a fresh
+embedding), which the promotion (SYNC-007) replaces. Also found and fixed: a module run
+with `python -m` is loaded twice, so the preflight's `Status` and the one `embedding_check`
+imported were different enums and `is` comparisons failed silently, which could have made
+the preflight exit 0 on a FAIL; `Status` and `Check` now live in `checks.py`
+
+**Environment note:** the first write attempt of the re-embed failed because Docker
+Desktop's disk was 99% full and Weaviate set the shard read-only at 90%. Freeing the build
+cache and three obsolete images brought it to 63% and Weaviate recovered by itself. Keep
+the Docker disk below 80%: a full disk fails writes, and the pinned Ollama image alone is
+4.3 GB
 - `make sync-apply PLAN=<file>` verifies the plan hash and that the registry and ledger
   generations still match, takes the run lock, and refuses a stale plan. The core has no
   prompt; the `make` wrapper asks for confirmation unless `--yes`
