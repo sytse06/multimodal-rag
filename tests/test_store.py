@@ -135,7 +135,7 @@ class TestWeaviateStoreConnection:
         ) as connect:
             store = WeaviateStore("http://localhost:9090", MagicMock())
 
-        connect.assert_called_once_with(host="localhost", port=9090)
+        connect.assert_called_once_with(host="localhost", port=9090, grpc_port=50051)
         store.close()
         client.close.assert_called_once()
 

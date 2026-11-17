@@ -7,3 +7,4 @@ max_new_pages: 30
 max_content_changed_pages: 30
 max_deleted_chunk_share: 0.10 # of all page-text chunks in the collection
 max_removal_share_per_source: 0.10 # of one source's stored pages
+max_vector_only_updates: 25 # a promotion that only refreshes vectors is a drift signal

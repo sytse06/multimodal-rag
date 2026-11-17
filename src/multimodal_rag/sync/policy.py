@@ -19,6 +19,9 @@ class Policy(BaseModel):
     # Of one source's stored pages: more than this missing from its sitemap looks like a
     # sitemap fault, not content that was removed.
     max_removal_share_per_source: float = Field(default=0.10, ge=0, le=1)
+    # Objects whose only difference is the vector. After the one-time migration to the
+    # pinned runtime a promotion should have almost none; hundreds mean local drifted.
+    max_vector_only_updates: int = Field(default=25, ge=0)
 
 
 def load_policy(path: Path = POLICY_PATH) -> Policy:

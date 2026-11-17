@@ -1,6 +1,7 @@
 """Weaviate vector store for SupportChunk objects."""
 
 import logging
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -50,6 +51,7 @@ class WeaviateStore:
         weaviate_api_key: str = "",
         weaviate_tenant: str = "",
         allow_hosted_write: bool = False,
+        grpc_port: int = 50051,
     ) -> None:
         self._embeddings = embeddings
         self._read_only = weaviate_mode == "cloud" and not allow_hosted_write
@@ -76,6 +78,7 @@ class WeaviateStore:
                 self._client = weaviate.connect_to_local(
                     host=parsed.hostname,
                     port=parsed.port or 8080,
+                    grpc_port=grpc_port,
                 )
             else:
                 raise ValueError(f"Unsupported Weaviate mode: {weaviate_mode}")
@@ -86,6 +89,11 @@ class WeaviateStore:
                 f"Unable to connect to Weaviate ({weaviate_mode}) at "
                 f"{weaviate_url}: {exc}"
             ) from exc
+
+    @property
+    def client(self) -> Any:
+        """The underlying client, for exporting snapshots and reading the schema."""
+        return self._client
 
     def close(self) -> None:
         self._client.close()
@@ -259,6 +267,43 @@ class WeaviateStore:
             )
         logger.info("Added %d chunks to %s", added, COLLECTION_NAME)
         return added
+
+    def read_objects(self) -> list[tuple[str, dict[str, Any], list[float]]]:
+        """Every object as (uuid, properties, vector). Read-only."""
+        out = []
+        for obj in self._collection().iterator(include_vector=True):
+            raw = obj.vector
+            vector = raw["default"] if isinstance(raw, dict) else raw
+            out.append((str(obj.uuid), dict(obj.properties), list(vector)))
+        return out
+
+    def put_objects(
+        self, objects: list[tuple[str, dict[str, Any], list[float]]]
+    ) -> int:
+        """Write objects verbatim by explicit UUID, vectors included (a full replace).
+
+        Used to copy a collection state as it is, so nothing is embedded here. Raises if
+        Weaviate rejects any object.
+        """
+        self._require_writable("write objects")
+        if not objects:
+            return 0
+        collection = self._collection()
+        with collection.batch.dynamic() as batch:
+            for uuid, properties, vector in objects:
+                props = {
+                    key: (value.isoformat() if isinstance(value, datetime) else value)
+                    for key, value in properties.items()
+                }
+                batch.add_object(properties=props, vector=vector, uuid=uuid)
+        failed = list(collection.batch.failed_objects)
+        if failed:
+            raise RuntimeError(
+                f"Weaviate rejected {len(failed)} of {len(objects)} objects;"
+                f" first error: {failed[0].message}"
+            )
+        logger.info("Wrote %d objects verbatim to %s", len(objects), COLLECTION_NAME)
+        return len(objects)
 
     def delete_chunks(self, uuids: list[UUID]) -> int:
         """Delete chunks by UUID. A UUID that is already gone is not an error."""

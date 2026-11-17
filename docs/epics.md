@@ -1258,9 +1258,72 @@ procedure is the maintainer runbook in SYNC-008. The README, `docs/pipeline.md` 
 `docs/gcp-deployment.txt` updates, and the "out of scope" lists in Epics 9 and 10, are
 done at the end of SYNC-007.
 
-#### SYNC-007 — Promote Local to Hosted
+#### SYNC-007 — Promote Local to Hosted (done, 2026-11-17)
 
 **Branch:** `feature/SYNC-007-promote`
+
+**Built (2026-11-17), uncommitted:** `make promote-plan` (`TARGET=hosted` or `rehearsal`)
+reads local and the target (hosted with the viewer key) and writes nothing. It classifies
+every object: add, replace (properties differ), refresh the vector (only the vector
+differs), delete, unchanged. The plan holds ids and counts, and a digest of every object
+on both sides (id, properties, vector), because hosted has no generation number.
+`make promote RUN=<dir>` recomputes both digests and refuses if either side moved. Then it
+takes a backup of the target, writes **one canary object first** (read back and compared;
+any mismatch aborts before anything else is written), writes the rest in batches of 100,
+deletes last by UUID, and verifies **every object** (ids, properties, vectors, cosine
+0.999999), runs the retrieval gate with local as the baseline, and takes a backup after.
+Everything is written by one primitive, `WeaviateStore.put_objects`, which copies a local
+object verbatim by UUID with its own vector (a full replace, checked for rejected objects)
+and exists only behind `allow_hosted_write`. Vector refreshes are written before replaces
+and adds, so a run that stops part-way leaves the old content on current vectors, a better
+state than any other. A stopped run changes the target, so its plan is refused as stale;
+a new plan is the remaining difference. A policy limit (`max_vector_only_updates`, 25)
+makes a promotion that only refreshes vectors need review, because after this one-time
+migration that would mean local drifted. `make promote-rollback SNAPSHOT_DIR=<dir>`
+writes a snapshot's objects back verbatim and deletes the rest, in place
+
+**The real plan (2026-11-17):** local 943, hosted 922: 25 to add, 17 to replace, **901
+vector refreshes**, 4 to delete (article 437), 0 unchanged. It needs review because of the
+901 vector-only updates, which is this migration (March vectors against the pinned runtime).
+Hosted's exported vectors are byte-identical to local's earlier export, so vector equality
+is checkable (hosted returns the stored full-precision vectors, not the 1-bit RQ copies)
+
+**Rehearsal, off production:** a second local Weaviate 1.39.13 (`weaviate-rehearsal`
+profile, ports 8081 and 50052, `make rehearsal-up`, `rehearsal-seed`, `rehearsal-down`)
+seeded from the hosted backup of 2026-11-17 with the `hfresh` index (the open-source
+server accepts it). Its digest equals hosted's. The real promotion wrote 943 objects and
+deleted 4, verification and the gate passed, and a new plan shows 943 unchanged. The
+rollback restored the pre-promotion snapshot and the digest equals the original hosted
+digest, with the identical plan hash. Not rehearsable off production: the exact hosted
+index, which uses RQ 1-bit quantization, which is why the first write on hosted is a
+canary (`CANARY_ONLY=1`), and the network latency of 947 writes
+
+**Production sequence, each step waits for a go-ahead:** (1) `make promote-plan`, review;
+(2) `make promote RUN=<plan> CANARY_ONLY=1 ACCEPT_REVIEW=1` writes and verifies one
+object, then stops (the plan is then stale, so plan again); (3) `make promote RUN=<new
+plan> ACCEPT_REVIEW=1` writes the rest, verifies, gates and takes the after-backup. Pick a
+quiet moment: during the batch some hosted chunks hold new vectors and some old, which
+biases ranking toward the new ones. Every backup taken before this promotion holds the
+March vectors, so the after-backup is the one to restore from later
+
+**Production result (2026-11-17):** the canary wrote one object (backup
+`snapshots/20261117T125131Z-promote-before`, verified equal to local, nothing else
+changed). The full run then wrote 942 objects and deleted 4 (article 437), after its own
+backup (`...125404Z-promote-before`), verified every object, passed the gate, and took the
+after-backup (`snapshots/20261117T125431Z-promote-after`). Independent checks afterwards:
+a new plan shows 943 unchanged and local's digest equals hosted's, the preflight shows 26
+ok and no warning (hosted vectors match a fresh embedding at 1.0000), the app answers, and
+hosted holds 943 chunks with 214 video chunks and none of the removed article. **Restore
+only from `20261117T125431Z-promote-after` or later**: the three older backups
+(`20261113T130911Z-cloud`, `20261113T131338Z-cloud`, `20261117T120502Z-cloud`) and both
+`promote-before` backups hold the March vectors, so restoring one would bring the drift
+back. Hosted now equals local, which is the state every later sync starts from
+
+**Checked by a person (2026-11-17):** the maintainer asked the three canary questions in the
+production app after the promotion and found the last one, the "import a HydroSym schematic
+into HydroMan" question, improved. That matches the gate: its best source ranked 6 on
+hosted before and 4 on local, which hosted now equals
+
 
 - `make promote-plan` compares the local and hosted collections by UUID and text
   fingerprint (the same fingerprint as the preflight) and writes a promotion plan in the
