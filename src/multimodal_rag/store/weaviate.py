@@ -35,6 +35,8 @@ OPTIONAL_PROPERTIES = {
     "document_id": "text",
     "content_hash": "text",
     "image_url": "text",
+    "source_lastmod": "date",
+    "embedded_video_ids": "text[]",
 }
 
 
@@ -136,6 +138,48 @@ class WeaviateStore:
             ],
         )
         logger.info("Created collection %s", COLLECTION_NAME)
+
+    def missing_properties(self) -> list[str]:
+        """The optional properties the collection does not have yet. Read-only."""
+        have = {str(p.name) for p in self._collection().config.get().properties}
+        return [name for name in OPTIONAL_PROPERTIES if name not in have]
+
+    def extend_schema(self) -> list[str]:
+        """Add every optional property the collection lacks, with its declared type.
+
+        Properties are created here, never by a write, because Weaviate would guess a
+        type (text for a date) that a populated collection cannot change. Weaviate
+        cannot remove a property again. Returns the names added.
+        """
+        self._require_writable("extend the collection schema")
+        collection = self._collection()
+        added = []
+        for name in self.missing_properties():
+            collection.config.add_property(
+                wvc.Property(
+                    name=name, data_type=wvc.DataType(OPTIONAL_PROPERTIES[name])
+                )
+            )
+            added.append(name)
+        logger.info("Added properties %s to %s", added, COLLECTION_NAME)
+        return added
+
+    def update_metadata(self, updates: dict[str, dict[str, Any]]) -> int:
+        """Change properties of existing objects by UUID, leaving text and vector alone.
+
+        ``updates`` maps a UUID to only the properties to set. Returns how many objects
+        were updated.
+        """
+        self._require_writable("update metadata")
+        collection = self._collection()
+        for uuid, properties in updates.items():
+            props = {
+                key: (value.isoformat() if isinstance(value, datetime) else value)
+                for key, value in properties.items()
+            }
+            collection.data.update(uuid=uuid, properties=props)
+        logger.info("Updated metadata of %d objects", len(updates))
+        return len(updates)
 
     def _collection(self) -> Any:
         collection = self._client.collections.get(COLLECTION_NAME)
@@ -249,6 +293,14 @@ class WeaviateStore:
                     "timestamp_seconds": chunk.timestamp_seconds,
                     "section_heading": chunk.section_heading or "",
                     "url_hash": chunk.url_hash,
+                    "document_id": chunk.document_id,
+                    "content_hash": chunk.content_hash,
+                    "source_lastmod": (
+                        chunk.source_lastmod.isoformat()
+                        if chunk.source_lastmod
+                        else None
+                    ),
+                    "embedded_video_ids": chunk.embedded_video_ids,
                     "ingested_at": chunk.ingested_at.isoformat(),
                 }
                 batch.add_object(

@@ -107,6 +107,7 @@ def _plan(settings: AppSettings, target_name: str) -> None:
             target_name=target_name,
             policy=load_policy(),
             embedding=fingerprint.as_dict(),
+            missing_properties=target.missing_properties(),
         )
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = RUNS / f"promote-{target_name}-{stamp}"
@@ -183,6 +184,8 @@ def _run(settings: AppSettings, args: argparse.Namespace) -> None:
             sys.exit(1)
     print(f"\nstatus: {result.status}")
     print(f"  written {result.written}, deleted {result.deleted}")
+    if result.schema_added:
+        print(f"  schema: added {', '.join(result.schema_added)} (cannot be removed)")
     backups = {"before": result.backup_before, "after": result.backup_after}
     for label, where in backups.items():
         if where:

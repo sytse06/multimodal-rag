@@ -1,7 +1,12 @@
 # Content Update Workflow
 
-Status: **proposal**. Written 2026-11-13. Facts marked "verified" were checked that day;
-decisions are listed in section 8 and need confirmation before the stories are built.
+Status: the operating model, written as a proposal on 2026-11-13 and since built. **The
+step-by-step procedure is `docs/maintainer-runbook.md`; what each story delivered, and
+what was found building it, is in `docs/epics.md` (Epic 11).** Sections 3, 8 and 9 describe
+the starting point and the open questions of 2026-11-13 and are partly superseded (for
+example, the page counts in section 3 were corrected, and the hash-first design of
+section 6 was replaced by a page ledger and plan). Facts marked "verified" were checked on
+that day.
 
 ## 1. Why this note exists
 

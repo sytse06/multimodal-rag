@@ -55,6 +55,17 @@ def page_chunk_ids(collection: Any, url: str) -> list[str]:
     return [str(o.uuid) for o in response.objects]
 
 
+def page_videos(collection: Any, url: str) -> list[str]:
+    """Every video a page's stored chunks link, as document ids."""
+    response = collection.query.fetch_objects(
+        filters=Filter.by_property("source_url").equal(url), limit=1000
+    )
+    found: set[str] = set()
+    for obj in response.objects:
+        found.update(obj.properties.get("embedded_video_ids") or [])
+    return sorted(found)
+
+
 def stored_chunks(collection: Any, url: str) -> dict[int, StoredChunk]:
     response = collection.query.fetch_objects(
         filters=Filter.by_property("source_url").equal(url), limit=1000

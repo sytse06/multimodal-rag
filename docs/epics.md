@@ -947,7 +947,7 @@ would make Cloud Run fail its startup check and return 503.
 
 **Scope:** `src/multimodal_rag/store/weaviate.py`, `tests/test_store.py`
 
-#### SYNC-001 — Stored Identity, Conversion and Chunk Quality (deferred)
+#### SYNC-001 — Stored Identity, Conversion and Chunk Quality (built; local converted, hosted not yet)
 
 **Branch:** `feature/SYNC-001-chunk-identity`
 
@@ -976,6 +976,52 @@ SYNC-010 requires stored values.
   metadata-only changes
 
 **Scope:** `models/chunks.py`, `store/weaviate.py`, `ingest/web.py`
+
+**Built (2026-11-17), on the epic's bullets only** (the design note's screenshot and video
+fields wait for SYNC-010 and SYNC-011, which read them):
+
+- `models/identity.py`: `document_id` is `uuid5` of a **canonical** URL, so
+  `https://youtu.be/<id>` and `https://www.youtube.com/watch?v=<id>` are one document (the 9
+  `youtu.be` videos would otherwise have hashed differently). The stored `source_url` is
+  never rewritten, because chunk UUIDs derive from it. `content_hash` is the full SHA-256 of
+  the stored text. For a screenshot chunk that text is a generated description, so this hash
+  describes what is stored and **must never decide a re-description** (D7).
+- `embedded_video_ids` is a list of the **`document_id`s** of the videos a page links, on
+  every web chunk of the page (the maintainer's point: a video id is a document id, not a
+  second identity). All 19 videos embedded in pages resolve to an ingested video.
+- `source_lastmod` (date): set on write by `chunk_page`/apply, and by the conversion from the
+  sitemap for pages the inventory finds unchanged; a stored value is never overwritten with
+  nothing. Apply also gives every **other** chunk of an applied page (unchanged text and
+  screenshots) the page's new `source_lastmod` and videos with a metadata-only update, so a
+  page's chunks never disagree. Videos are the **union** of what the stored page already
+  links and what the fresh scrape finds, because fresh scrapes mostly drop the links the
+  March text still has; a plain overwrite would have erased them on the first sync.
+- Every writer emits all four fields (`SupportChunk`, `add_chunks`, `chunk_page`, apply);
+  `put_objects`, the promotion digest, snapshot export and restore were already
+  property-generic. A new property reads `None` until set and an explicit `[]` reads back as
+  `[]`, so writers always send the list.
+- `WeaviateStore.extend_schema()` adds missing optional properties with their declared
+  types; writes never create them (a date would be guessed as text and cannot be changed on a
+  populated collection). `update_metadata()` is a metadata-only `data.update`
+  (verified: the vector is bit-identical afterwards).
+- `make sync-convert` (`DRY=1`): local only; snapshot, extend schema, update, then verify
+  object count and a checksum of every text and vector.
+- **Done on local:** 943 chunks converted (`runs/convert-20261117T132848Z`), 729 web chunks
+  with `source_lastmod`, 118 web chunks on pages that link a video, 25 videos with 25
+  distinct `document_id`s. The promotion plan sees 943 replaces and 0 vector refreshes.
+- **Startup check:** the app's `validate_compatibility` tolerates unknown properties; the
+  code of commit `d471a57` (in the deployed revision `00024`, inferred from timestamps)
+  passes against the converted collection.
+- **Promotion creates the target's properties:** the plan lists the properties the target
+  lacks and needs review for it (a property cannot be removed again); `promote` calls
+  `extend_schema()` after the backup and before the canary, so a write never auto-creates a
+  property with a guessed type. `promote-rollback` leaves the added properties in place.
+- **Checked against the deployed code:** commit `d471a57`'s `validate_compatibility`,
+  `search` and retriever all work against the converted collection.
+- **Not done:** hosted. It still has the original 8 properties. Next: rehearse (seed the
+  rehearsal Weaviate from a hosted backup), then canary, then the full promotion, each with
+  the maintainer's go-ahead. The promote policy does not limit a plan of property-only
+  replaces, so the plan must be read.
 
 #### SYNC-002 — Page Ledger, Inventory and Plan (built; read-only)
 
@@ -1421,8 +1467,12 @@ Tests and docs ship with this story.
   its best source at 6 of 10, so it is the first to flip
 - Retrofit `--json` output and the shared exit codes (0, 10, 1) to `make sync-preflight`
   and `make sync-gate`, so the automation story can call them
-- Write the maintainer runbook: prerequisites, the two stages, rollback and who decides
-  what
+- Done: the maintainer runbook, `docs/maintainer-runbook.md` (rules, who decides, the
+  checks before a run, Stage A, Stage B, rollback, a failure table, routine, a command
+  reference). `tests/test_runbook.py` fails if it names a `make` target, a variable or a
+  file that does not exist, so it cannot drift from the Makefile unnoticed. Found while
+  writing it: `make snapshot-bootstrap-cloud` passes no `--replace`, so it cannot be used
+  to replace an existing hosted collection
 
 **Scope:** `config/`, `Makefile`, `compose.yaml`, `docs/`, preflight module
 

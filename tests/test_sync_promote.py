@@ -60,6 +60,15 @@ class FakeSide:
         self.events: list[str] = []
         self.drop_after: int | None = None  # silently drop writes after N calls
         self.alter_first = False
+        self.missing: list[str] = []  # optional properties the schema lacks
+
+    def missing_properties(self) -> list[str]:
+        return list(self.missing)
+
+    def extend_schema(self) -> list[str]:
+        self.events.append("extend-schema")
+        added, self.missing = self.missing, []
+        return added
 
     def read_objects(self) -> list[Row]:
         return list(self.rows.values())
@@ -121,6 +130,7 @@ def plan_for(local: FakeSide, target: FakeSide, policy: Policy | None = None):
         target_name="hosted",
         policy=policy or RELAXED,
         embedding=FINGERPRINT,
+        missing_properties=target.missing_properties(),
     )
 
 
@@ -431,3 +441,50 @@ def test_the_plan_hash_changes_with_its_content() -> None:
 
     assert compute_hash(plan) != original
     assert uuid4() != uuid4()
+
+
+def test_a_target_missing_properties_needs_review_and_says_it_is_one_way() -> None:
+    local, target = sides()
+    target.missing = ["source_lastmod", "embedded_video_ids"]
+
+    plan = plan_for(local, target)
+
+    assert plan.missing_properties == ["source_lastmod", "embedded_video_ids"]
+    assert plan.policy.status == "needs_review"
+    assert any("cannot remove" in r for r in plan.policy.reasons)
+
+
+def test_a_complete_schema_adds_no_review_reason() -> None:
+    local, target = sides()
+
+    assert plan_for(local, target).missing_properties == []
+
+
+def test_the_schema_is_extended_after_the_backup_and_before_the_first_write() -> None:
+    local, target = sides()
+    target.missing = ["source_lastmod"]
+
+    result = promote(
+        plan_for(local, target),
+        deps(local, target),
+        PromoteOptions(accept_review=True),
+    )
+
+    assert result.schema_added == ["source_lastmod"]
+    events = target.events
+    assert events.index("backup-before") < events.index("extend-schema")
+    assert events.index("extend-schema") < events.index("put")
+
+
+def test_nothing_is_extended_when_nothing_is_written() -> None:
+    local = FakeSide([row(1)])
+    target = FakeSide([row(1)])
+    target.missing = ["source_lastmod"]
+
+    result = promote(
+        plan_for(local, target),
+        deps(local, target),
+        PromoteOptions(accept_review=True),
+    )
+
+    assert result.status == "nothing-to-do" and "extend-schema" not in target.events

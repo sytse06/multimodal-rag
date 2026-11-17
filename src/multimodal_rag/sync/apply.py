@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from multimodal_rag.checks import Check, Status
@@ -56,6 +56,7 @@ class ApplyFailed(RuntimeError):
 class StoreLike(Protocol):
     def add_chunks(self, chunks: list[SupportChunk]) -> int: ...
     def delete_chunks(self, uuids: list[UUID]) -> int: ...
+    def update_metadata(self, updates: dict[str, dict[str, Any]]) -> int: ...
     def validate_compatibility(self, expected_vector_dimension: int = 768) -> None: ...
 
 
@@ -92,6 +93,8 @@ class ApplyDeps:
     fixed_canaries: list[Canary] = field(default_factory=list)
     # Every chunk id the collection holds for a page, screenshots included.
     page_chunk_ids: Callable[[str], list[str]] = lambda url: []
+    # Video document ids the stored chunks of a page already link.
+    stored_videos: Callable[[str], list[str]] = lambda url: []
     # (fingerprint of the embedding runtime, reasons the index is not consistent)
     embedding_check: Callable[[], tuple[dict[str, str], list[str]]] = lambda: ({}, [])
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
@@ -251,7 +254,10 @@ def prepare(plan: Plan, run_dir: Path) -> list[PageWork]:
         if markdown is None or sha256_text(markdown) != page.page_sha256:
             problems.append(f"{page.url}: the stored page does not match its checksum")
             continue
-        fresh = chunk_page(markdown, page.url, page.kb_name, plan.chunk_size)
+        lastmod = datetime.fromisoformat(page.lastmod) if page.lastmod else None
+        fresh = chunk_page(
+            markdown, page.url, page.kb_name, plan.chunk_size, source_lastmod=lastmod
+        )
         chunks = {c.chunk_index: c for c in fresh if c.chunk_index is not None}
         if len(chunks) != page.fresh_chunks:
             problems.append(f"{page.url}: re-chunking gives a different chunk count")
@@ -309,17 +315,40 @@ def execute(
     Returns (inserts, replaces, position deletes).
     """
     chunks, deletes, inserts = [], [], 0
+    refresh: dict[str, dict[str, Any]] = {}
     for work in works:
+        url = work.page.url
+        sample = next(iter(work.chunks.values()), None)
+        # Fresh scrapes often drop video links the stored text still has, so keep both.
+        fresh = set(sample.embedded_video_ids) if sample else set()
+        videos = sorted(fresh | set(deps.stored_videos(url)))
+        leaving: set[str] = set()
         for position in work.page.positions:
             if position.action == WRITE:
-                support = SupportChunk.from_web_chunk(work.chunks[position.index])
+                chunk = work.chunks[position.index].model_copy(
+                    update={"embedded_video_ids": videos}
+                )
+                support = SupportChunk.from_web_chunk(chunk)
                 if str(support.chunk_id) != position.uuid:
                     raise ApplyFailed(f"{work.page.url}: chunk id differs from plan")
                 chunks.append(support)
+                leaving.add(position.uuid)
                 inserts += position.status == ADDED
             elif position.action == DELETE:
                 deletes.append(UUID(position.uuid))
+                leaving.add(position.uuid)
+        if sample is not None:
+            # Every other chunk of the page, screenshots included, keeps its text but
+            # now belongs to this version of the page.
+            values: dict[str, Any] = {"embedded_video_ids": videos}
+            if sample.source_lastmod is not None:
+                values["source_lastmod"] = sample.source_lastmod
+            for uuid in deps.page_chunk_ids(url):
+                if uuid not in leaving:
+                    refresh[uuid] = values
     deps.store.add_chunks(chunks)
+    if refresh:
+        deps.store.update_metadata(refresh)
     deps.store.delete_chunks(deletes)
     if removal_uuids:
         deps.store.delete_chunks(removal_uuids)

@@ -49,6 +49,8 @@ class Side(Protocol):
 
 class Target(Side, Protocol):
     def put_objects(self, objects: list[Row]) -> int: ...
+    def missing_properties(self) -> list[str]: ...
+    def extend_schema(self) -> list[str]: ...
     def delete_chunks(self, uuids: list[UUID]) -> int: ...
 
 
@@ -102,6 +104,7 @@ class PromotePlan(BaseModel):
     vector: list[str] = Field(default_factory=list)  # only the vector differs
     delete: list[str] = Field(default_factory=list)
     unchanged: int = 0
+    missing_properties: list[str] = Field(default_factory=list)  # the target lacks them
     policy: PolicyResult = Field(default_factory=lambda: PolicyResult(status="within"))
     plan_hash: str = ""
 
@@ -134,6 +137,7 @@ def build_plan(
     target_name: str,
     policy: Policy,
     embedding: dict[str, str] | None = None,
+    missing_properties: list[str] | None = None,
 ) -> PromotePlan:
     plan = PromotePlan(
         target=target_name,
@@ -144,6 +148,7 @@ def build_plan(
         embedding=embedding or {},
         add=sorted(local.keys() - target.keys()),
         delete=sorted(target.keys() - local.keys()),
+        missing_properties=list(missing_properties or []),
     )
     for uuid in sorted(local.keys() & target.keys()):
         mine, theirs = local[uuid], target[uuid]
@@ -169,6 +174,11 @@ def evaluate(plan: PromotePlan, policy: Policy) -> PolicyResult:
             f"{len(plan.vector)} objects differ only in their vector (limit"
             f" {policy.max_vector_only_updates}): expected after a re-embed or a"
             " runtime change, not in a normal promotion"
+        )
+    if plan.missing_properties:
+        reasons.append(
+            f"adds {', '.join(plan.missing_properties)} to the {plan.target} schema;"
+            " Weaviate cannot remove a property again"
         )
     return PolicyResult(status="needs_review" if reasons else "within", reasons=reasons)
 
@@ -199,6 +209,7 @@ class PromoteResult:
     status: str  # promoted, canary-ok, gate-failed or nothing-to-do
     written: int = 0
     deleted: int = 0
+    schema_added: list[str] = field(default_factory=list)
     backup_before: str | None = None
     backup_after: str | None = None
     canary: str | None = None
@@ -253,6 +264,8 @@ def promote(
             return result
         if options.take_backup:
             result.backup_before = deps.backup("before")
+        if plan.writes():
+            result.schema_added = deps.target.extend_schema()
         writes = [_row(local[u]) for u in plan.writes()]
         first, rest = writes[:1], writes[1:]
         if first:
