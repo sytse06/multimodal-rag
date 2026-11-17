@@ -14,12 +14,14 @@ from multimodal_rag.retrieval_gate import Canary
 from multimodal_rag.sync.apply import ApplyRefused
 from multimodal_rag.sync.policy import Policy
 from multimodal_rag.sync.promote import (
+    Obj,
     PromoteDeps,
     PromoteFailed,
     PromoteOptions,
     Row,
     build_plan,
     compute_hash,
+    differences,
     hash_is_valid,
     load_snapshot,
     normalise,
@@ -488,3 +490,31 @@ def test_nothing_is_extended_when_nothing_is_written() -> None:
     )
 
     assert result.status == "nothing-to-do" and "extend-schema" not in target.events
+
+
+def test_an_unset_property_reads_the_same_as_an_absent_one() -> None:
+    one = row(1)
+    wanted = {one[0]: Obj(one[0], one[1], one[2])}
+    extended = {one[0]: Obj(one[0], {**one[1], "source_lastmod": None}, one[2])}
+    changed = {one[0]: Obj(one[0], {**one[1], "source_lastmod": "2026-03-01"}, one[2])}
+
+    assert differences(wanted, extended) == []
+    assert differences(extended, wanted) == []
+    assert differences(wanted, changed) == [f"{one[0]}: properties differ"]
+
+
+def test_rollback_to_a_snapshot_from_before_the_schema_grew_reports_clean() -> None:
+    class ExtendedSide(FakeSide):
+        """Like Weaviate after the schema grew: unset properties read back as null."""
+
+        def read_objects(self) -> list[Row]:
+            return [
+                (u, {**p, "source_lastmod": None, "embedded_video_ids": None}, v)
+                for u, p, v in super().read_objects()
+            ]
+
+    local, plain = sides()
+    snapshot = to_objects(plain.read_objects())
+    target = ExtendedSide(list(plain.rows.values()))
+
+    assert rollback(snapshot, target, FakeLock()) == []

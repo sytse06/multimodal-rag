@@ -220,6 +220,12 @@ def _row(obj: Obj) -> Row:
     return (obj.uuid, obj.properties, obj.vector)
 
 
+def _set_values(properties: dict[str, Any]) -> dict[str, Any]:
+    """Only the properties that hold a value: a property the schema has but the object
+    never set reads back as null, which is the same as not having it."""
+    return {k: v for k, v in properties.items() if v is not None}
+
+
 def differences(expected: dict[str, Obj], found: dict[str, Obj]) -> list[str]:
     """How `found` differs from `expected`, every object and vector compared."""
     problems = []
@@ -229,7 +235,7 @@ def differences(expected: dict[str, Obj], found: dict[str, Obj]) -> list[str]:
         problems.append(f"{uuid}: should not exist")
     for uuid in sorted(expected.keys() & found.keys()):
         want, got = expected[uuid], found[uuid]
-        if want.properties != got.properties:
+        if _set_values(want.properties) != _set_values(got.properties):
             problems.append(f"{uuid}: properties differ")
         elif cosine(want.vector, got.vector) < VECTOR_SAME:
             problems.append(f"{uuid}: vector differs")
