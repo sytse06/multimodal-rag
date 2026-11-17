@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -49,6 +49,10 @@ help:
 	@echo "  make sync-plan             - Build and keep a hashed sync plan (FROM_RUN=, NO_UPLOAD=1)"
 	@echo "  make sync-apply RUN=runs/<id> - Apply a reviewed plan to LOCAL (YES=1, ACCEPT_REVIEW=1,"
 	@echo "                                   CONFIRM_REMOVALS='<urls>', CONFIRM_SOURCE='<hosts>')"
+	@echo "  make promote-plan [TARGET=hosted|rehearsal] - Read-only plan to copy local to the target"
+	@echo "  make promote RUN=runs/<id> [CANARY_ONLY=1] - Write that plan to its target (asks first)"
+	@echo "  make promote-rollback SNAPSHOT_DIR=<dir> TARGET=<t> - Put the target back as a snapshot had it"
+	@echo "  make rehearsal-up | rehearsal-seed SNAPSHOT_DIR=<dir> | rehearsal-down - Practice copy of hosted"
 	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
@@ -234,6 +238,30 @@ sync-plan:
 sync-apply:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make sync-apply RUN=runs/<id>"; exit 1; fi
 	@uv run python -m multimodal_rag.sync.apply_cli --run $(RUN) $(if $(YES),--yes,) $(if $(ACCEPT_REVIEW),--accept-review,) $(if $(BREAK_LOCK),--break-lock,) $(if $(NO_SNAPSHOT),--no-snapshot,) $(if $(CONFIRM_REMOVALS),--confirm-removals $(CONFIRM_REMOVALS),) $(if $(CONFIRM_SOURCE),--confirm-source $(CONFIRM_SOURCE),)
+
+promote-plan:
+	@uv run python -m multimodal_rag.sync.promote_cli plan --target $(or $(TARGET),hosted)
+
+promote:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make promote RUN=runs/<id>"; exit 1; fi
+	@uv run python -m multimodal_rag.sync.promote_cli run --run $(RUN) $(if $(YES),--yes,) $(if $(ACCEPT_REVIEW),--accept-review,) $(if $(CANARY_ONLY),--canary-only,) $(if $(NO_BACKUP),--no-backup,) $(if $(BREAK_LOCK),--break-lock,)
+
+promote-rollback:
+	@if [ -z "$(SNAPSHOT_DIR)" ] || [ -z "$(TARGET)" ]; then echo "Usage: make promote-rollback SNAPSHOT_DIR=<dir> TARGET=hosted|rehearsal"; exit 1; fi
+	@uv run python -m multimodal_rag.sync.promote_cli rollback --snapshot $(SNAPSHOT_DIR) --target $(TARGET) $(if $(YES),--yes,)
+
+rehearsal-up:
+	@docker compose --profile rehearsal up -d weaviate-rehearsal
+	@until curl -sf http://127.0.0.1:8081/v1/.well-known/ready >/dev/null; do sleep 1; done
+	@echo "rehearsal Weaviate ready on :8081"
+
+rehearsal-seed:
+	@if [ -z "$(SNAPSHOT_DIR)" ]; then echo "Usage: make rehearsal-seed SNAPSHOT_DIR=<hosted backup dir>"; exit 1; fi
+	@uv run python -m multimodal_rag.sync.rehearsal --snapshot $(SNAPSHOT_DIR)
+
+rehearsal-down:
+	@docker compose --profile rehearsal rm -sf weaviate-rehearsal
+	@docker volume rm multimodal-rag_weaviate_rehearsal_data >/dev/null 2>&1 || true
 
 sync-gate:
 	@uv run python -m multimodal_rag.retrieval_gate
