@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -53,10 +54,17 @@ class FakeIndex:
         self.events: list[str] = []
         self.reject = False
         self.drop_writes = False
+        self.refreshed: dict[str, dict[str, Any]] = {}
+        self.videos: dict[str, list[str]] = {}  # what the stored page already links
+        self.written_videos: dict[UUID, list[str]] = {}
 
-    def seed_page(self, url: str, markdown: str, screenshots: int = 0) -> None:
+    def seed_page(
+        self, url: str, markdown: str, screenshots: int = 0, *, exact: bool = False
+    ) -> None:
         for i, chunk in enumerate(chunk_page(markdown, url, "KB")):
-            old = chunk.text.split("\n\n", 1)[-1] + " Did this answer your question?"
+            old = chunk.text
+            if not exact:
+                old = old.split("\n\n", 1)[-1] + " Did this answer your question?"
             self.objects[text_chunk_id(url, i)] = (url, "web", old)
         for n in range(screenshots):
             self.objects[uuid4()] = (url, "web", f"screenshot description {n}")
@@ -68,7 +76,12 @@ class FakeIndex:
         for chunk in chunks if not self.drop_writes else chunks[:-1]:
             assert chunk.chunk_id is not None
             self.objects[chunk.chunk_id] = (chunk.source_url, "web", chunk.text)
+            self.written_videos[chunk.chunk_id] = chunk.embedded_video_ids
         return len(chunks)
+
+    def update_metadata(self, updates: dict[str, dict[str, Any]]) -> int:
+        self.refreshed.update(updates)
+        return len(updates)
 
     def delete_chunks(self, uuids: list[UUID]) -> int:
         self.events.append("delete")
@@ -128,17 +141,24 @@ def entry(url: str, text: int, frozen: int) -> PageEntry:
 
 
 class World:
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        cut_old: str = CUT_OLD,
+        cut_new: str = CUT_NEW,
+        exact: bool = False,
+    ) -> None:
         self.index = FakeIndex()
-        self.index.seed_page(CUT, CUT_OLD, screenshots=2)
+        self.index.seed_page(CUT, cut_old, screenshots=2, exact=exact)
         self.index.objects[uuid4()] = ("https://youtu.be/abc", "video", "transcript")
-        self.ledger = FakeLedgerStore(Ledger(pages={CUT: entry(CUT, 1, 2)}))
+        held = len(chunk_page(cut_old, CUT, "KB"))
+        self.ledger = FakeLedgerStore(Ledger(pages={CUT: entry(CUT, held, 2)}))
         self.lock = FakeLock()
         self.snapshots: list[str] = []
         self.gate_checks: list[Check] = [Check("canary", Status.OK, "rank 1")]
         self.gate_canaries: list[Canary] = []
         self.run_dir = tmp_path / "run"
-        pages = [FetchedPage(CUT, CUT_NEW), FetchedPage(NEW, NEW_PAGE)]
+        pages = [FetchedPage(CUT, cut_new), FetchedPage(NEW, NEW_PAGE)]
         save_run(self.run_dir, pages)
         self.plan = build_plan(
             PlanInputs(
@@ -184,6 +204,10 @@ class World:
             gate=gate,
             policy=Policy(),
             chunk_size=400,
+            page_chunk_ids=lambda url: [
+                str(u) for u, v in self.index.objects.items() if v[0] == url
+            ],
+            stored_videos=lambda url: self.index.videos.get(url, []),
             fixed_canaries=[Canary(question="fixed?", expect=["https://x"])],
             now=lambda: datetime(2026, 11, 17, tzinfo=timezone.utc),
         )
@@ -474,3 +498,54 @@ def test_a_ledger_with_no_recorded_runtime_accepts_the_first_one(world: World) -
     result = apply_plan(world.plan, world.run_dir, deps, ApplyOptions())
 
     assert result.status == "applied"
+
+
+def two_section_world(tmp_path: Path) -> World:
+    before = "## Goal:\n\nFirst section stays.\n\n## Steps:\n\nold"
+    return World(
+        tmp_path,
+        cut_old=md("Cut outs", before),
+        cut_new=md("Cut outs", before.replace("old", "new")),
+        exact=True,
+    )
+
+
+def test_every_other_chunk_of_an_applied_page_gets_the_pages_new_values(
+    tmp_path: Path,
+) -> None:
+    world = two_section_world(tmp_path)
+    kept = {
+        p.uuid
+        for page in world.plan.pages
+        for p in page.positions
+        if p.action == "skip"
+    }
+    screenshots = {
+        str(u) for u, v in world.index.objects.items() if v[0] == CUT and u not in {
+            text_chunk_id(CUT, i) for i in range(10)
+        }
+    }
+    assert kept and screenshots, "the fixture needs unchanged text and screenshots"
+
+    world.apply()
+
+    assert set(world.index.refreshed) == kept | screenshots
+    for values in world.index.refreshed.values():
+        assert values["source_lastmod"] == LASTMOD
+
+
+def test_video_links_the_stored_page_has_survive_a_scrape_without_them(
+    tmp_path: Path,
+) -> None:
+    world = two_section_world(tmp_path)
+    world.index.videos[CUT] = ["doc-1"]
+
+    world.apply()
+
+    assert world.index.refreshed
+    assert all(
+        v["embedded_video_ids"] == ["doc-1"] for v in world.index.refreshed.values()
+    )
+    cut_ids = {text_chunk_id(CUT, i) for i in range(10)}
+    written = {u: v for u, v in world.index.written_videos.items() if u in cut_ids}
+    assert written and all(v == ["doc-1"] for v in written.values())

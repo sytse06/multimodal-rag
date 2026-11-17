@@ -40,7 +40,7 @@ from multimodal_rag.sync.manifest import upload_run
 from multimodal_rag.sync.plan import Plan
 from multimodal_rag.sync.plan_cli import summary
 from multimodal_rag.sync.policy import load_policy
-from multimodal_rag.sync.preview import page_chunk_ids
+from multimodal_rag.sync.preview import page_chunk_ids, page_videos
 
 EXIT_NEEDS_REVIEW = 10
 
@@ -172,6 +172,7 @@ def main() -> None:
                 chunk_size=settings.chunk_size,
                 fixed_canaries=load_canaries(),
                 page_chunk_ids=lambda u: page_chunk_ids(collection, u),
+                stored_videos=lambda u: page_videos(collection, u),
                 embedding_check=embedding_check,
             )
             options = ApplyOptions(

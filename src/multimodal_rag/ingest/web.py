@@ -4,11 +4,13 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from firecrawl import FirecrawlApp
 from firecrawl.v2.types import ScrapeOptions
 
 from multimodal_rag.models.chunks import WebChunk
+from multimodal_rag.models.identity import embedded_video_ids
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +89,13 @@ def chunk_page(
     target_tokens: int = 400,
     *,
     strip_images: bool = False,
+    source_lastmod: datetime | None = None,
 ) -> list[WebChunk]:
-    """Normalise a scraped page, chunk it, and keep its title in the first chunk."""
+    """Normalise a scraped page, chunk it, and keep its title in the first chunk.
+
+    Every chunk carries the page's embedded video ids and the sitemap ``lastmod`` the
+    content was fetched at.
+    """
     page = normalise_page(markdown, strip_images=strip_images)
     chunks = split_by_sections(
         page.markdown, source_url, source_name, target_tokens=target_tokens
@@ -97,7 +104,9 @@ def chunk_page(
         chunks[0] = chunks[0].model_copy(
             update={"text": f"{page.title}\n\n{chunks[0].text}"}
         )
-    return chunks
+    videos = embedded_video_ids(page.markdown)
+    page_values = {"embedded_video_ids": videos, "source_lastmod": source_lastmod}
+    return [c.model_copy(update=page_values) for c in chunks]
 
 
 def crawl_knowledge_base(

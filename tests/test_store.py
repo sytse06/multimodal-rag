@@ -1,5 +1,6 @@
 """Tests for store module (embeddings + Weaviate store)."""
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -325,3 +326,89 @@ class TestSupportChunkConversion:
         assert sc.source_type == SourceType.WEB
         assert sc.section_heading == "Getting Started"
         assert sc.timestamp_seconds is None
+
+
+class TestIdentityFields:
+    def _store(self, existing: list[str]) -> tuple[WeaviateStore, MagicMock]:
+        store = WeaviateStore.__new__(WeaviateStore)
+        store._read_only = False
+        store._tenant = None
+        collection = MagicMock()
+        collection.config.get.return_value = SimpleNamespace(
+            properties=[SimpleNamespace(name=n) for n in existing]
+        )
+        collection.batch.failed_objects = []
+        client = MagicMock()
+        client.collections.get.return_value = collection
+        store._client = client
+        store._embeddings = MagicMock()
+        store._embed = MagicMock(return_value=[[0.1, 0.2]])
+        return store, collection
+
+    def test_add_chunks_writes_every_identity_field(self) -> None:
+        store, collection = self._store([])
+        lastmod = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        chunk = SupportChunk(
+            text="t",
+            source_type=SourceType.WEB,
+            source_url="https://x.example/a",
+            source_name="KB",
+            source_lastmod=lastmod,
+            embedded_video_ids=["v"],
+        )
+
+        store.add_chunks([chunk])
+
+        batch = collection.batch.dynamic.return_value.__enter__.return_value
+        props = batch.add_object.call_args.kwargs["properties"]
+        assert props["document_id"] == chunk.document_id
+        assert props["content_hash"] == chunk.content_hash
+        assert props["source_lastmod"] == lastmod.isoformat()
+        assert props["embedded_video_ids"] == ["v"]
+
+    def test_add_chunks_writes_an_empty_list_not_a_missing_value(self) -> None:
+        store, collection = self._store([])
+        chunk = SupportChunk(
+            text="t",
+            source_type=SourceType.VIDEO,
+            source_url="https://youtu.be/viJ-mmIjkhk",
+            source_name="V",
+        )
+
+        store.add_chunks([chunk])
+
+        batch = collection.batch.dynamic.return_value.__enter__.return_value
+        props = batch.add_object.call_args.kwargs["properties"]
+        assert props["embedded_video_ids"] == [] and props["source_lastmod"] is None
+
+    def test_extend_schema_adds_only_the_missing_properties(self) -> None:
+        have = [*EXPECTED_PROPERTIES, "document_id", "content_hash", "image_url"]
+        store, collection = self._store(have)
+
+        added = store.extend_schema()
+
+        assert added == ["source_lastmod", "embedded_video_ids"]
+        types = {
+            c.args[0].name: c.args[0].dataType.value
+            for c in collection.config.add_property.call_args_list
+        }
+        assert types == {"source_lastmod": "date", "embedded_video_ids": "text[]"}
+
+    def test_extend_schema_is_refused_on_a_read_only_store(self) -> None:
+        store, _ = self._store([])
+        store._read_only = True
+
+        with pytest.raises(PermissionError):
+            store.extend_schema()
+
+    def test_update_metadata_sends_only_the_named_properties(self) -> None:
+        store, collection = self._store([])
+        lastmod = datetime(2026, 3, 1, tzinfo=timezone.utc)
+
+        count = store.update_metadata({"u1": {"source_lastmod": lastmod}})
+
+        assert count == 1
+        collection.data.update.assert_called_once_with(
+            uuid="u1", properties={"source_lastmod": lastmod.isoformat()}
+        )
+        collection.data.replace.assert_not_called()

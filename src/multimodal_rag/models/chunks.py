@@ -7,6 +7,8 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, Field, computed_field
 
+from multimodal_rag.models import identity
+
 
 class SourceType(StrEnum):
     VIDEO = "video"
@@ -43,6 +45,8 @@ class WebChunk(BaseModel):
     section_heading: str | None = None
     image_url: str | None = None
     chunk_index: int | None = None
+    source_lastmod: datetime | None = None
+    embedded_video_ids: list[str] = Field(default_factory=list)
 
 
 class SupportChunk(BaseModel):
@@ -56,11 +60,19 @@ class SupportChunk(BaseModel):
     timestamp_seconds: int | None = None
     section_heading: str | None = None
     url_hash: str = ""
+    document_id: str = ""
+    content_hash: str = ""
+    source_lastmod: datetime | None = None
+    embedded_video_ids: list[str] = Field(default_factory=list)
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def model_post_init(self, __context: object) -> None:
         if not self.url_hash:
             self.url_hash = sha256(self.source_url.encode()).hexdigest()
+        if not self.document_id:
+            self.document_id = identity.document_id(self.source_url)
+        if not self.content_hash:
+            self.content_hash = identity.content_hash(self.text)
         if self.chunk_id is None:
             self.chunk_id = uuid5(NAMESPACE_URL, self.source_url + "|" + self.text)
 
@@ -92,6 +104,8 @@ class SupportChunk(BaseModel):
                 source_url=chunk.source_url,
                 source_name=chunk.source_name,
                 section_heading=chunk.section_heading,
+                source_lastmod=chunk.source_lastmod,
+                embedded_video_ids=chunk.embedded_video_ids,
             )
         return cls(
             text=chunk.text,
@@ -99,6 +113,8 @@ class SupportChunk(BaseModel):
             source_url=chunk.source_url,
             source_name=chunk.source_name,
             section_heading=chunk.section_heading,
+            source_lastmod=chunk.source_lastmod,
+            embedded_video_ids=chunk.embedded_video_ids,
         )
 
     @classmethod
@@ -156,4 +172,6 @@ class SupportChunk(BaseModel):
             source_url=chunk.source_url,
             source_name=chunk.source_name,
             section_heading=chunk.section_heading,
+            source_lastmod=chunk.source_lastmod,
+            embedded_video_ids=chunk.embedded_video_ids,
         )
