@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -49,6 +49,7 @@ help:
 	@echo "  make sync-plan             - Build and keep a hashed sync plan (FROM_RUN=, NO_UPLOAD=1)"
 	@echo "  make sync-apply RUN=runs/<id> - Apply a reviewed plan to LOCAL (YES=1, ACCEPT_REVIEW=1,"
 	@echo "                                   CONFIRM_REMOVALS='<urls>', CONFIRM_SOURCE='<hosts>')"
+	@echo "  make sync-convert          - Give stored chunks their identity fields, LOCAL, metadata only (DRY=1)"
 	@echo "  make promote-plan [TARGET=hosted|rehearsal] - Read-only plan to copy local to the target"
 	@echo "  make promote RUN=runs/<id> [CANARY_ONLY=1] - Write that plan to its target (asks first)"
 	@echo "  make promote-rollback SNAPSHOT_DIR=<dir> TARGET=<t> - Put the target back as a snapshot had it"
@@ -238,6 +239,9 @@ sync-plan:
 sync-apply:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make sync-apply RUN=runs/<id>"; exit 1; fi
 	@uv run python -m multimodal_rag.sync.apply_cli --run $(RUN) $(if $(YES),--yes,) $(if $(ACCEPT_REVIEW),--accept-review,) $(if $(BREAK_LOCK),--break-lock,) $(if $(NO_SNAPSHOT),--no-snapshot,) $(if $(CONFIRM_REMOVALS),--confirm-removals $(CONFIRM_REMOVALS),) $(if $(CONFIRM_SOURCE),--confirm-source $(CONFIRM_SOURCE),)
+
+sync-convert:
+	@uv run python -m multimodal_rag.sync.convert_cli $(if $(DRY),--dry,) $(if $(YES),--yes,) $(if $(BREAK_LOCK),--break-lock,)
 
 promote-plan:
 	@uv run python -m multimodal_rag.sync.promote_cli plan --target $(or $(TARGET),hosted)
