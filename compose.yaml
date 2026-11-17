@@ -12,5 +12,18 @@ services:
       PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
       CLUSTER_HOSTNAME: "node1"
 
+  # The embedding runtime, pinned to the version production builds with (ARG
+  # OLLAMA_VERSION in the Dockerfile; tests/test_ollama_pin.py keeps them equal). The
+  # Mac app auto-updates and changed the vectors once already, so documents are embedded
+  # here, on 11435, never on the app's 11434. Start it with `make ollama-up`.
+  ollama:
+    image: ollama/ollama:0.40.14
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11435:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   weaviate_data:
+  ollama_data:

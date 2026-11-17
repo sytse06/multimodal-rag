@@ -505,17 +505,23 @@ class AppSettings(BaseSettings):
                     f"{provider}_api_key",
                     cls._value(data, "openrouter_api_key", ""),
                 ),
+                # EMBEDDING_BASE_URL points embeddings at a pinned runtime without
+                # moving the chat models, which share OLLAMA_BASE_URL.
                 "base_url": cls._value(
                     data,
-                    f"{provider}_base_url",
-                    (
-                        "http://localhost:11434"
-                        if provider == "ollama"
-                        else cls._value(
-                            data,
-                            "openrouter_base_url",
-                            "https://openrouter.ai/api/v1",
-                        )
+                    "embedding_base_url",
+                    cls._value(
+                        data,
+                        f"{provider}_base_url",
+                        (
+                            "http://localhost:11434"
+                            if provider == "ollama"
+                            else cls._value(
+                                data,
+                                "openrouter_base_url",
+                                "https://openrouter.ai/api/v1",
+                            )
+                        ),
                     ),
                 ),
                 "timeout": cls._value(data, "embedding_timeout", 60.0),

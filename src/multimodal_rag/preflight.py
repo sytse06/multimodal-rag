@@ -16,9 +16,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -27,6 +25,7 @@ import weaviate
 from pydantic import SecretStr
 from weaviate.auth import AuthApiKey
 
+from multimodal_rag.checks import Check, Status
 from multimodal_rag.env_check import duplicate_env_keys
 from multimodal_rag.gcloud import run_gcloud
 from multimodal_rag.ingest import registry
@@ -39,20 +38,6 @@ COOKIE_WARN_DAYS = 14
 BACKUP_WARN_DAYS = 7
 LOGIN_COOKIES = ("LOGIN_INFO", "SID", "__Secure-1PSID")
 OPENROUTER_MODELS = "https://openrouter.ai/api/v1/models"
-
-
-class Status(str, Enum):
-    OK = "OK"
-    WARN = "WARN"
-    FAIL = "FAIL"
-    MANUAL = "MANUAL"
-
-
-@dataclass(frozen=True)
-class Check:
-    name: str
-    status: Status
-    detail: str
 
 
 def _has(value: SecretStr | str) -> bool:
@@ -88,13 +73,68 @@ def check_ollama(settings: AppSettings) -> Check:
         return Check("ollama", Status.OK, "not the embedding provider")
     wanted = settings.embedding_model
     try:
-        tags = _get_json(f"{settings.ollama_base_url}/api/tags")
+        base = str(settings.embeddings.base_url).rstrip("/")
+        tags = _get_json(f"{base}/api/tags")
     except (urllib.error.URLError, OSError) as exc:
         return Check("ollama", Status.FAIL, f"unreachable at base URL: {exc}")
     names = [m.get("name", "") for m in tags.get("models", [])]
     if any(n == wanted or n.startswith(f"{wanted}:") for n in names):
         return Check("ollama", Status.OK, f"{wanted} is installed")
     return Check("ollama", Status.FAIL, f"{wanted} is not pulled (ollama pull)")
+
+
+def _drift_check(name: str, collection: Any, settings: AppSettings) -> Check:
+    from multimodal_rag.models.llm import create_embeddings
+    from multimodal_rag.sync.embedding_check import (
+        SAMPLE,
+        drift_status,
+    )
+    from multimodal_rag.sync.reembed import verify_current
+
+    lowest, mean = verify_current(collection, create_embeddings(settings), SAMPLE)
+    status = drift_status(lowest)
+    detail = f"{SAMPLE} sampled vectors match a fresh embedding (lowest {lowest:.4f})"
+    if status is not Status.OK:
+        detail = (
+            f"stored vectors drifted from a fresh embedding: lowest {lowest:.4f},"
+            f" mean {mean:.4f}"
+        )
+    return Check(name, status, detail)
+
+
+def check_embeddings(settings: AppSettings) -> list[Check]:
+    """The embedding runtime against production's pin, and the local vectors."""
+    from multimodal_rag.store.fingerprint import (
+        embedding_fingerprint,
+        pinned_ollama_version,
+        runtime_problems,
+    )
+
+    found = embedding_fingerprint(
+        str(settings.embeddings.base_url), settings.embedding_model
+    )
+    problems = runtime_problems(found, pinned_ollama_version())
+    checks = [
+        Check(
+            "embedding runtime",
+            Status.FAIL if problems else Status.OK,
+            "; ".join(problems)
+            or f"Ollama {found.ollama_version}, weights {found.model_digest[:12]}",
+        )
+    ]
+    url = urlparse(str(settings.weaviate_url))
+    client = weaviate.connect_to_local(
+        host=url.hostname or "localhost", port=url.port or 8080
+    )
+    try:
+        checks.append(
+            _drift_check(
+                "local vectors", client.collections.get(COLLECTION_NAME), settings
+            )
+        )
+    finally:
+        client.close()
+    return checks
 
 
 def check_keys(settings: AppSettings) -> list[Check]:
@@ -301,6 +341,16 @@ def check_weaviate(settings: AppSettings) -> list[Check]:
                 fingerprints(hosted.collections.get(COLLECTION_NAME)),
             ),
         ]
+        hosted_drift = _drift_check(
+            "hosted vectors", hosted.collections.get(COLLECTION_NAME), settings
+        )
+        if hosted_drift.status is Status.FAIL:  # production's state, fixed by promotion
+            hosted_drift = Check(
+                hosted_drift.name,
+                Status.WARN,
+                hosted_drift.detail + "; promotion replaces them",
+            )
+        checks.append(hosted_drift)
     finally:
         local.close()
         hosted.close()
@@ -321,6 +371,7 @@ def run_preflight(settings: AppSettings, *, local_only: bool = False) -> list[Ch
         ("ollama", lambda: check_ollama(settings)),
         ("keys", lambda: check_keys(settings)),
         ("config", lambda: check_config(settings)),
+        ("embeddings", lambda: check_embeddings(settings)),
     ]
     if not local_only:
         steps += [
