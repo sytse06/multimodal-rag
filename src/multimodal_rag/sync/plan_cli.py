@@ -19,7 +19,8 @@ from multimodal_rag.sync.fetch import fetch_pages, firecrawl_scraper, load_run, 
 from multimodal_rag.sync.manifest import build_manifest, upload_run, write_plan_files
 from multimodal_rag.sync.plan import Plan, PlanInputs, build_plan
 from multimodal_rag.sync.policy import load_policy
-from multimodal_rag.sync.preview import RUNS_DIR, stored_chunks
+from multimodal_rag.sync.preview import RUNS_DIR, page_chunk_ids, stored_chunks
+from multimodal_rag.sync.probe import probe_url
 from multimodal_rag.sync.report import build_inventory
 
 EXIT_NEEDS_REVIEW = 10
@@ -50,9 +51,11 @@ def summary(plan: Plan) -> list[str]:
     ]
     for removal in plan.removals:
         hint = f" (may be renamed to {removal.rename_of})" if removal.rename_of else ""
+        status = f" {removal.http_status}" if removal.http_status else ""
         lines.append(
-            f"  removal candidate, needs confirmation: {removal.url}{hint};"
-            f" {removal.frozen_chunks} screenshot chunks would be orphaned"
+            f"  removal candidate [{removal.evidence}{status}], needs confirmation:"
+            f" {removal.url}{hint}; {removal.text_chunks} text +"
+            f" {removal.frozen_chunks} screenshot chunks"
         )
     lines += [f"  {line.strip()}" for line in plan.template["lines"][1:]]
     lines.append(f"policy: {plan.policy.status}")
@@ -105,6 +108,8 @@ def main() -> None:
                     kb_names={h: i["name"] for h, i in inventory.hosts.items()},
                     chunk_size=settings.chunk_size,
                     stored_loader=lambda u: stored_chunks(collection, u),
+                    probe=probe_url,
+                    chunk_ids_loader=lambda u: page_chunk_ids(collection, u),
                     template=check_template(
                         {p.url: p.markdown for p in fetched if p.markdown}
                     ),

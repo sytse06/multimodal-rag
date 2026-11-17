@@ -47,7 +47,8 @@ help:
 	@echo "  make sync-inventory        - Read-only: what changed upstream since the ledger (VERIFY=1, INIT=1)"
 	@echo "  make sync-preview          - Read-only: fetch changed pages and show the chunk difference"
 	@echo "  make sync-plan             - Build and keep a hashed sync plan (FROM_RUN=, NO_UPLOAD=1)"
-	@echo "  make sync-apply RUN=runs/<id> - Apply a reviewed plan to LOCAL (YES=1, ACCEPT_REVIEW=1)"
+	@echo "  make sync-apply RUN=runs/<id> - Apply a reviewed plan to LOCAL (YES=1, ACCEPT_REVIEW=1,"
+	@echo "                                   CONFIRM_REMOVALS='<urls>', CONFIRM_SOURCE='<hosts>')"
 	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
@@ -232,7 +233,7 @@ sync-plan:
 
 sync-apply:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make sync-apply RUN=runs/<id>"; exit 1; fi
-	@uv run python -m multimodal_rag.sync.apply_cli --run $(RUN) $(if $(YES),--yes,) $(if $(ACCEPT_REVIEW),--accept-review,) $(if $(BREAK_LOCK),--break-lock,) $(if $(NO_SNAPSHOT),--no-snapshot,)
+	@uv run python -m multimodal_rag.sync.apply_cli --run $(RUN) $(if $(YES),--yes,) $(if $(ACCEPT_REVIEW),--accept-review,) $(if $(BREAK_LOCK),--break-lock,) $(if $(NO_SNAPSHOT),--no-snapshot,) $(if $(CONFIRM_REMOVALS),--confirm-removals $(CONFIRM_REMOVALS),) $(if $(CONFIRM_SOURCE),--confirm-source $(CONFIRM_SOURCE),)
 
 sync-gate:
 	@uv run python -m multimodal_rag.retrieval_gate

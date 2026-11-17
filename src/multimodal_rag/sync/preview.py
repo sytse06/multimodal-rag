@@ -47,6 +47,14 @@ MAX_PAGES = 30  # a guard until the policy file exists
 EXIT_NEEDS_REVIEW = 10
 
 
+def page_chunk_ids(collection: Any, url: str) -> list[str]:
+    """Every chunk the collection holds for a page, screenshots included."""
+    response = collection.query.fetch_objects(
+        filters=Filter.by_property("source_url").equal(url), limit=1000
+    )
+    return [str(o.uuid) for o in response.objects]
+
+
 def stored_chunks(collection: Any, url: str) -> dict[int, StoredChunk]:
     response = collection.query.fetch_objects(
         filters=Filter.by_property("source_url").equal(url), limit=1000
