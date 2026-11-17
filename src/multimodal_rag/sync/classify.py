@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from urllib.parse import urlparse
 
 from multimodal_rag.sync.inventory import SitemapPage
 from multimodal_rag.sync.ledger import Ledger
@@ -41,6 +40,18 @@ def slug_tokens(url: str) -> set[str]:
 def similarity(a: str, b: str) -> float:
     left, right = slug_tokens(a), slug_tokens(b)
     return len(left & right) / len(left | right) if left | right else 0.0
+
+
+DROPPED = "source dropped from the registry"
+
+
+def dropped_source_items(ledger: Ledger, registry_hosts: set[str]) -> list[Item]:
+    """Stored pages whose knowledge base is no longer in the registry."""
+    return [
+        Item(url, Kind.REMOVED, DROPPED)
+        for url, entry in ledger.pages.items()
+        if entry.host not in registry_hosts
+    ]
 
 
 def classify(
@@ -78,15 +89,13 @@ def classify(
                 )
             else:
                 items.append(Item(page.url, Kind.UNCHANGED, lastmod=page.lastmod))
-        new_urls = [
-            i.url
-            for i in items
-            if i.kind is Kind.NEW and urlparse(i.url).netloc == host
-        ]
+        # A page that moved may now be a new page or one already stored, so look at
+        # every page the sitemap still lists.
+        listed = sorted(seen)
         for url, entry in ledger.pages.items():
             if entry.host != host or url in seen:
                 continue
-            best = max(new_urls, key=lambda n: similarity(url, n), default=None)
+            best = max(listed, key=lambda n: similarity(url, n), default=None)
             hint = best if best and similarity(url, best) >= RENAME_THRESHOLD else None
             items.append(Item(url, Kind.REMOVED, "stored, not in the sitemap", hint))
     return items

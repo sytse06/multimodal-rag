@@ -1194,22 +1194,53 @@ Tests and docs ship with this story.
 
 **Scope:** `src/multimodal_rag/sync/`, `store/weaviate.py`, `Makefile`
 
-#### SYNC-004 — Removed Pages and Sources
+#### SYNC-004 — Removed Pages and Sources (done on local, 2026-11-17)
 
 **Branch:** `feature/SYNC-004-removals`
 
-- Removal candidates come from the plan (ledger pages absent from the sitemap, and
-  sources dropped from the registry). They are deleted only with an explicit
-  `--confirm-removals` that lists the URLs; automation never confirms removals
-- A failed or implausible sitemap fetch never deletes anything: if the sitemap request
-  fails, is empty, or lists far fewer pages than the ledger, the lane aborts for that
-  knowledge base
-- The current data supplies real cases for tests: 1 stored page (hydrosym article 437) is
-  absent from the sitemap and looks renamed (articles 525 and 527 appeared after the
-  ingest), so the plan flags removal candidates that have a title-similar new page. Its
-  screenshot chunks would be orphaned by a plain delete
+- **Candidates.** A stored page is a removal candidate when it is missing from its
+  source's sitemap, or when its whole source (a knowledge base) has been dropped from the
+  registry. Video sources are the video lane's (SYNC-011)
+- **The site decides, not the sitemap.** A page missing from a sitemap is only a hint, so
+  the plan asks the page's own address, without following redirects: 404 or 410 is
+  **gone**, a redirect is **moved** (deletable only if its target is held), a 200 is
+  **still served** (the sitemap simply omitted it, never deletable), and a timeout or 5xx
+  is **unknown** (never deletable). The result, with the HTTP status and any redirect, is
+  in the plan and its hash. Real case: article 437 returns 404 with no redirect, while its
+  probable replacement 525 returns 200
+- **Confirmation by name.** `make sync-apply` deletes nothing unless a person passes
+  `CONFIRM_REMOVALS='<url> ...'`, and every URL must be a candidate in the plan (a typo is
+  refused) whose evidence supports it. Pages of a dropped source are confirmed by source
+  with `CONFIRM_SOURCE='<host>'`, not page by page. `ApplyOptions` defaults to confirming
+  nothing, so an automated run can add and change pages but never delete one. A page whose
+  slug resembles a stored or new page is shown with that hint, and if the plan names a
+  replacement it must already be held (or be written by the same plan) before the old page
+  may go
+- **Exact UUIDs.** The plan lists every chunk of the page, screenshot chunks included, and
+  the apply deletes exactly those, last, after all writes. If the page has gained a chunk
+  since the plan it refuses; if it already lost some (an unfinished run) it deletes the
+  rest. It verifies that no chunk of the page is left, then drops the page from the
+  ledger. `delete_by_source` is never used, because it would take a page's screenshots
+  with it unseen
+- **Limits.** The deletion-share limit counts confirmed removals too, and a source that
+  has more than 10% of its stored pages missing from its sitemap needs review, because that
+  looks like a sitemap fault and not a clean-up (`max_removal_share_per_source`)
+- **A failed or implausible sitemap never deletes** (SYNC-002's guard: a host whose sitemap
+  failed, is empty, or lists under half its stored pages produces no candidates at all)
+- Also changed: the plan format is 3, an apply that changes nothing no longer rewrites the
+  ledger or moves its generation, and a rename hint now searches every page the sitemap
+  still lists instead of only new ones
+- **Real data, 2026-11-17:** article 437 (4 text chunks, 0 screenshot chunks) returned 404
+  and its probable replacement 525 is held. `make sync-apply` without confirmation left it
+  and the total of 947 chunks untouched and listed it as waiting. A plan built before an
+  unconfirmed apply was then refused as stale (the ledger had moved), which is the check
+  working; a rebuilt plan with `CONFIRM_REMOVALS` naming 437 deleted its 4 chunks (947 to
+  943, videos still 214) and dropped it from the ledger, which now holds the 171 in-scope
+  pages of the three sources. The inventory afterwards shows nothing modified, new or
+  removed, and the preflight's difference between local and hosted is exactly what the
+  promotion has to do: 25 only local, 4 only hosted, 17 changed
 
-**Scope:** `src/multimodal_rag/sync/`, registry handling
+**Scope:** `src/multimodal_rag/sync/` (probe, classify, plan, apply, policy), `Makefile`
 
 #### SYNC-005 — Backup, Verification and Credentials (dissolved)
 

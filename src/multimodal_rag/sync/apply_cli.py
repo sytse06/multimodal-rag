@@ -40,6 +40,7 @@ from multimodal_rag.sync.manifest import upload_run
 from multimodal_rag.sync.plan import Plan
 from multimodal_rag.sync.plan_cli import summary
 from multimodal_rag.sync.policy import load_policy
+from multimodal_rag.sync.preview import page_chunk_ids
 
 EXIT_NEEDS_REVIEW = 10
 
@@ -56,6 +57,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True, help="run dir")
     parser.add_argument("--yes", action="store_true", help="skip the confirmation")
+    parser.add_argument(
+        "--confirm-removals",
+        nargs="+",
+        default=[],
+        metavar="URL",
+        help="delete these pages: each must be a candidate in the plan",
+    )
+    parser.add_argument(
+        "--confirm-source",
+        nargs="+",
+        default=[],
+        metavar="HOST",
+        help="delete every page of these sources the registry no longer lists",
+    )
     parser.add_argument("--accept-review", action="store_true")
     parser.add_argument("--break-lock", action="store_true")
     parser.add_argument("--no-snapshot", action="store_true")
@@ -156,10 +171,13 @@ def main() -> None:
                 policy=load_policy(),
                 chunk_size=settings.chunk_size,
                 fixed_canaries=load_canaries(),
+                page_chunk_ids=lambda u: page_chunk_ids(collection, u),
                 embedding_check=embedding_check,
             )
             options = ApplyOptions(
                 accept_review=args.accept_review,
+                confirm_removals=args.confirm_removals,
+                confirm_sources=args.confirm_source,
                 break_lock=args.break_lock,
                 take_snapshot=not args.no_snapshot,
             )
@@ -186,6 +204,9 @@ def main() -> None:
                 "inserted": result.inserted,
                 "replaced": result.replaced,
                 "deleted": result.deleted,
+                "removed_pages": result.removed_pages,
+                "removed_chunks": result.removed_chunks,
+                "pending_removals": result.pending_removals,
                 "pages_already_applied": result.pages_already_applied,
                 "counts_before": _counts(result.counts_before),
                 "counts_after": _counts(result.counts_after),
@@ -205,6 +226,13 @@ def main() -> None:
         f"  inserted {result.inserted}, replaced {result.replaced},"
         f" deleted {result.deleted}"
     )
+    if result.removed_pages:
+        print(
+            f"  removed {result.removed_pages} pages"
+            f" ({result.removed_chunks} chunks, screenshots included)"
+        )
+    for pending_page in result.pending_removals:
+        print(f"  removal still waiting for confirmation: {pending_page}")
     if result.counts_before and result.counts_after:
         print(
             f"  collection {result.counts_before.total} ->"
