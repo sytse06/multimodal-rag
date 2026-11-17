@@ -1018,9 +1018,19 @@ fields wait for SYNC-010 and SYNC-011, which read them):
   property with a guessed type. `promote-rollback` leaves the added properties in place.
 - **Checked against the deployed code:** commit `d471a57`'s `validate_compatibility`,
   `search` and retriever all work against the converted collection.
-- **Not done:** hosted. It still has the original 8 properties. Next: rehearse (seed the
-  rehearsal Weaviate from a hosted backup), then canary, then the full promotion, each with
-  the maintainer's go-ahead. The promote policy does not limit a plan of property-only
+- **Rehearsed (2026-11-17)** on a copy seeded from hosted backup
+  `snapshots/20261117T133802Z-cloud`: the plan matched the hosted plan in every count; the
+  canary created the five properties with the right types (`date`, `text[]`) and read back
+  equal; the full promotion wrote 942, the gate kept its ranks (1, 1, 4) and a new plan
+  showed 943 unchanged; the app's startup check passed on the result. **The rehearsal found
+  a bug:** rolling back to a snapshot from before the schema grew restored the data but
+  exited 1, because the check treated a property the object never set (absent in the
+  snapshot, null once the schema has it) as a difference. Verification now compares only
+  properties that hold a value; the plan still compares strictly. After the fix the
+  rollback reports clean and a second promotion from the rolled-back state works.
+- **Not done:** hosted. It still has the original 8 properties. Next: canary, then the
+  full promotion, each with the maintainer's go-ahead. Restore points: the backup above
+  and the before-backups the promotion takes. The promote policy does not limit a plan of property-only
   replaces, so the plan must be read.
 
 #### SYNC-002 — Page Ledger, Inventory and Plan (built; read-only)
