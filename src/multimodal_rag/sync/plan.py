@@ -25,7 +25,7 @@ from multimodal_rag.ingest.web import (
     normalise_page,
     page_fingerprint,
 )
-from multimodal_rag.sync.classify import Item, Kind
+from multimodal_rag.sync.classify import DROPPED, Item, Kind
 from multimodal_rag.sync.diff import (
     IDENTICAL,
     REMOVED,
@@ -36,8 +36,9 @@ from multimodal_rag.sync.diff import (
 from multimodal_rag.sync.fetch import FetchedPage, file_name
 from multimodal_rag.sync.ledger import Ledger
 from multimodal_rag.sync.policy import PlanStats, Policy, PolicyResult, evaluate
+from multimodal_rag.sync.probe import NOT_CHECKED, SOURCE_DROPPED, Probe, ProbeFn
 
-PLAN_VERSION = 2
+PLAN_VERSION = 3
 WRITE, SKIP, DELETE = "write", "skip", "delete"
 
 
@@ -69,9 +70,16 @@ class PagePlan(BaseModel):
 
 class Removal(BaseModel):
     url: str
+    host: str = ""
+    reason: str = ""  # why it is a candidate
+    evidence: str = NOT_CHECKED  # what the page itself says: see probe.py
+    http_status: int | None = None
+    redirect_to: str | None = None
     text_chunks: int
     frozen_chunks: int
     rename_of: str | None = None
+    # Every chunk of the page, screenshots included, so a delete names exact UUIDs.
+    chunk_uuids: list[str] = Field(default_factory=list)
 
 
 class Failure(BaseModel):
@@ -144,6 +152,8 @@ class PlanInputs:
     stored_loader: Callable[[str], dict[int, StoredChunk]]
     template: TemplateReport
     policy: Policy
+    probe: ProbeFn | None = None  # asks the site about a page missing from the sitemap
+    chunk_ids_loader: Callable[[str], list[str]] | None = None  # every chunk of a page
 
 
 def _action(status: str) -> str:
@@ -210,17 +220,45 @@ def build_plan(inputs: PlanInputs) -> Plan:
         )
     for item in inputs.items:
         if item.kind is Kind.REMOVED:
-            entry = inputs.ledger.pages[item.url]
-            plan.removals.append(
-                Removal(
-                    url=item.url,
-                    text_chunks=entry.text_chunks,
-                    frozen_chunks=entry.frozen_chunks,
-                    rename_of=item.rename_of,
-                )
-            )
+            plan.removals.append(_removal(item, inputs))
     _finish(plan, inputs)
     return plan
+
+
+def _removal(item: Item, inputs: PlanInputs) -> Removal:
+    entry = inputs.ledger.pages[item.url]
+    if item.reason == DROPPED:
+        found = Probe(SOURCE_DROPPED)
+    elif inputs.probe is not None:
+        found = inputs.probe(item.url)
+    else:
+        found = Probe(NOT_CHECKED)
+    ids = inputs.chunk_ids_loader(item.url) if inputs.chunk_ids_loader else []
+    return Removal(
+        url=item.url,
+        host=entry.host,
+        reason=item.reason,
+        evidence=found.evidence,
+        http_status=found.http_status,
+        redirect_to=found.redirect_to,
+        text_chunks=entry.text_chunks,
+        frozen_chunks=entry.frozen_chunks,
+        rename_of=item.rename_of,
+        chunk_uuids=sorted(ids),
+    )
+
+
+def _largest_removal_share(plan: Plan, ledger: Ledger) -> tuple[float, str]:
+    """The biggest share of one source's pages that is missing from its sitemap."""
+    best = (0.0, "")
+    missing_from_sitemap = [r for r in plan.removals if r.reason != DROPPED]
+    for host in {r.host for r in missing_from_sitemap}:
+        held = sum(1 for e in ledger.pages.values() if e.host == host)
+        missing = sum(1 for r in missing_from_sitemap if r.host == host)
+        share = missing / held if held else 0.0
+        if share > best[0]:
+            best = (share, host)
+    return best
 
 
 def _count(plan: Plan, action: str) -> int:
@@ -255,6 +293,7 @@ def _finish(plan: Plan, inputs: PlanInputs) -> None:
         for p in plan.pages
         if p.title and p.content_changed
     ]
+    removal_share, removal_source = _largest_removal_share(plan, inputs.ledger)
     stats = PlanStats(
         pages_to_fetch=len(plan.pages) + len(plan.failures),
         new_pages=plan.totals["new_pages"],
@@ -264,6 +303,8 @@ def _finish(plan: Plan, inputs: PlanInputs) -> None:
         fetch_failures=len(plan.failures),
         template_needs_review=inputs.template.needs_review,
         registry_stale=inputs.registry_stale,
+        largest_removal_share=removal_share,
+        largest_removal_source=removal_source,
     )
     plan.policy = evaluate(inputs.policy, stats)
     plan.plan_hash = compute_hash(plan)

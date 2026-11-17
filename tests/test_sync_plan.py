@@ -180,12 +180,13 @@ def test_a_failed_fetch_is_listed_and_needs_review() -> None:
 
 def test_a_removal_candidate_reports_its_orphaned_screenshots() -> None:
     gone = url("437-old")
+    others = {url(f"{n}-kept"): entry(url(f"{n}-kept"), 2, 0) for n in range(30)}
     plan = build_plan(
         inputs(
             [],
             [Item(gone, Kind.REMOVED, "stored, not in the sitemap", url("525-new"))],
             {},
-            Ledger(pages={gone: entry(gone, text=3, frozen=4)}),
+            Ledger(pages={gone: entry(gone, text=3, frozen=4), **others}),
         )
     )
 

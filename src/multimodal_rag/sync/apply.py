@@ -21,6 +21,7 @@ from multimodal_rag.checks import Check, Status
 from multimodal_rag.ingest.web import NORMALISER_VERSION, chunk_page
 from multimodal_rag.models.chunks import SupportChunk, WebChunk
 from multimodal_rag.retrieval_gate import Canary
+from multimodal_rag.sync.classify import DROPPED
 from multimodal_rag.sync.diff import ADDED
 from multimodal_rag.sync.ledger import Ledger, PageEntry, text_chunk_id
 from multimodal_rag.sync.plan import (
@@ -29,10 +30,12 @@ from multimodal_rag.sync.plan import (
     WRITE,
     PagePlan,
     Plan,
+    Removal,
     sha256_text,
     staleness,
 )
 from multimodal_rag.sync.policy import PlanStats, Policy, evaluate
+from multimodal_rag.sync.probe import GONE, REDIRECT, STILL_SERVED
 
 VECTOR_DIMENSION = 768
 
@@ -87,6 +90,8 @@ class ApplyDeps:
     policy: Policy
     chunk_size: int
     fixed_canaries: list[Canary] = field(default_factory=list)
+    # Every chunk id the collection holds for a page, screenshots included.
+    page_chunk_ids: Callable[[str], list[str]] = lambda url: []
     # (fingerprint of the embedding runtime, reasons the index is not consistent)
     embedding_check: Callable[[], tuple[dict[str, str], list[str]]] = lambda: ({}, [])
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
@@ -98,6 +103,10 @@ class ApplyOptions:
     break_lock: bool = False
     take_snapshot: bool = True
     run_gate: bool = True
+    # Removals are deleted only when named here. A person sets these; an automated run
+    # never does, so it can add and change pages but never delete one.
+    confirm_removals: list[str] = field(default_factory=list)
+    confirm_sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -106,6 +115,9 @@ class ApplyResult:
     inserted: int = 0
     replaced: int = 0
     deleted: int = 0
+    removed_pages: int = 0
+    removed_chunks: int = 0
+    pending_removals: list[str] = field(default_factory=list)
     pages_already_applied: int = 0
     counts_before: Counts | None = None
     counts_after: Counts | None = None
@@ -120,12 +132,12 @@ class PageWork:
     chunks: dict[int, WebChunk]  # every fresh chunk by position
 
 
-def _stats(plan: Plan, ledger: Ledger) -> PlanStats:
+def _stats(plan: Plan, ledger: Ledger, removed_text_chunks: int = 0) -> PlanStats:
     return PlanStats(
         pages_to_fetch=plan.totals["pages"] + plan.totals["failures"],
         new_pages=plan.totals["new_pages"],
         content_changed_pages=plan.totals["content_changed_pages"],
-        deleted_chunks=plan.totals["positions_to_delete"],
+        deleted_chunks=plan.totals["positions_to_delete"] + removed_text_chunks,
         text_chunks_total=sum(e.text_chunks for e in ledger.pages.values()),
         fetch_failures=plan.totals["failures"],
         template_needs_review=bool(plan.template.get("needs_review")),
@@ -135,7 +147,7 @@ def _stats(plan: Plan, ledger: Ledger) -> PlanStats:
 
 def validate(
     plan: Plan, deps: ApplyDeps, options: ApplyOptions
-) -> tuple[Ledger, str]:
+) -> tuple[Ledger, str, list[Removal]]:
     ledger, generation = deps.read_ledger()
     reasons = staleness(plan, deps.registry_generation(), generation)
     if plan.normaliser_version != NORMALISER_VERSION:
@@ -151,13 +163,82 @@ def validate(
         )
     if reasons:
         raise ApplyRefused(reasons)
+    removals = select_removals(plan, ledger, options)
     review = list(plan.policy.reasons)
-    for reason in evaluate(deps.policy, _stats(plan, ledger)).reasons:
+    removed_text = sum(r.text_chunks for r in removals)
+    for reason in evaluate(deps.policy, _stats(plan, ledger, removed_text)).reasons:
         if reason not in review:
             review.append(reason)
     if review and not options.accept_review:
         raise ApplyRefused(review, needs_review=True)
-    return ledger, generation
+    return ledger, generation, removals
+
+
+def _held(url: str | None, plan: Plan, ledger: Ledger) -> bool:
+    return bool(url) and (url in ledger.pages or any(p.url == url for p in plan.pages))
+
+
+def _removal_problem(removal: Removal, plan: Plan, ledger: Ledger) -> str | None:
+    """Why a page may not be deleted by name, or None if its evidence supports it."""
+    if removal.reason == DROPPED:
+        return "belongs to a dropped source: confirm the source, not the page"
+    if removal.evidence == STILL_SERVED:
+        return f"is still served (HTTP {removal.http_status}); the sitemap omitted it"
+    if removal.evidence == REDIRECT and not _held(removal.redirect_to, plan, ledger):
+        return f"moved to {removal.redirect_to}, which is not held"
+    if removal.evidence not in (GONE, REDIRECT):
+        return "has no evidence that it is gone (not checked, or the check failed)"
+    if removal.rename_of and not _held(removal.rename_of, plan, ledger):
+        return f"looks renamed to {removal.rename_of}, which is not held"
+    return None
+
+
+def select_removals(
+    plan: Plan, ledger: Ledger, options: ApplyOptions
+) -> list[Removal]:
+    """The removals this run may delete: named, and supported by their evidence."""
+    by_url = {r.url: r for r in plan.removals}
+    chosen: dict[str, Removal] = {}
+    problems = []
+    for url in options.confirm_removals:
+        removal = by_url.get(url)
+        if removal is None:
+            problems.append(f"{url}: is not a removal candidate in this plan")
+        elif (problem := _removal_problem(removal, plan, ledger)) is not None:
+            problems.append(f"{url}: {problem}")
+        else:
+            chosen[url] = removal
+    for host in options.confirm_sources:
+        dropped = [r for r in plan.removals if r.host == host and r.reason == DROPPED]
+        if not dropped:
+            problems.append(f"{host}: no pages of a dropped source in this plan")
+        chosen.update({r.url: r for r in dropped})
+    if problems:
+        raise ApplyRefused(problems)
+    return list(chosen.values())
+
+
+def removal_ids(removals: list[Removal], deps: ApplyDeps) -> dict[str, list[UUID]]:
+    """What to delete for each confirmed page, after checking it is still the plan's.
+
+    The chunks the collection holds must all be among those the plan listed. A page
+    that already lost some of them (an unfinished run) just has fewer left to delete;
+    one that gained any since the plan is refused.
+    """
+    out: dict[str, list[UUID]] = {}
+    problems = []
+    for removal in removals:
+        if not removal.chunk_uuids:
+            problems.append(f"{removal.url}: the plan lists no chunk ids to delete")
+            continue
+        current = set(deps.page_chunk_ids(removal.url))
+        if not current <= set(removal.chunk_uuids):
+            problems.append(f"{removal.url}: the page's chunks changed since the plan")
+        else:
+            out[removal.url] = sorted(UUID(c) for c in current)
+    if problems:
+        raise ApplyRefused(problems)
+    return out
 
 
 def prepare(plan: Plan, run_dir: Path) -> list[PageWork]:
@@ -220,10 +301,12 @@ def local_states(
     return pending, frozen
 
 
-def execute(works: list[PageWork], deps: ApplyDeps) -> tuple[int, int, int]:
-    """Write every changed position first, then delete.
+def execute(
+    works: list[PageWork], deps: ApplyDeps, removal_uuids: list[UUID] | None = None
+) -> tuple[int, int, int]:
+    """Write every changed position first, then delete positions, then removed pages.
 
-    Returns (inserts, replaces, deletes).
+    Returns (inserts, replaces, position deletes).
     """
     chunks, deletes, inserts = [], [], 0
     for work in works:
@@ -238,6 +321,8 @@ def execute(works: list[PageWork], deps: ApplyDeps) -> tuple[int, int, int]:
                 deletes.append(UUID(position.uuid))
     deps.store.add_chunks(chunks)
     deps.store.delete_chunks(deletes)
+    if removal_uuids:
+        deps.store.delete_chunks(removal_uuids)
     return inserts, len(chunks) - inserts, len(deletes)
 
 
@@ -267,11 +352,17 @@ def verify(
 
 
 def updated_ledger(
-    plan: Plan, ledger: Ledger, now: datetime, embedding: dict[str, str] | None = None
+    plan: Plan,
+    ledger: Ledger,
+    now: datetime,
+    embedding: dict[str, str] | None = None,
+    removed: list[str] | None = None,
 ) -> Ledger:
     new = ledger.model_copy(deep=True)
     if embedding:
         new.embedding = embedding
+    for url in removed or []:
+        new.pages.pop(url, None)
     for page in plan.pages:
         held = ledger.pages.get(page.url)
         new.pages[page.url] = PageEntry(
@@ -289,26 +380,43 @@ def updated_ledger(
 def apply_plan(
     plan: Plan, run_dir: Path, deps: ApplyDeps, options: ApplyOptions
 ) -> ApplyResult:
-    ledger, ledger_generation = validate(plan, deps, options)
+    ledger, ledger_generation, removals = validate(plan, deps, options)
     deps.lock.acquire(break_lock=options.break_lock)
     try:
         works = prepare(plan, run_dir)
         deps.store.validate_compatibility(VECTOR_DIMENSION)
         pending, frozen = local_states(works, deps)
+        to_remove = removal_ids(removals, deps)
         before = deps.counts()
+        confirmed = {r.url for r in removals}
         result = ApplyResult(
             status="nothing-to-write",
             pages_already_applied=len(works) - len(pending),
             counts_before=before,
+            pending_removals=[r.url for r in plan.removals if r.url not in confirmed],
         )
-        if pending:
+        doomed = [u for ids in to_remove.values() for u in ids]
+        if pending or doomed:
             if options.take_snapshot:
                 result.snapshot = deps.snapshot()
-            result.inserted, result.replaced, result.deleted = execute(pending, deps)
+            result.inserted, result.replaced, result.deleted = execute(
+                pending, deps, doomed
+            )
+            result.removed_pages = sum(1 for ids in to_remove.values() if ids)
+            result.removed_chunks = len(doomed)
             result.status = "applied"
         problems = verify(
-            works, frozen, before, deps, result.inserted - result.deleted
+            works,
+            frozen,
+            before,
+            deps,
+            result.inserted - result.deleted - result.removed_chunks,
         )
+        problems += [
+            f"{url}: chunks of a removed page are still there"
+            for url in to_remove
+            if deps.page_chunk_ids(url)
+        ]
         if problems:
             raise ApplyFailed("; ".join(problems))
         result.counts_after = deps.counts()
@@ -318,10 +426,17 @@ def apply_plan(
             if any(check.status is Status.FAIL for check in result.gate):
                 result.status = "gate-failed"
                 return result
-        result.ledger_generation = deps.write_ledger(
-            updated_ledger(plan, ledger, deps.now(), deps.embedding_check()[0]),
-            ledger_generation,
+        new_ledger = updated_ledger(
+            plan,
+            ledger,
+            deps.now(),
+            deps.embedding_check()[0],
+            removed=list(to_remove),
         )
+        if new_ledger == ledger:  # nothing to record: keep the generation as it is
+            result.ledger_generation = ledger_generation
+        else:
+            result.ledger_generation = deps.write_ledger(new_ledger, ledger_generation)
         return result
     finally:
         deps.lock.release()
