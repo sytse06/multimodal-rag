@@ -77,3 +77,31 @@ def test_vision_model_environment_variable_overrides_dotenv(
     monkeypatch.setenv("VISION_MODEL", "from-environment")
 
     assert AppSettings().vision_model == "from-environment"
+
+
+def test_embedding_base_url_moves_embeddings_but_not_the_chat_endpoint(
+    env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_file.write_text(
+        env_file.read_text()
+        + "EMBEDDING_PROVIDER=ollama\nOLLAMA_BASE_URL=http://localhost:11434\n"
+        + "EMBEDDING_BASE_URL=http://127.0.0.1:11435\n"
+    )
+    monkeypatch.delenv("EMBEDDING_BASE_URL", raising=False)
+
+    settings = AppSettings()
+
+    assert str(settings.embeddings.base_url).startswith("http://127.0.0.1:11435")
+    assert settings.ollama_base_url == "http://localhost:11434"
+
+
+def test_embeddings_follow_the_ollama_url_when_no_override_is_set(
+    env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_file.write_text(
+        env_file.read_text()
+        + "EMBEDDING_PROVIDER=ollama\nOLLAMA_BASE_URL=http://localhost:11434\n"
+    )
+    monkeypatch.delenv("EMBEDDING_BASE_URL", raising=False)
+
+    assert str(AppSettings().embeddings.base_url).startswith("http://localhost:11434")

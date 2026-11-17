@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 from urllib.parse import urlparse
+from uuid import UUID
 
 import weaviate
 import weaviate.classes.config as wvc
@@ -249,8 +250,23 @@ class WeaviateStore:
                 )
                 added += 1
 
+        # The batch never raises for a rejected object; it records it here.
+        failed = list(collection.batch.failed_objects)
+        if failed:
+            raise RuntimeError(
+                f"Weaviate rejected {len(failed)} of {added} chunks;"
+                f" first error: {failed[0].message}"
+            )
         logger.info("Added %d chunks to %s", added, COLLECTION_NAME)
         return added
+
+    def delete_chunks(self, uuids: list[UUID]) -> int:
+        """Delete chunks by UUID. A UUID that is already gone is not an error."""
+        self._require_writable("delete chunks")
+        collection = self._collection()
+        deleted = sum(1 for uuid in uuids if collection.data.delete_by_id(uuid))
+        logger.info("Deleted %d of %d chunks by id", deleted, len(uuids))
+        return deleted
 
     def search(
         self,

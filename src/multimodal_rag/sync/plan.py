@@ -37,7 +37,7 @@ from multimodal_rag.sync.fetch import FetchedPage, file_name
 from multimodal_rag.sync.ledger import Ledger
 from multimodal_rag.sync.policy import PlanStats, Policy, PolicyResult, evaluate
 
-PLAN_VERSION = 1
+PLAN_VERSION = 2
 WRITE, SKIP, DELETE = "write", "skip", "delete"
 
 
@@ -46,6 +46,7 @@ class PositionPlan(BaseModel):
     status: str
     uuid: str
     action: str
+    text_sha256: str | None = None  # of the chunk text an apply must write
 
 
 class PagePlan(BaseModel):
@@ -54,6 +55,7 @@ class PagePlan(BaseModel):
     kb_name: str
     kind: str
     reason: str
+    lastmod: str | None = None  # the sitemap version this plan brings the index to
     content_changed: bool
     title: str | None
     fingerprint: str
@@ -113,6 +115,8 @@ def staleness(
 ) -> list[str]:
     """Reasons an apply must refuse this plan; empty if its inputs have not moved."""
     reasons = []
+    if plan.version != PLAN_VERSION:
+        reasons.append(f"plan format {plan.version} is not {PLAN_VERSION}")
     if not hash_is_valid(plan):
         reasons.append("the plan hash does not match its content")
     if plan.registry_generation != registry_generation:
@@ -171,6 +175,7 @@ def build_plan(inputs: PlanInputs) -> Plan:
             page.url, inputs.stored_loader(page.url), fresh, title=normalised.title
         )
         entry = inputs.ledger.pages.get(page.url)
+        fresh_text = {c.chunk_index: c.text for c in fresh}
         plan.pages.append(
             PagePlan(
                 url=page.url,
@@ -178,6 +183,7 @@ def build_plan(inputs: PlanInputs) -> Plan:
                 kb_name=name,
                 kind=item.kind.value,
                 reason=item.reason,
+                lastmod=item.lastmod.isoformat() if item.lastmod else None,
                 content_changed=item.kind is Kind.NEW or diff.content_changed,
                 title=normalised.title,
                 fingerprint=page_fingerprint(page.markdown),
@@ -192,6 +198,11 @@ def build_plan(inputs: PlanInputs) -> Plan:
                         status=c.status,
                         uuid=str(c.uuid),
                         action=_action(c.status),
+                        text_sha256=(
+                            sha256_text(fresh_text[c.index])
+                            if _action(c.status) == WRITE
+                            else None
+                        ),
                     )
                     for c in diff.changes
                 ],

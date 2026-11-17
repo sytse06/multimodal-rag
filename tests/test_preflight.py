@@ -10,10 +10,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from multimodal_rag import preflight
+from multimodal_rag.checks import Check, Status
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.preflight import (
-    Check,
-    Status,
     check_backup,
     check_config,
     check_cookies,
@@ -192,6 +191,7 @@ def test_local_only_skips_cloud_checks_and_keeps_the_manual_item() -> None:
         patch.object(preflight, "check_tools", return_value=[]),
         patch.object(preflight, "check_ollama", return_value=Check("o", Status.OK, "")),
         patch.object(preflight, "check_config", return_value=[]),
+        patch.object(preflight, "check_embeddings", return_value=[]),
     ):
         checks = run_preflight(_settings(), local_only=True)
 
@@ -214,3 +214,22 @@ def test_exit_code_is_nonzero_only_when_a_check_fails(
             preflight.main()
         assert exit_info.value.code == code
     assert "ok" in capsys.readouterr().out
+
+
+def test_every_module_shares_one_status_enum() -> None:
+    """A module run with `python -m` is loaded twice; two enums never compare `is`."""
+    from multimodal_rag import checks, preflight
+    from multimodal_rag.sync import apply, embedding_check
+
+    assert preflight.Status is checks.Status
+    assert embedding_check.Status is checks.Status
+    assert apply.Status is checks.Status
+    assert preflight.Check is checks.Check
+
+
+def test_a_module_run_as_main_still_reports_drift_correctly() -> None:
+    """The drift status must compare equal to the enum the preflight itself uses."""
+    from multimodal_rag.sync.embedding_check import drift_status
+
+    assert drift_status(1.0) is Status.OK
+    assert drift_status(0.83) is Status.FAIL

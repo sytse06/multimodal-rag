@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from urllib.parse import urlparse
 
@@ -27,6 +28,7 @@ class Item:
     kind: Kind
     reason: str = ""
     rename_of: str | None = None  # for a removal: the new page that looks like it
+    lastmod: datetime | None = None  # the sitemap's lastmod for this page
 
 
 def slug_tokens(url: str) -> set[str]:
@@ -56,18 +58,26 @@ def classify(
             seen.add(page.url)
             entry = ledger.pages.get(page.url)
             if entry is None:
-                items.append(Item(page.url, Kind.NEW, "not stored"))
+                items.append(
+                    Item(page.url, Kind.NEW, "not stored", lastmod=page.lastmod)
+                )
                 continue
             reference = entry.lastmod or entry.ingested_at
             if verify:
-                items.append(Item(page.url, Kind.MODIFIED, "verify run"))
+                items.append(
+                    Item(page.url, Kind.MODIFIED, "verify run", lastmod=page.lastmod)
+                )
             elif page.lastmod is None:
-                items.append(Item(page.url, Kind.MODIFIED, "no lastmod in the sitemap"))
+                items.append(
+                    Item(page.url, Kind.MODIFIED, "no lastmod in the sitemap")
+                )
             elif page.lastmod > reference:
                 reason = f"lastmod {page.lastmod.date()}"
-                items.append(Item(page.url, Kind.MODIFIED, reason))
+                items.append(
+                    Item(page.url, Kind.MODIFIED, reason, lastmod=page.lastmod)
+                )
             else:
-                items.append(Item(page.url, Kind.UNCHANGED))
+                items.append(Item(page.url, Kind.UNCHANGED, lastmod=page.lastmod))
         new_urls = [
             i.url
             for i in items

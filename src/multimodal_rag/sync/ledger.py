@@ -40,6 +40,9 @@ class Ledger(BaseModel):
     version: int = 1
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     pages: dict[str, PageEntry] = Field(default_factory=dict)
+    # The embedding runtime the index was last verified against (None until the
+    # first apply that records it).
+    embedding: dict[str, str] | None = None
 
 
 def text_chunk_id(url: str, index: int) -> UUID:

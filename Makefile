@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report sync-preflight sync-inventory sync-preview sync-plan sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -41,10 +41,13 @@ help:
 	@echo "  make purge-source URL=...   - Delete chunks for one source URL"
 	@echo "  make purge-video            - Delete all video chunks"
 	@echo "  make purge-web              - Delete all web chunks"
+	@echo "  make ollama-up             - Start the pinned embedding Ollama on :11435 and pull the model"
+	@echo "  make sync-reembed          - Recompute every local vector with the pinned runtime (DRY=1)"
 	@echo "  make sync-preflight        - Read-only readiness report (LOCAL_ONLY=1 skips cloud)"
 	@echo "  make sync-inventory        - Read-only: what changed upstream since the ledger (VERIFY=1, INIT=1)"
 	@echo "  make sync-preview          - Read-only: fetch changed pages and show the chunk difference"
 	@echo "  make sync-plan             - Build and keep a hashed sync plan (FROM_RUN=, NO_UPLOAD=1)"
+	@echo "  make sync-apply RUN=runs/<id> - Apply a reviewed plan to LOCAL (YES=1, ACCEPT_REVIEW=1)"
 	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
@@ -205,6 +208,16 @@ ingest:
 	@uv run python -m multimodal_rag.ingest 2>&1 | tee logs/ingest-$$(date +%Y%m%d-%H%M%S).log
 	@echo -e "$(GREEN)✅ Ingestion complete$(NC)"
 
+ollama-up:
+	@docker compose up -d ollama
+	@until curl -sf http://127.0.0.1:11435/api/tags >/dev/null; do sleep 1; done
+	@docker compose exec -T ollama ollama pull nomic-embed-text
+	@docker compose exec -T ollama ollama --version
+	@docker compose exec -T ollama ollama show nomic-embed-text --modelfile | grep -m1 '^FROM'
+
+sync-reembed:
+	@uv run python -m multimodal_rag.sync.reembed $(if $(DRY),--dry-run,) $(if $(NO_SNAPSHOT),--no-snapshot,)
+
 sync-preflight:
 	@uv run python -m multimodal_rag.preflight $(if $(LOCAL_ONLY),--local-only,)
 
@@ -216,6 +229,10 @@ sync-preview:
 
 sync-plan:
 	@uv run python -m multimodal_rag.sync.plan_cli $(if $(VERIFY),--verify,) $(if $(ONLY),--only $(ONLY),) $(if $(FROM_RUN),--from-run $(FROM_RUN),) $(if $(NO_UPLOAD),--no-upload,)
+
+sync-apply:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make sync-apply RUN=runs/<id>"; exit 1; fi
+	@uv run python -m multimodal_rag.sync.apply_cli --run $(RUN) $(if $(YES),--yes,) $(if $(ACCEPT_REVIEW),--accept-review,) $(if $(BREAK_LOCK),--break-lock,) $(if $(NO_SNAPSHOT),--no-snapshot,)
 
 sync-gate:
 	@uv run python -m multimodal_rag.retrieval_gate

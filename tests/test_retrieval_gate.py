@@ -7,9 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from multimodal_rag import retrieval_gate
+from multimodal_rag.checks import Status
 from multimodal_rag.models.chunks import SourceType
 from multimodal_rag.models.query import SearchResult
-from multimodal_rag.preflight import Status
 from multimodal_rag.retrieval_gate import (
     Canary,
     best_rank,
