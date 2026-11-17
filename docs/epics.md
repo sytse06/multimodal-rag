@@ -1035,8 +1035,15 @@ fields wait for SYNC-010 and SYNC-011, which read them):
   a new plan shows 943 unchanged, the preflight shows 26 ok, hosted has 943 chunks that all
   carry `document_id` and a 64-character `content_hash`, 729 web chunks carry
   `source_lastmod`, 118 web chunks link a video (19 distinct videos, all resolving to an
-  ingested one), and the app answers. Not tested: a cold start of the deployed image
-  against the new schema. **Restore only from `20261117T134901Z-promote-after` or later**
+  ingested one), and the app answers.
+  **Deployed (2026-11-17):** revision `multimodal-rag-00025-juf` (main at `6129516`) was
+  deployed with `--no-traffic --tag`, so it cold-started against the new schema while
+  `00024` kept serving. It became ready in 2m5s, its logs show the startup check running
+  (Ollama 0.40.14, same weights), a real question through the tagged URL returned a cited
+  answer from the right HydroMan article, and there were no errors; traffic was then
+  shifted (`--to-latest`) and the tag removed. Production answered a second question
+  afterwards. Rollback: `gcloud run services update-traffic multimodal-rag
+  --to-revisions multimodal-rag-00024-ndg=100`. **Restore only from `20261117T134901Z-promote-after` or later**
   (older backups lack the identity fields; the schema stays either way). The promote policy does not limit a plan of property-only
   replaces, so the plan must be read.
 
