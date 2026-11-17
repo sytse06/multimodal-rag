@@ -1028,9 +1028,16 @@ fields wait for SYNC-010 and SYNC-011, which read them):
   snapshot, null once the schema has it) as a difference. Verification now compares only
   properties that hold a value; the plan still compares strictly. After the fix the
   rollback reports clean and a second promotion from the rolled-back state works.
-- **Not done:** hosted. It still has the original 8 properties. Next: canary, then the
-  full promotion, each with the maintainer's go-ahead. Restore points: the backup above
-  and the before-backups the promotion takes. The promote policy does not limit a plan of property-only
+- **Hosted promoted (2026-11-17):** the canary (backup `snapshots/20261117T134631Z-promote-before`)
+  created the five properties on hosted and wrote one object; the full run (backup
+  `...T134836Z-promote-before`) wrote the other 942, verified every object, kept the gate
+  ranks (1, 1, 4) and took `snapshots/20261117T134901Z-promote-after`. Checked independently:
+  a new plan shows 943 unchanged, the preflight shows 26 ok, hosted has 943 chunks that all
+  carry `document_id` and a 64-character `content_hash`, 729 web chunks carry
+  `source_lastmod`, 118 web chunks link a video (19 distinct videos, all resolving to an
+  ingested one), and the app answers. Not tested: a cold start of the deployed image
+  against the new schema. **Restore only from `20261117T134901Z-promote-after` or later**
+  (older backups lack the identity fields; the schema stays either way). The promote policy does not limit a plan of property-only
   replaces, so the plan must be read.
 
 #### SYNC-002 — Page Ledger, Inventory and Plan (built; read-only)
