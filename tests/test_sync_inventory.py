@@ -253,3 +253,14 @@ def test_a_missing_ledger_reads_as_none() -> None:
     with patch.object(ledger_module, "run_gcloud", fake):
         assert read_ledger("bucket", "proj") is None
     assert ledger_module.LEDGER_OBJECT == "ledger/pages.json"
+
+
+def test_a_removed_page_is_matched_to_a_replacement_that_is_already_stored() -> None:
+    old = f"https://{HOST}/article/437-automatic-deployment-hydrosym-documentation"
+    new = f"https://{HOST}/article/525-automated-deployment-update-guide"
+    ledger = Ledger(pages={old: _entry(old), new: _entry(new)})
+    inventory = {HOST: [_page("525-automated-deployment-update-guide", MARCH)]}
+
+    removed = [i for i in classify(inventory, ledger) if i.kind is Kind.REMOVED]
+
+    assert removed[0].rename_of == new

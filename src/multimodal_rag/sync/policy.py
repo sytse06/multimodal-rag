@@ -16,6 +16,9 @@ class Policy(BaseModel):
     max_new_pages: int = Field(default=30, ge=0)
     max_content_changed_pages: int = Field(default=30, ge=0)
     max_deleted_chunk_share: float = Field(default=0.10, ge=0, le=1)
+    # Of one source's stored pages: more than this missing from its sitemap looks like a
+    # sitemap fault, not content that was removed.
+    max_removal_share_per_source: float = Field(default=0.10, ge=0, le=1)
 
 
 def load_policy(path: Path = POLICY_PATH) -> Policy:
@@ -34,6 +37,8 @@ class PlanStats:
     fetch_failures: int
     template_needs_review: bool
     registry_stale: bool
+    largest_removal_share: float = 0.0
+    largest_removal_source: str = ""
 
 
 class PolicyResult(BaseModel):
@@ -60,6 +65,12 @@ def evaluate(policy: Policy, stats: PlanStats) -> PolicyResult:
         reasons.append(
             f"deleting {share:.0%} of the page-text chunks exceeds"
             f" {policy.max_deleted_chunk_share:.0%}"
+        )
+    if stats.largest_removal_share > policy.max_removal_share_per_source:
+        reasons.append(
+            f"{stats.largest_removal_share:.0%} of {stats.largest_removal_source}'s"
+            f" pages are missing from its sitemap, over"
+            f" {policy.max_removal_share_per_source:.0%}"
         )
     if stats.fetch_failures:
         reasons.append(f"{stats.fetch_failures} pages failed to fetch")

@@ -18,7 +18,7 @@ import weaviate
 from multimodal_rag.ingest import registry
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.store.weaviate import COLLECTION_NAME
-from multimodal_rag.sync.classify import Item, Kind, classify
+from multimodal_rag.sync.classify import Item, Kind, classify, dropped_source_items
 from multimodal_rag.sync.inventory import SitemapPage, knowledge_base_pages
 from multimodal_rag.sync.ledger import (
     Ledger,
@@ -91,6 +91,8 @@ def build_inventory(
         if ok:
             inventory[host] = pages
     items = classify(inventory, ledger, verify=verify)
+    registry_hosts = {urlparse(str(kb.url)).netloc for kb in roots}
+    items += dropped_source_items(ledger, registry_hosts)
     for host, info in hosts.items():
         mine = [i for i in items if urlparse(i.url).netloc == host]
         for kind in Kind:
