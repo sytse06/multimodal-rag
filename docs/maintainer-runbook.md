@@ -264,6 +264,7 @@ that corrects forward.
 | `N% of <host>'s pages are missing from its sitemap` | Looks like a sitemap fault | Look at the sitemap before accepting |
 | A gate line says FAIL after an apply | New content outranks a canary's source | Read the lines; roll back local, or fix the canary if the page really moved |
 | `Failed verification: a text or a vector changed` after a conversion | Should be impossible: the conversion sends no text or vector | Restore the snapshot it printed and report it |
+| Preflight warns `weaviate versions` | Hosted upgraded; local, the rehearsal copy and the client are pinned behind it | Follow section 7a before bumping anything; a rehearsal against a different version is not an exact copy |
 | `Refused: ... identity would be a guess` | The registry address is not a watch, youtu.be or embed link | Register it as `https://www.youtube.com/watch?v=<id>` and push |
 | `Refused: ... are the same video` | Two registry entries for one video | Remove one and push |
 | `a video has no manual captions and GEMINI_API_KEY is unset` | Nothing can transcribe that video | Set the key; the preflight's `gemini key` line says whether it is accepted |
@@ -279,8 +280,39 @@ that corrects forward.
 - **Backups:** `make snapshot-backup TARGET=cloud` when the newest is over a week old. The
   promotion takes its own before and after.
 - **Docker:** keep its disk under 80%; `docker builder prune` is the safe lever.
-- **Hosted is on the free plan:** it is suspended after 7 idle days and deleted after 30,
-  with one warning email. It is used daily, so this is covered in practice.
+- **Hosted is on the free plan:** it is paused for inactivity and deleted after 30 idle
+  days. It paused after about six days without traffic on 2026-11-23 and the app returned
+  503 until it was woken in the Weaviate Cloud console (OPS-007). The data survived. When
+  the app or the preflight reports `503 no healthy upstream`, check the console first. A
+  keep-alive is not built yet, so do not assume daily use.
+
+### 7a. When the hosted Weaviate version changes
+
+The free cluster upgrades without notice (1.39.13 to 1.40.5 when it was woken on
+2026-11-23), while local Docker, the rehearsal copy and the app's `weaviate-client` are
+pinned by us. The preflight line `weaviate versions` warns about it. The app kept working
+through the drift, but a bump must be tested first:
+
+1. Read the new minor version's release notes for changes to collection creation, vector
+   or index defaults and deprecated endpoints. 1.40 changed the vector defaults; we are
+   not affected because every collection we create sets `Configure.Vectors.self_provided`.
+2. Start a throwaway server of the new version on spare ports (never on local data) and
+   check that our code works on it: `ensure_collection`, `restore_snapshot` of the newest
+   hosted backup with the `hfresh` index, every object equal to the backup, a nearest
+   neighbour search, `update_metadata` leaving the vector alone, `put_objects` batches and
+   `validate_compatibility`. Run it with the locked client and with the client Weaviate's
+   release table pairs with that version. Remove the container afterwards.
+3. Test the in-place upgrade on a **copy** of the rehearsal volume: object count, texts
+   and vectors must equal local. Weaviate cannot downgrade a data directory.
+4. Only then take `make snapshot-export`, change both images in `compose.yaml`, restart,
+   and confirm the preflight shows the versions equal.
+5. Bump `weaviate-client`, run the tests, and deploy with `--no-traffic --tag`; check the
+   revision became ready, ask one real question through the tag URL, then shift traffic.
+
+State on 2026-11-23: steps 1 to 3 passed for 1.40.5 (8 of 8 checks with client 4.20.4 and
+4.24.1; a copy of the data opened with identical contents). Steps 4 and 5 are not done.
+The longer version with the commands is in `docs/gcp-deployment.txt` on the maintainer's
+machine, which git ignores.
 
 ## 8. Not covered yet
 
