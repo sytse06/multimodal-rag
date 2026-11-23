@@ -1747,6 +1747,19 @@ instances 1 limits throughput, not spend.
   warning emails; add the cluster state to `make sync-preflight`; test whether a
   scheduled read-only query counts as activity before relying on it; keep the newest
   snapshot younger than the suspension window
+- **Incident evidence (2026-11-23):** the free cluster was **paused for inactivity** after
+  about six days without traffic (the last hosted query was the 2026-11-17 verification).
+  Its endpoint answered `503 no healthy upstream`, so the app failed its startup check and
+  returned 503 too; Cloud Run logged failed requests at 09:25 UTC and the maintainer woke
+  the cluster in the Weaviate Cloud console at about 11:30 UTC, so the outage lasted at
+  least two hours and may have started earlier. The assumption above that colleagues use
+  the app daily did not hold, and the preflight reported the failure only after the fact.
+  Afterwards all 943 chunks were intact and identical to local, the vectors matched, the
+  app answered and a real question returned a cited answer. **The wake-up also moved the
+  cluster to Weaviate 1.40.5**; local Docker and the rehearsal copy run 1.39.13, so the
+  rehearsal is no longer an exact copy of hosted (`make sync-preflight` warns). This makes
+  the keep-alive query above a priority: test that a scheduled read-only query keeps the
+  cluster awake, and add the cluster's state to the preflight
 - Record the decision on moving to the Flex plan ($45 per month minimum: 7-day backups,
   replication, 99.5% availability, 1,000 collections) and the trigger for it, which is
   SYNC-009 or the first suspension
