@@ -174,7 +174,34 @@ Restructured the ingestion pipeline from monolithic batch processing to per-sour
 
 ---
 
-## Epic 4: Voxtral Audio Transcription Fallback (completed)
+## Epic 4: Voxtral Audio Transcription Fallback (completed; demoted 2026-11-23)
+
+> **Decision (2026-11-23, maintainer): Voxtral is demoted and no longer part of video
+> ingestion.** A spoken video's transcript now comes from its **manual English captions**
+> when it has them and from a **Gemini transcription** (`gemini-3.8-flash`) otherwise;
+> automatic YouTube captions are never used (`ingest/transcripts.py`, built in SYNC-011).
+> `make ingest` and `make sync-videos` no longer call Voxtral and need no Mistral key.
+>
+> **Why.** (1) With a Mistral key set the default path used Voxtral for every video and
+> never tried captions. (2) The key in use was rejected (HTTP 401), and the preflight, which
+> only checked that a key was set, could not see it; the default path was broken without
+> warning. (3) `voxtral-mini-latest` is a floating alias, the same silent-drift exposure that
+> cost us the Ollama vectors. (4) A measured comparison on three existing videos, with their
+> manual captions as ground truth, gave Gemini the lower word error rate on all three
+> (0.010 to 0.040 against 0.028 to 0.054) and every product name correct, while the stored
+> Voxtral text writes "HydroSim" for HydroSym (8 of 8 mentions). Gemini also keeps one
+> vendor, key and quota for chat, vision and transcription.
+>
+> **What stays.** The code is not deleted yet: `voxtral.py`, the `mistralai` dependency and
+> the `MISTRAL_API_KEY` setting, `fetch_transcript_chunks` (a captions path that still
+> imports Voxtral and is no longer reached by ingest), and the `skip_voxtral` flag in the
+> registry, which now only means "silent recording, no transcript". Deleting them is a
+> follow-up.
+>
+> **Existing data.** The 25 videos already stored were transcribed by Voxtral and are
+> unchanged, "HydroSim" included. Re-transcribing them changes their text and vectors
+> (re-embed, then a promotion) and is a separate decision. The stories below describe
+> what was built in March and are kept as the record.
 
 Automatic fallback to Mistral Voxtral Mini audio transcription when `youtube-transcript-api` cannot retrieve captions. Produces segment-level timestamps fed into the unchanged `chunk_segments` pipeline. `IpBlocked` (transient network error) is explicitly excluded from the fallback path.
 
@@ -284,7 +311,7 @@ Before this story, transcript chunks and frame descriptions were stored as separ
 
 This story merges them into one chunk per time window:
 
-- Spoken videos use Voxtral when `MISTRAL_API_KEY` is configured; `youtube-transcript-api` remains the fallback when it is absent
+- Spoken videos use Voxtral when `MISTRAL_API_KEY` is configured; `youtube-transcript-api` remains the fallback when it is absent (**superseded 2026-11-23**: manual captions, else Gemini; see the note under Epic 4)
 - Align Voxtral segments to the frame extraction interval (e.g. 30s windows)
 - For each window: concatenate transcript text for that interval with the vision LLM description of the corresponding keyframe
 - Combined chunk format: `"[Transcript] {speech_text}\n[Visual] {frame_description}"`
@@ -1858,7 +1885,7 @@ sync, and live webhooks from the content source.
 | 1 — Ingestion Pipeline | 5 | completed | 51 |
 | 2 — Query + UI | 4 | completed | ~80 |
 | 3 — Per-source Ingest | 3 | completed | 8 |
-| 4 — Voxtral Fallback | 3 | completed | 13 |
+| 4 — Voxtral Fallback | 3 | completed; demoted 2026-11-23 | 13 |
 | 5 — Visual Grounding | 5 | completed | ~15 |
 | 6 — Multimodal Chunk Fusion | 2 | completed | ~8 |
 | 7 — Answer-to-KB Pipeline | 3 | completed | 22 |

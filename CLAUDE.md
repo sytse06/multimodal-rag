@@ -7,7 +7,7 @@ YouTube tutorial transcripts and web knowledge bases into Weaviate, enabling sup
 staff to ask natural language questions and receive cited answers with clickable video
 timestamps and source page links.
 
-**Tech stack:** Python 3.12–3.14, LangChain Core with OpenRouter/OpenAI/Gemini/Ollama integrations, Gradio, Weaviate, youtube-transcript-api, Firecrawl, Mistral (Voxtral), yt-dlp
+**Tech stack:** Python 3.12–3.14, LangChain Core with OpenRouter/OpenAI/Gemini/Ollama integrations, Gradio, Weaviate, youtube-transcript-api, Firecrawl, yt-dlp, Gemini (transcription for videos without manual captions)
 
 ## Development Commands
 
@@ -33,13 +33,12 @@ make git-status   # Show git overview
 ┌─────────────────────────────────────────────────┐
 │ Ingestion Pipeline (batch, CLI)                 │
 │                                                 │
-│ YouTube URLs ──→ youtube-transcript-api          │
-│                  │  (captions available)         │
-│                  ├─ TranscriptsDisabled/         │
-│                  │  NoTranscriptFound            │
-│                  │  ──→ yt-dlp (download audio)  │
-│                  │     ──→ Voxtral Mini (Mistral)│
-│                  ──→ chunk (with timestamps)     │
+│ YouTube URLs ──→ youtube-transcript-api         │
+│                  │  (manual captions exist)     │
+│                  ├─ none, or automatic only     │
+│                  │  ──→ yt-dlp (download audio) │
+│                  │     ──→ Gemini transcription │
+│                  ──→ chunk (30 s windows)       │
 │                     ──→ embed (LangChain)        │
 │                        ──→ Weaviate             │
 │                                                 │
@@ -71,8 +70,10 @@ src/multimodal_rag/
 │   ├── chunks.py      #   TranscriptChunk, WebChunk, SupportChunk
 │   └── query.py       #   SearchResult, Citation, CitedAnswer
 ├── ingest/            # Ingestion pipeline
-│   ├── youtube.py     #   Transcript fetching + chunking (+ Voxtral fallback)
-│   ├── voxtral.py     #   Voxtral audio transcription (yt-dlp + Mistral)
+│   ├── transcripts.py #   Transcript source: manual captions, else Gemini
+│   ├── videos.py      #   Per-video ingest (make ingest, make sync-videos)
+│   ├── youtube.py     #   Video id and cookie helpers; legacy captions chunking
+│   ├── voxtral.py     #   Voxtral STT: demoted 2026-11-23, no longer called
 │   ├── web.py         #   Firecrawl crawling + markdown splitting
 │   └── __main__.py    #   CLI orchestrator (make ingest)
 ├── store/             # Vector store layer
@@ -113,7 +114,7 @@ All configurable via environment variables (`.env`):
 | `EMBEDDING_PROVIDER` | Embedding backend (`openrouter` or `ollama`) | `openrouter` |
 | `OPENROUTER_API_KEY` | OpenRouter API access | — |
 | `OPENAI_API_KEY` | OpenAI API access | — |
-| `GEMINI_API_KEY` | Gemini API access | — |
+| `GEMINI_API_KEY` | Gemini API access (chat, and video transcription when a video has no manual captions) | — |
 | `NVIDIA_API_KEY` | NVIDIA NIM API access | — |
 | `OPENROUTER_BASE_URL` | OpenRouter endpoint | `https://openrouter.ai/api/v1` |
 | `OLLAMA_BASE_URL` | Ollama endpoint | `http://localhost:11434` |
@@ -125,7 +126,7 @@ All configurable via environment variables (`.env`):
 | `WEAVIATE_ADMIN_API_KEY` | Hosted bootstrap/maintenance key | — |
 | `WEAVIATE_VIEWER_API_KEY` | Hosted runtime/read-only key | — |
 | `FIRECRAWL_API_KEY` | Firecrawl API access | — |
-| `MISTRAL_API_KEY` | Mistral Voxtral transcription fallback | — |
+| `MISTRAL_API_KEY` | Legacy Voxtral key: demoted, not used by ingest, safe to leave unset | — |
 | `VISION_MODEL` | Vision LLM for frame/screenshot description (empty = disabled) | `""` |
 | `GRADIO_SHARE` | Enable a public Gradio share link | `false` |
 
