@@ -947,7 +947,7 @@ would make Cloud Run fail its startup check and return 503.
 
 **Scope:** `src/multimodal_rag/store/weaviate.py`, `tests/test_store.py`
 
-#### SYNC-001 — Stored Identity, Conversion and Chunk Quality (built; local converted, hosted not yet)
+#### SYNC-001 — Stored Identity, Conversion and Chunk Quality (done, deployed 2026-11-17)
 
 **Branch:** `feature/SYNC-001-chunk-identity`
 
@@ -1047,7 +1047,7 @@ fields wait for SYNC-010 and SYNC-011, which read them):
   (older backups lack the identity fields; the schema stays either way). The promote policy does not limit a plan of property-only
   replaces, so the plan must be read.
 
-#### SYNC-002 — Page Ledger, Inventory and Plan (built; read-only)
+#### SYNC-002 — Page Ledger, Inventory and Plan (done, 2026-11-16; read-only)
 
 **Branch:** `feature/SYNC-002-sync-plan`
 
@@ -1154,11 +1154,11 @@ Tests and docs ship with this story.
 **Scope:** new `src/multimodal_rag/sync/` package (ledger, inventory, plan, policy,
 manifest), `config/sync-policy.yaml`, `Makefile`
 
-#### SYNC-003 — Apply a Plan to the Target Collection (done on local, 2026-11-17)
+#### SYNC-003 — Apply a Plan to the Target Collection (done, 2026-11-17; reaches hosted through SYNC-007)
 
 **Branch:** `feature/SYNC-003-sync-apply`
 
-**Built (2026-11-17), uncommitted:** `make sync-apply RUN=runs/<id>` validates the plan
+**Built and merged (2026-11-17):** `make sync-apply RUN=runs/<id>` validates the plan
 (hash, format 2, normaliser and chunk size, registry and ledger generations, policy again
 at apply time), takes a create-only lock in the bucket, re-derives every chunk from the
 stored pages and proves each write matches the plan's text hash, checks the collection
@@ -1264,7 +1264,7 @@ Tests and docs ship with this story.
 
 **Scope:** `src/multimodal_rag/sync/`, `store/weaviate.py`, `Makefile`
 
-#### SYNC-004 — Removed Pages and Sources (done on local, 2026-11-17)
+#### SYNC-004 — Removed Pages and Sources (done, 2026-11-17; reaches hosted through SYNC-007)
 
 **Branch:** `feature/SYNC-004-removals`
 
@@ -1332,7 +1332,7 @@ done at the end of SYNC-007.
 
 **Branch:** `feature/SYNC-007-promote`
 
-**Built (2026-11-17), uncommitted:** `make promote-plan` (`TARGET=hosted` or `rehearsal`)
+**Built and merged (2026-11-17):** `make promote-plan` (`TARGET=hosted` or `rehearsal`)
 reads local and the target (hosted with the viewer key) and writes nothing. It classifies
 every object: add, replace (properties differ), refresh the vector (only the vector
 differs), delete, unchanged. The plan holds ids and counts, and a digest of every object
@@ -1427,7 +1427,7 @@ Tests and docs ship with this story.
 
 **Scope:** `src/multimodal_rag/sync/`, `store/weaviate.py`, `Makefile`
 
-#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: registry, bucket, cookies, deploy variable, compose and preflight done)
+#### SYNC-008 — Maintainer Preflight, Sources of Truth, and Release Gate (in progress: runbook, registry, bucket, cookies, preflight and gate done; open: --json output, vision client, snapshot retention)
 
 **Branch:** `feature/SYNC-008-preflight`
 
