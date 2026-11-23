@@ -931,19 +931,21 @@ story below.
 
 #### Order of work
 
-The story numbers are stable identifiers, not the order. Build in this order:
+The story numbers are stable identifiers, not the order. The order they were built in, and
+what is left:
 
-| Order | Story | What | Hosted impact |
-|-------|-------|------|---------------|
-| 1 | SYNC-002 | Page ledger, inventory and plan (read-only) | None |
-| 2 | SYNC-003 | Apply a plan to the local collection, then the retrieval gate | None |
-| 3 | SYNC-004 | Removals, behind explicit confirmation | None |
-| 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | The only hosted write |
-| 5 | SYNC-008 (rest) | Runbook, `--json` and exit codes on preflight and gate | None |
-| 6 | SYNC-012 | Video frame descriptions: prompt and chunk structure, before the first new video | Local, then promotion |
-| 7 | SYNC-011 | Video lane: new videos first, changed videos later | Local, then promotion |
-| Later | SYNC-001, SYNC-010 | Stored identity and conversion; screenshot re-description | Schema change only when taken |
-| After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | Via promotion |
+| Order | Story | What | Status | Hosted impact |
+|-------|-------|------|--------|---------------|
+| 1 | SYNC-002 | Page ledger, inventory and plan (read-only) | done | None |
+| 2 | SYNC-003 | Apply a plan to the local collection, then the retrieval gate | done | None |
+| 3 | SYNC-004 | Removals, behind explicit confirmation | done | None |
+| 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | done | The only hosted write |
+| 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
+| 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
+| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | not started; before the first new video | Local, then promotion |
+| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built on `feature/SYNC-011-video-lane` (not merged); first real run waits for SYNC-012 | Local, then promotion |
+| Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
+| After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
 
 SYNC-005 and SYNC-006 are dissolved into the stories that need them.
 
@@ -990,7 +992,8 @@ SYNC-010 requires stored values.
   a re-ingest replaces whole objects, so a chunk written without these fields would erase
   backfilled values
 - Hash inputs, never generated outputs (design note D7)
-- Convert the existing 922 chunks without a crawl: `document_id` and a `content_hash`
+- Convert the existing chunks without a crawl (922 when this was written, 943 when it
+  ran): `document_id` and a `content_hash`
   from stored text for every chunk, `source_lastmod` where the page is unchanged, `legacy`
   markers for fields that cannot be known. Run it on the local collection with
   metadata-only `data.update`, verify texts and vectors are unchanged, then promote
@@ -1494,7 +1497,7 @@ Tests and docs ship with this story.
   targets stop with a message instead. The local default now matches production
   (`LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.6-flash`, one line each), `VISION_MODEL` is
   `google/gemini-3.8-flash`, and the app logs a warning at startup when the default model
-  is not in the model registry. Moved to SYNC-011: a Gemini vision path (the vision
+  is not in the model registry. Moved to SYNC-012: a Gemini vision path (the vision
   client always uses OpenRouter) and thinking and output limits on that client
 - Align the compose image with the hosted Weaviate version (done 2026-11-13: both 1.39.13)
 - Done: `make sync-preflight` (`LOCAL_ONLY=1` skips the cloud checks) reports missing
@@ -1584,14 +1587,15 @@ Depends on SYNC-001 for the stored fields. Not a prerequisite for sync: the pilo
 that screenshot descriptions did not improve any answer and two got worse, so this is an
 experiment to run behind the retrieval gate, not a precondition.
 
-- In the hosted collection 381 of 922 chunks (41%) are keyed on `uuid5(image_url)` while
-  `image_url` is not stored. Add `image_url`, `image_hash`, `description_model` and
-  `prompt_version`, and backfill `image_url` by re-deriving `uuid5(image_url)` from each
+- In the hosted collection 381 of 943 chunks (40%) are keyed on `uuid5(image_url)` while
+  `image_url` is not stored. SYNC-001 added the `image_url` property but left it empty;
+  add `image_hash`, `description_model` and `prompt_version`, and backfill `image_url`
+  by re-deriving `uuid5(image_url)` from each
   live page (a one-page test matched 3 of 4 stored chunks, and 19 of 19 and 7 of 7 on two
   more pages)
 - Add the Gemini provider path to the vision factory (it goes through OpenRouter only)
   with `thinking_level="low"` and a `max_output_tokens` cap, and record the model that
-  wrote each description
+  wrote each description. SYNC-012 builds this for video frames; do it once and share it
 - Re-describe with the page-anchored prompt, with a repetition guard, decorative images
   skipped and the application named only if visible; replace the three runaway chunks
   (81k to 229k characters). Needs Gemini quota for roughly 380 images; run a 5-image
@@ -1625,8 +1629,9 @@ hosted through SYNC-007.
   frame per 30 seconds) before anything is spent; the runbook gains an "Adding a video"
   section from the first real run (first customer: `yWuBQik8KPs`, "HydroMan Tutorials:
   Cross-Over Pilot Lines and Angled Connections", 2:04, auto captions, about 5 frames)
-- Moved here from SYNC-008: a Gemini vision path (the vision client always uses
-  OpenRouter) and thinking and output limits on that client
+- Moved on to SYNC-012 (frame descriptions), after coming from SYNC-008: a Gemini vision
+  path (the vision client always uses OpenRouter) and thinking and output limits on that
+  client
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
 
