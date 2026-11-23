@@ -942,8 +942,9 @@ what is left:
 | 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | done | The only hosted write |
 | 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
-| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | measured; part 1 built, not merged; before the first new video | Local, then promotion |
-| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built and merged; first real run waits for SYNC-012 | Local, then promotion |
+| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | part 1 built and merged (89d989a); parts 2 and 3 are SYNC-013 and later | Local, then promotion |
+| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built and merged; first real run is next (needs the `.env` change and the registry entry) |
+| 9 | SYNC-013 | Split the existing video chunks into narration and description | ticket written 2026-11-23; four decisions open; not started | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
 
@@ -1823,9 +1824,8 @@ checked against the frame image, not the log.
    and use the pattern the web screenshots already follow; named vectors would need a schema
    change and changes to the store, search, promotion, snapshot and app, tested with
    `make weaviate-compat`.
-2. **The existing 213 chunks:** split each into a narration chunk and a visual chunk by
-   re-embedding locally (a promotion of 213 replaces and 213 adds, the collection growing
-   from 943 to about 1,156). Cut the stored text of the 42,843-word chunk. No vision calls.
+2. **The existing chunks:** split each into a narration chunk and a description chunk by
+   re-embedding locally, with no vision calls. Now its own ticket, **SYNC-013**.
 3. **Re-describing the existing chunks** with the new prompt, for the on-screen gains.
    Deferred: it needs the 8 videos that cannot be downloaded now, and it changes text and
    vectors again.
@@ -1865,6 +1865,93 @@ collection, the object count equal to the plan, and a rehearsal first. The first
 SYNC-011 is ingested only after part 1.
 
 **Scope:** `ingest/video_frames.py`, `ingest/videos.py`, `models/llm.py`, `models/chunks.py`
+
+#### SYNC-013 — Split the Existing Video Chunks into Narration and Description (not started; ticket written 2026-11-23)
+
+**Branch:** `feature/SYNC-013-split-video-chunks`
+
+Part 2 of SYNC-012. SYNC-012 part 1 (merged, `89d989a`) makes every **new** video store a
+window as two chunks: the narration (`[Transcript] ...`, id `<url>|fused|<t>`) and the
+on-screen description (`[Visual] ...`, id `<url>|visual|<t>`). The 214 video chunks stored
+today are still one hybrid chunk each: a median 70 words of narration followed by a median
+476 words of description, cut at the embedder's 400 words. This story converts them, with
+no vision calls and only local embedding. It is **not a prerequisite for the first new
+video**: the two formats can coexist.
+
+**Why.** Measured on the real collection with 213 narrator queries (a sentence the narrator
+says, which should find its own chunk): the hybrid finds it first 14% of the time at median
+rank 12; the narration alone 40% at median rank 2, and splitting gives the same 40% / 65%.
+The import canary improved from rank 4 to 1; the oilflow canary fell from 1 to 6 (a WARN by
+the gate's rule; the maintainer called it a glitch and accepts it). The old descriptions add
+nothing for questions about what is on screen (2 of 6, the same as narration alone), and
+trimming them to 100 or 60 words changes nothing: those gains need new descriptions, which
+is SYNC-012 part 3. **Limits:** the diagnostic favours narration vectors by construction, so
+14% to 40% overstates the real gain; the canaries (three questions) are the only
+real-question evidence; the on-screen set is six questions.
+
+**What is stored today:** 214 video chunks, every one with a description, one with **no
+narration** and one description of **42,843 words** (HydroSym Explainer: Dimensions at 60 s,
+distinct-word ratio 0.014). The ticket text of SYNC-012 said 213 chunks and 1,156; the
+counts below are the checked ones.
+
+**Work**
+
+- A command in the style of `make sync-convert`, say `make sync-split-videos` (`DRY=1`,
+  `YES=1`), local only: lock, snapshot of local first, refuse unless the embedding runtime
+  is the pinned one, then write and verify.
+- **Narration chunk:** the existing object, same id, text `[Transcript] <narration>`, content
+  hash recomputed, a new vector from `"<video name>: <text>"`.
+- **Description chunk** (if kept, see decision 1): a new object with the id
+  `uuid5(<url>|visual|<t>)` from `SupportChunk.from_visual_chunk`, text `[Visual]
+  <description>`, the same `source_url`, name, timestamp, `url_hash` and `ingested_at`, the
+  identity fields, and its own vector.
+- **Verify:** the object count equals the plan; every old id is still present; for every
+  window the narration text plus the description text equals the stored text (a partition,
+  nothing lost); re-embedding the new text reproduces the new vectors (cosine 1.0000, the
+  control used in the earlier tests); a second run changes nothing.
+- **Promote** the usual way: `make promote-plan`, a rehearsal first, a canary write, the full
+  promotion, independent checks, the before and after backups. Rollback is the snapshot and
+  `make promote-rollback`.
+
+**Counts.** 214 stored chunks, 213 with narration. If the descriptions are kept: 213
+narration replaces, 214 description adds, 1,157 chunks in total. If they are left out:
+213 replaces and no adds, 943 chunks.
+
+**Decisions needed before building**
+
+1. **Keep the old descriptions as chunks, or leave them out?** Kept, they add 214 chunks of
+   mostly menu and toolbar inventory that almost never rank, take slots in the top results
+   when they do, and will be replaced again by SYNC-012 part 3. Left out, the collection
+   stays at 943 and the old text stays only in the snapshot. *Recommendation: leave them
+   out until they are re-described,* since the measurements gave them no retrieval value.
+   This is the maintainer's call.
+2. **The 42,843-word description:** if descriptions are kept, drop this one, since it is a
+   repetition loop; its opening words are window inventory anyway.
+3. **The window with no narration:** its stored chunk holds only a description under the
+   `|fused|` id. *Recommendation: leave it unchanged.*
+4. **Bump local and the rehearsal copy to Weaviate 1.40.5 first?** Hosted runs 1.40.5 and
+   local 1.39.13, so a rehearsal is not an exact copy (runbook section 7a; run
+   `make weaviate-compat VERSION=1.40.5 UPGRADE=1` first).
+
+**Risks.** The promotion changes the text of 213 chunks in place on production, so it needs
+the full procedure and a verified rollback. A window can then appear twice in the top
+results (narration and description of one moment) once new descriptions exist; the merge at
+retrieval was deferred by the maintainer until after the first video (SYNC-012 retrieval
+note). Hosted must be awake: the free cluster paused after six days on 2026-11-23 and no
+keep-alive exists (OPS-007).
+
+**Acceptance (fix these before the run).** On the real local collection before and after:
+narrator diagnostic over all windows top-1 at least 35% (14% today) and no worse top-3; the
+three canaries not worse than the accepted oilflow WARN, the import canary not worse than 4;
+the six on-screen questions in the top 3 at least as often as now (1 of 6); the object count
+equal to the plan; every old id present; a second run a no-op. After the promotion: a fresh
+`make promote-plan` shows nothing to do, `make sync-preflight` shows local and hosted
+identical, the app answers a real question with a cited answer.
+
+**Not in scope:** re-describing the existing chunks (SYNC-012 part 3), the merge at retrieval,
+the 8 videos that cannot be downloaded now.
+
+**Scope:** `sync/` (a split module and command), `Makefile`, `docs/maintainer-runbook.md`
 
 ### Phase 3: Production hardening
 
