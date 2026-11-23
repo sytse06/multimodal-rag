@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
 
 SHELL := /bin/bash
 
@@ -55,6 +55,7 @@ help:
 	@echo "  make promote RUN=runs/<id> [CANARY_ONLY=1] - Write that plan to its target (asks first)"
 	@echo "  make promote-rollback SNAPSHOT_DIR=<dir> TARGET=<t> - Put the target back as a snapshot had it"
 	@echo "  make rehearsal-up | rehearsal-seed SNAPSHOT_DIR=<dir> | rehearsal-down - Practice copy of hosted"
+	@echo "  make weaviate-compat VERSION=<x> - Test our code on a Weaviate version in a throwaway server (CLIENT=, SNAPSHOT_DIR=, UPGRADE=1)"
 	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
@@ -270,6 +271,10 @@ rehearsal-seed:
 rehearsal-down:
 	@docker compose --profile rehearsal rm -sf weaviate-rehearsal
 	@docker volume rm multimodal-rag_weaviate_rehearsal_data >/dev/null 2>&1 || true
+
+weaviate-compat:
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make weaviate-compat VERSION=<x.y.z> [CLIENT=<weaviate-client version>] [SNAPSHOT_DIR=<dir>] [UPGRADE=1]"; exit 1; fi
+	@$(if $(CLIENT),uv run --with "weaviate-client==$(CLIENT)",uv run) python -m multimodal_rag.store.compat --version $(VERSION) $(if $(SNAPSHOT_DIR),--snapshot-dir $(SNAPSHOT_DIR),) $(if $(UPGRADE),--upgrade,)
 
 sync-gate:
 	@uv run python -m multimodal_rag.retrieval_gate
