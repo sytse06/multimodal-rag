@@ -146,3 +146,12 @@ def test_an_unknown_length_is_reported_as_unknown_not_as_free() -> None:
 
     assert any("second: length unknown" in line for line in lines)
     assert "incomplete: 1 with unknown length" in lines[-1]
+
+
+def test_a_window_stored_as_a_narration_and_a_visual_chunk_verifies_clean() -> None:
+    before = [row("a", "d1")]
+    after = [*before, row("narration", "new"), row("visual", "new")]
+
+    problems, added = verify_added(before, after, {"new"})
+
+    assert problems == [] and added == ["narration", "visual"]

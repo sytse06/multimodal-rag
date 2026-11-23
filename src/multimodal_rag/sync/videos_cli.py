@@ -240,6 +240,7 @@ def main() -> None:
                     entry["chunks"] = ingested.chunks
                     entry["transcript_source"] = ingested.transcript_source
                     entry["transcript_model"] = ingested.transcript_model
+                    entry["frame_prompt_version"] = ingested.frame_prompt_version
                 except Exception as exc:  # one video failing must not hide the rest
                     entry["error"] = f"{type(exc).__name__}: {exc}"
                 results.append(entry)

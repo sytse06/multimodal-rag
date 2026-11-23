@@ -7,10 +7,15 @@ from pathlib import Path
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from multimodal_rag.ingest.transcripts import transcript_for
-from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
+from multimodal_rag.ingest.video_frames import (
+    FRAME_PROMPT_VERSION,
+    fetch_frame_chunks,
+    fetch_fused_chunks,
+)
 from multimodal_rag.models.chunks import SupportChunk
 from multimodal_rag.models.config import AppSettings
 from multimodal_rag.models.sources import YouTubeSource
+from multimodal_rag.store.embeddings import MAX_EMBED_WORDS
 from multimodal_rag.store.weaviate import WeaviateStore
 
 logger = logging.getLogger(__name__)
@@ -24,6 +29,18 @@ class Ingested:
     chunks: int
     transcript_source: str | None = None  # "captions" or "gemini"
     transcript_model: str | None = None
+    frame_prompt_version: str | None = None  # recorded in the run, not stored
+
+
+def check_budget(chunks: list[SupportChunk], label: str, *, strict: bool) -> None:
+    """Refuse (strict) or warn about a chunk the embedder would silently cut."""
+    for chunk in chunks:
+        words = len(f"{chunk.source_name}: {chunk.text}".split())
+        if words > MAX_EMBED_WORDS:
+            message = f"a chunk of {words} words would be cut at {MAX_EMBED_WORDS}"
+            if strict:
+                raise ValueError(f"[{label}] {message}")
+            logger.warning("[%s] %s", label, message)
 
 
 def _store(store: WeaviateStore, chunks: list[SupportChunk], label: str) -> int:
@@ -70,6 +87,7 @@ def ingest_video(
             strict=strict,
         )
         chunks = [SupportChunk.from_frame_chunk(c) for c in frames]
+        check_budget(chunks, label, strict=strict)
         return Ingested(_store(store, chunks, f"{label} [frames]"))
 
     used: list[tuple[str, str | None]] = []
@@ -94,6 +112,13 @@ def ingest_video(
         window_seconds=WINDOW_SECONDS,
         strict=strict,
     )
-    added = _store(store, [SupportChunk.from_fused_chunk(c) for c in fused], label)
+    stored = [
+        SupportChunk.from_visual_chunk(c)
+        if c.kind == "visual"
+        else SupportChunk.from_fused_chunk(c)
+        for c in fused
+    ]
+    check_budget(stored, label, strict=strict)
+    added = _store(store, stored, label)
     source, model = used[0] if used else (None, None)
-    return Ingested(added, source, model)
+    return Ingested(added, source, model, FRAME_PROMPT_VERSION)

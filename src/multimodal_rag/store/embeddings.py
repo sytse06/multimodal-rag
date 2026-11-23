@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 _BATCH_SIZE = 5
 _MAX_WORDS = 400
 _RETRY_MAX_WORDS = 200
+MAX_EMBED_WORDS = _MAX_WORDS  # a longer text is cut before it is embedded
 
 
 def _truncate(text: str, max_words: int = _MAX_WORDS) -> str:
