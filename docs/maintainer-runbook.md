@@ -296,23 +296,28 @@ through the drift, but a bump must be tested first:
 1. Read the new minor version's release notes for changes to collection creation, vector
    or index defaults and deprecated endpoints. 1.40 changed the vector defaults; we are
    not affected because every collection we create sets `Configure.Vectors.self_provided`.
-2. Start a throwaway server of the new version on spare ports (never on local data) and
-   check that our code works on it: `ensure_collection`, `restore_snapshot` of the newest
-   hosted backup with the `hfresh` index, every object equal to the backup, a nearest
-   neighbour search, `update_metadata` leaving the vector alone, `put_objects` batches and
-   `validate_compatibility`. Run it with the locked client and with the client Weaviate's
-   release table pairs with that version. Remove the container afterwards.
-3. Test the in-place upgrade on a **copy** of the rehearsal volume: object count, texts
-   and vectors must equal local. Weaviate cannot downgrade a data directory.
+2. Check that our code works on the new version: `make weaviate-compat VERSION=<x.y.z>`.
+   It starts a throwaway server on spare ports and runs `ensure_collection`, a restore of
+   the newest hosted backup with the `hfresh` index, an equality check of every object,
+   a nearest-neighbour search, `update_metadata`, `put_objects` batches and the app's
+   startup check, then removes the server. It refuses the local and rehearsal ports and
+   a target that already holds the collection. Run it again with `CLIENT=<x.y.z>` for
+   the `weaviate-client` that Weaviate's release table pairs with that version (an
+   isolated environment; the lockfile is untouched). `SNAPSHOT_DIR=` picks another backup.
+3. Test the in-place upgrade on a **copy** of the rehearsal volume:
+   `make weaviate-compat VERSION=<x.y.z> UPGRADE=1`. It briefly stops the rehearsal
+   container, copies its volume, opens the copy with the new version, compares object
+   count, texts and vectors, and restarts the rehearsal. Weaviate cannot downgrade a data
+   directory, so never try this on the real volume first.
 4. Only then take `make snapshot-export`, change both images in `compose.yaml`, restart,
    and confirm the preflight shows the versions equal.
 5. Bump `weaviate-client`, run the tests, and deploy with `--no-traffic --tag`; check the
    revision became ready, ask one real question through the tag URL, then shift traffic.
 
-State on 2026-11-23: steps 1 to 3 passed for 1.40.5 (8 of 8 checks with client 4.20.4 and
+State on 2026-11-23: steps 1 to 3 passed for 1.40.5 (every check with client 4.20.4 and
 4.24.1; a copy of the data opened with identical contents). Steps 4 and 5 are not done.
-The longer version with the commands is in `docs/gcp-deployment.txt` on the maintainer's
-machine, which git ignores.
+`make weaviate-compat VERSION=1.28.4` fails at the restore, as it should: that version
+predates the `hfresh` index.
 
 ## 8. Not covered yet
 
@@ -343,6 +348,7 @@ machine, which git ignores.
 | `make sync-plan` | Sitemaps, pages, local | `runs/`, the bucket | 10 needs review |
 | `make sync-apply RUN=` | The plan | **Local**, ledger | 10 needs review, 1 failed or gate failed |
 | `make sync-convert` | Local, sitemaps, ledger | **Local properties** (`DRY=1` writes nothing) | 1 on failed verification |
+| `make weaviate-compat` | A throwaway Weaviate, the newest hosted backup | Nothing outside its own container (`UPGRADE=1` stops the rehearsal briefly) | 1 on a failed check |
 | `make sync-videos` | Registry, local, YouTube metadata | **Local** (`DRY=1` writes nothing; `ROLLBACK=` deletes what a run added) | 1 on a refusal, a failed video or a failed gate |
 | `make promote-plan` | Local, hosted | `runs/` | 10 needs review |
 | `make promote RUN=` | The plan | **Hosted**, backups | 10 needs review, 1 failed |
