@@ -2,8 +2,14 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from multimodal_rag.models.config import AppSettings, ModelSelection
-from multimodal_rag.models.llm import create_chat_model, create_embeddings
+from multimodal_rag.models.llm import (
+    create_chat_model,
+    create_embeddings,
+    create_vision_llm,
+)
 
 
 class TestCreateChatModel:
@@ -156,3 +162,43 @@ class TestCreateEmbeddings:
         )
         emb = create_embeddings(settings)
         assert isinstance(emb, OllamaEmbeddings)
+
+
+class TestCreateVisionModel:
+    def test_a_gemini_prefix_calls_gemini_with_the_measured_settings(self) -> None:
+        settings = AppSettings(
+            _env_file=None, vision_model="gemini:gemini-3.8-flash",
+            gemini_api_key="k",
+            openrouter_api_key="or",
+        )
+        with patch("langchain_google_genai.ChatGoogleGenerativeAI") as chat:
+            create_vision_llm(settings)
+
+        kwargs = chat.call_args.kwargs
+        assert kwargs["model"] == "gemini-3.8-flash"
+        assert (kwargs["temperature"], kwargs["thinking_level"]) == (0, "low")
+        assert kwargs["max_output_tokens"] == 600
+
+    def test_a_gemini_prefix_without_a_key_is_refused(self) -> None:
+        settings = AppSettings(
+            _env_file=None, vision_model="gemini:gemini-3.8-flash",
+            gemini_api_key="",
+            openrouter_api_key="or",
+        )
+
+        with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+            create_vision_llm(settings)
+
+    def test_an_openrouter_id_still_goes_through_openrouter_unchanged(self) -> None:
+        settings = AppSettings(
+            _env_file=None, vision_model="google/gemini-3.8-flash",
+            gemini_api_key="k",
+            openrouter_api_key="or",
+        )
+        with patch("langchain_openrouter.ChatOpenRouter") as chat:
+            create_vision_llm(settings)
+
+        kwargs = chat.call_args.kwargs
+        assert kwargs["model"] == "google/gemini-3.8-flash"
+        assert kwargs["temperature"] == 0.3
+        assert "max_output_tokens" not in kwargs and "thinking_level" not in kwargs

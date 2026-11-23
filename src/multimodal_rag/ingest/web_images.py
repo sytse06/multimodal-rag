@@ -9,6 +9,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from multimodal_rag.models.chunks import WebChunk
+from multimodal_rag.models.llm import message_text
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def describe_image(image_url: str, llm: BaseChatModel) -> str:
         ]
     )
     response_msg = llm.invoke([message])
-    return str(response_msg.content)
+    return message_text(response_msg)
 
 
 def fetch_image_chunks(
