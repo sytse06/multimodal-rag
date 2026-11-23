@@ -940,7 +940,8 @@ The story numbers are stable identifiers, not the order. Build in this order:
 | 3 | SYNC-004 | Removals, behind explicit confirmation | None |
 | 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | The only hosted write |
 | 5 | SYNC-008 (rest) | Runbook, `--json` and exit codes on preflight and gate | None |
-| 6 | SYNC-011 | Video lane: new videos first, changed videos later | Local, then promotion |
+| 6 | SYNC-012 | Video frame descriptions: prompt and chunk structure, before the first new video | Local, then promotion |
+| 7 | SYNC-011 | Video lane: new videos first, changed videos later | Local, then promotion |
 | Later | SYNC-001, SYNC-010 | Stored identity and conversion; screenshot re-description | Schema change only when taken |
 | After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | Via promotion |
 
@@ -1628,6 +1629,79 @@ hosted through SYNC-007.
   OpenRouter) and thinking and output limits on that client
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
+
+#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (not started; evidence collected 2026-11-23)
+
+**Branch:** `feature/SYNC-012-frame-descriptions`
+
+Do this **before the first new video is ingested**: a video that has chunks is never looked
+at again, so a video stored with the current descriptions keeps them. It is independent of
+the lane's mechanics (SYNC-011) and shares the vision path and the repetition guard with
+SYNC-010 (web screenshots), which should be built once.
+
+**Evidence** (read-only analysis of the 214 stored video chunks of the 25 videos, local
+collection, 2026-11-23; the scripts were exploratory and are not in the repository):
+
+- **Length.** All 214 descriptions exceed the 80 words the prompt in `video_frames.py` asks
+  for: median 476, and one with **42,843 words** (HydroSym Explainer: Dimensions at 60 s,
+  distinct-word ratio 0.014, a repetition loop). Retrieved, that chunk goes into the LLM's
+  context whole. The description is a median 87% of a chunk's words; the narration is about
+  70.
+- **Boilerplate.** The prompt says not to describe static UI, but 86% of the descriptions
+  describe the menu bar, 92% the toolbar, 71% the title bar and 78% the status bar; 62%
+  list the identical menu ("File, Edit, Draw, Modify, Format, Assist, Window, Print,
+  Tools, Library, Help"). 194 hedge ("likely", "appears to"), 191 open with "This video
+  frame displays" or "The image displays", and 212 are markdown with headings and bullets.
+  Which prompt produced them is not known: the one in the code cannot yield 476 words.
+- **What the vector sees.** `embed_texts` cuts every text to its first 400 words, and a
+  chunk is the narration followed by the description, so 206 of 214 chunks are cut and a
+  median 32% of the description is lost. The words that remain are mostly the window
+  inventory (median 6 chrome mentions inside them); the part that says what is being
+  demonstrated comes later. The stored vector is closer to the description alone than to
+  the narration alone in 39 of 40 sampled chunks (cosine 0.967 against 0.918).
+- **Dilution.** Chunks of different videos have a mean cosine of 0.841 (0.739 when embedded
+  from the narration alone), and chunks of the same video 0.938 (0.872).
+- **Diagnostic retrieval.** A sentence the narrator says, used as the query, finds its own
+  chunk among the 214 at top-1 in 32% and top-3 in 51% of cases with the stored vectors,
+  against 47% and 75% with narration-only vectors. **Limit:** this measures dilution and
+  favours narration-only by construction. It says nothing about questions that depend on
+  what is on screen, so it cannot show that the descriptions are useless.
+
+**Work**
+
+- **A new prompt** for `_PROMPT_DESCRIBE`: only the action and the step being demonstrated,
+  the dialog or panel that is open and the values in it; no inventory of the window, no
+  hedging, plain text without markdown, about 40 to 60 words. Back it with a hard
+  `max_output_tokens`, a low thinking level, a **repetition guard** (reject a description
+  with a low distinct-word ratio or over a length cap, retry once, and fail the video in
+  strict mode) and a recorded `prompt_version`. `_PROMPT_TRANSCRIBE` (silent recordings) is
+  checked for the same problems, though none of the 25 stored videos uses it.
+- **A chunk with a budget.** Compose the chunk so that the text the embedder sees is
+  planned, not cut by accident: narration first within a word budget, the description
+  capped, the total under the limit, and a warning (or a failure) when a chunk would be
+  truncated.
+- **The vision path.** Add the Gemini provider to the vision factory (it goes through
+  OpenRouter only), shared with SYNC-010 and moved here from SYNC-008 and SYNC-011.
+- **Measure before adopting.** Re-describe about 5 frames from existing videos with each
+  candidate prompt (the frames are not stored, so the videos are downloaded again) and
+  compare them with the stored description by the diagnostic above, by the three canaries
+  in the retrieval gate, and by about 12 questions whose answer depends on what is on
+  screen (which dialog, which button, which value), judged by whether the right video
+  chunk ranks in the top 3. Keep a candidate only if retrieval does not get worse on any of
+  the three.
+- **The runaway chunk** (Dimensions at 60 s, 42,843 words) is a defect whatever the prompt
+  decision is: replace its description, or cap it, and promote the replace.
+- **The existing 213 other chunks** are a separate decision, not part of the default scope:
+  leave them, or re-describe and re-embed them locally (text and vectors change, so a
+  promotion of replaces) once the new prompt has proved itself. Record the choice here.
+
+**Acceptance:** no description over 80 words and none with a repetition loop; no chunk cut
+at the embedding limit; on the diagnostic the new chunks do at least as well as the stored
+ones and within 5 points of the narration-only baseline (47% top-1); the three canaries do
+not get worse; the on-screen questions rank the right chunk in the top 3 at least as often
+as the stored chunks do. The first video of SYNC-011 is ingested only after this.
+
+**Scope:** `ingest/video_frames.py`, `ingest/videos.py`, `models/llm.py`, `models/chunks.py`
 
 ### Phase 3: Production hardening
 
