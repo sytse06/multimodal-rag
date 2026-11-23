@@ -14,10 +14,9 @@ from pydantic import SecretStr
 from multimodal_rag.env_check import duplicate_env_keys
 from multimodal_rag.ingest.cookies import youtube_cookies
 from multimodal_rag.ingest.template import check_template
-from multimodal_rag.ingest.video_frames import fetch_frame_chunks, fetch_fused_chunks
+from multimodal_rag.ingest.videos import ingest_video
 from multimodal_rag.ingest.web import chunk_page, crawl_knowledge_base
 from multimodal_rag.ingest.web_images import fetch_image_chunks
-from multimodal_rag.ingest.youtube import fetch_transcript_chunks
 from multimodal_rag.logging_config import configure_logging
 from multimodal_rag.models.chunks import SupportChunk
 from multimodal_rag.models.config import AppSettings
@@ -107,62 +106,9 @@ def _run(settings: AppSettings, cookies_file: str) -> None:
             logger.info("Processing %s", label)
 
             try:
-                if yt.skip_voxtral:
-                    # Silent screen recording: vision-only path, dense frames
-                    logger.info(
-                        "[%s] skip_voxtral=true — using vision-only path", label
-                    )
-                    if vision_llm is not None:
-                        frame_chunks = fetch_frame_chunks(
-                            str(yt.url),
-                            yt.name,
-                            vision_llm,
-                            interval_seconds=5,
-                            cookies_file=cookies_file,
-                            transcribe_mode=True,
-                        )
-                        support_chunks = [
-                            SupportChunk.from_frame_chunk(c) for c in frame_chunks
-                        ]
-                        total_added += _ingest_chunks(
-                            store, support_chunks, f"{label} [frames]"
-                        )
-                    else:
-                        logger.warning(
-                            "[%s] skip_voxtral=true but VISION_MODEL not set, skipping",
-                            label,
-                        )
-
-                elif _secret_value(settings.mistral_api_key):
-                    # Standard spoken video: fused Voxtral + optional vision
-                    tc = fetch_fused_chunks(
-                        video_url=str(yt.url),
-                        source_name=yt.name,
-                        mistral_api_key=_secret_value(settings.mistral_api_key),
-                        vision_llm=vision_llm,
-                        cookies_file=cookies_file,
-                        window_seconds=30,
-                    )
-                    chunks = [SupportChunk.from_fused_chunk(c) for c in tc]
-                    total_added += _ingest_chunks(store, chunks, label)
-
-                else:
-                    # No Mistral key: fall back to youtube-transcript-api captions
-                    logger.warning(
-                        "[%s] MISTRAL_API_KEY not set — falling back to"
-                        " youtube-transcript-api",
-                        label,
-                    )
-                    tc = fetch_transcript_chunks(
-                        video_url=str(yt.url),
-                        source_name=yt.name,
-                        target_tokens=settings.chunk_size,
-                        mistral_api_key="",
-                        cookies_file=cookies_file,
-                    )
-                    chunks = [SupportChunk.from_transcript_chunk(c) for c in tc]
-                    total_added += _ingest_chunks(store, chunks, label)
-
+                total_added += ingest_video(
+                    store, yt, settings, vision_llm, cookies_file
+                ).chunks
             except Exception:
                 logger.exception("[%s] Failed, skipping", label)
                 total_failed += 1

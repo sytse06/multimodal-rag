@@ -137,10 +137,33 @@ def check_embeddings(settings: AppSettings) -> list[Check]:
     return checks
 
 
+def check_gemini(settings: AppSettings) -> Check:
+    """Whether the Gemini key is accepted: a key that is set can still be rejected."""
+    from google import genai
+    from google.genai import errors
+
+    key = settings.credentials.gemini_api_key.get_secret_value()
+    if not key:
+        return Check(
+            "gemini key",
+            Status.WARN,
+            "not set; a video without manual captions cannot be transcribed",
+        )
+    client = genai.Client(api_key=key)  # kept alive: a dropped client closes itself
+    try:
+        next(iter(client.models.list()), None)
+    except errors.ClientError as exc:
+        if exc.code in (400, 401, 403):
+            return Check("gemini key", Status.FAIL, f"rejected by the API ({exc.code})")
+        return Check("gemini key", Status.WARN, f"could not be checked ({exc.code})")
+    except Exception as exc:  # a network problem is not a verdict on the key
+        return Check("gemini key", Status.WARN, f"could not be checked: {exc}")
+    return Check("gemini key", Status.OK, "accepted by the API")
+
+
 def check_keys(settings: AppSettings) -> list[Check]:
     required = (
         ("FIRECRAWL_API_KEY", settings.firecrawl_api_key, Status.FAIL, "web crawl"),
-        ("MISTRAL_API_KEY", settings.mistral_api_key, Status.WARN, "Voxtral fallback"),
         (
             "OPENROUTER_API_KEY",
             settings.credentials.openrouter_api_key,
@@ -151,7 +174,7 @@ def check_keys(settings: AppSettings) -> list[Check]:
             "GEMINI_API_KEY",
             settings.credentials.gemini_api_key,
             Status.WARN,
-            "default chat model",
+            "default chat model and video transcription",
         ),
         (
             "WEAVIATE_ADMIN_API_KEY",
@@ -375,6 +398,7 @@ def run_preflight(settings: AppSettings, *, local_only: bool = False) -> list[Ch
     ]
     if not local_only:
         steps += [
+            ("gemini key", lambda: check_gemini(settings)),
             ("youtube cookies", lambda: check_cookies(settings)),
             ("registry", lambda: check_registry(settings)),
             ("latest backup", lambda: check_backup(settings)),

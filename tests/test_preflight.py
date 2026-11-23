@@ -16,6 +16,7 @@ from multimodal_rag.preflight import (
     check_backup,
     check_config,
     check_cookies,
+    check_gemini,
     check_keys,
     check_ollama,
     compare_collections,
@@ -69,7 +70,7 @@ def test_keys_report_presence_and_never_the_value() -> None:
     by_name = {c.name: c for c in checks}
     assert by_name["OPENROUTER_API_KEY"].status is Status.OK
     assert by_name["FIRECRAWL_API_KEY"].status is Status.FAIL
-    assert by_name["MISTRAL_API_KEY"].status is Status.WARN
+    assert "MISTRAL_API_KEY" not in by_name  # video ingest no longer uses it
     assert "or-secret-value" not in report
     assert "admin-secret-value" not in report
 
@@ -233,3 +234,44 @@ def test_a_module_run_as_main_still_reports_drift_correctly() -> None:
 
     assert drift_status(1.0) is Status.OK
     assert drift_status(0.83) is Status.FAIL
+
+
+def _gemini_client(listing: object) -> MagicMock:
+    client = MagicMock()
+    if isinstance(listing, Exception):
+        client.models.list.side_effect = listing
+    else:
+        client.models.list.return_value = listing
+    return client
+
+
+def test_a_gemini_key_the_api_accepts_is_ok() -> None:
+    with patch("google.genai.Client", return_value=_gemini_client(iter(["m"]))):
+        check = check_gemini(_settings())
+
+    assert check.status is Status.OK and "gem-secret-value" not in check.detail
+
+
+def test_a_gemini_key_that_is_set_but_rejected_fails() -> None:
+    from google.genai import errors
+
+    rejected = errors.ClientError(400, {"error": {"message": "API key not valid"}})
+    with patch("google.genai.Client", return_value=_gemini_client(rejected)):
+        check = check_gemini(_settings())
+
+    assert check.status is Status.FAIL and "400" in check.detail
+
+
+def test_a_network_problem_is_a_warning_not_a_verdict_on_the_key() -> None:
+    with patch(
+        "google.genai.Client", return_value=_gemini_client(ConnectionError("down"))
+    ):
+        check = check_gemini(_settings())
+
+    assert check.status is Status.WARN
+
+
+def test_a_missing_gemini_key_warns_and_names_the_consequence() -> None:
+    check = check_gemini(_settings(gemini_api_key=""))
+
+    assert check.status is Status.WARN and "manual captions" in check.detail

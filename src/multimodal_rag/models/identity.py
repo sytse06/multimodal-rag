@@ -21,6 +21,15 @@ def canonical_url(url: str) -> str:
     return _WATCH.format(match.group(1)) if match else url
 
 
+def is_video_url(url: str) -> bool:
+    """Whether the URL is a YouTube shape that ``canonical_url`` can identify.
+
+    ``shorts/``, ``live/`` and the like are not, so they would get an identity of their
+    own and could never be matched with the same video registered another way.
+    """
+    return _YOUTUBE.search(url) is not None
+
+
 def document_id(source_url: str) -> str:
     return str(uuid5(NAMESPACE_URL, canonical_url(source_url)))
 

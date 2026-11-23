@@ -22,8 +22,8 @@ writes.
    anything later.** Every earlier backup holds the March vectors, and restoring one brings
    the drift back.
 5. **Do not use `make ingest` to update content.** It reprocesses every video and every page
-   and, with a vision model set, calls it on every frame and image. The video lane (SYNC-011)
-   is not built yet; see section 8.
+   and, with a vision model set, calls it on every frame and image. To add a video use
+   section 3b. Never use `make purge-video` to redo one video: it deletes every video chunk.
 6. **Keep Docker's disk under 80%.** Above 90% Weaviate sets itself read-only and writes
    fail.
 
@@ -56,6 +56,7 @@ Do these in order. Stop at the first problem.
    | local vectors | sampled vectors match a fresh embedding, lowest 1.0000 | Lowest under 0.99: `make sync-reembed` first |
    | registry | matches the bucket | The local copy is stale: `make sources-pull` |
    | latest backup | under 7 days old | Older: `make snapshot-backup TARGET=cloud` |
+   | gemini key | accepted by the API | Rejected: a key that is set can still be invalid; fix before any video work |
    | local vs hosted | identical, or a difference you expect | A difference you cannot explain |
    | hosted vectors | match a fresh embedding | Drifted: a promotion is needed |
    | keys, tools, `.env` duplicates | OK | Any FAIL |
@@ -139,6 +140,63 @@ embedding.
 **Rollback:** `make snapshot-restore SNAPSHOT_DIR=runs/convert-<time>/snapshot-local
 REPLACE=1`. The conversion changes nothing the snapshot does not hold.
 
+### 3b. Adding a video
+
+> **Hold new videos until SYNC-012 is done.** The stored frame descriptions run a median 476
+> words against the prompt's 80, mostly an inventory of the window's menus and toolbars, and
+> the embedder cuts them at 400 words, so a vector encodes that inventory and not what is
+> being demonstrated. A video that has chunks is never looked at again, so one added now
+> keeps whatever description style it is given today. `docs/epics.md` (SYNC-012) has the
+> evidence and the plan. `make sync-videos DRY=1` is safe to run at any time.
+
+A video is new when no stored chunk carries its `document_id`, which is a hash of the
+canonical address, so `youtu.be/<id>` and `watch?v=<id>` are the same video. Only new
+videos are ingested; nothing already stored is touched. Everything happens on local.
+
+1. **Run the checks in section 2.** The report must show the embedding runtime pinned, the
+   YouTube cookies not expired, the Gemini key accepted, and `VISION_MODEL` set. Without a vision model the lane
+   refuses (`--allow-no-vision` overrides it): a video stored with no frame descriptions is
+   never revisited, so it would stay different from the others for good.
+2. **Add it to the registry:** `make sources-pull`, edit `config/sources.yaml`, then
+   `make sources-push`. Use `https://www.youtube.com/watch?v=<id>` without the `?si=...`
+   share token (it would end up in every stored address and citation link), and the video's
+   own title as the name. Set `skip_voxtral: true` only for a silent screen recording (it
+   has no transcript at all; the name is historical).
+3. **Dry run:** `make sync-videos DRY=1`. Read it:
+   - how many registry videos are already stored and how many are new;
+   - per new video its length, the path ingest will take, the vision calls (one frame per
+     30 seconds on the normal path, one per 5 on a silent recording) and where the
+     transcript comes from: the video's **manual captions** (free), or a **Gemini
+     transcription** with its minutes of audio. Automatic YouTube captions are never used,
+     because they are weakest on product names. This is what the run will spend;
+   - a warning that `config/sources.yaml` has edits not pushed yet. The dry run goes on,
+     so you can preview before pushing, but the real run **refuses** until you push;
+   - a video whose length is "unknown" (YouTube's metadata could not be read): its cost
+     is not in the total, which then says it is incomplete;
+   - `Refused`: an address it cannot identify (`shorts/`, `live/`), two entries for one
+     video, or a stored video with no `document_id` (`make sync-convert` first). Fix the
+     registry and push it; nothing is ingested while anything is refused.
+4. **Ingest:** `make sync-videos`. It asks, takes the lock, snapshots local, then ingests
+   each new video **all or nothing**: if a frame cannot be described the whole video fails
+   and none of its chunks are stored. Afterwards it proves that every earlier object is
+   unchanged and that every new object belongs to a new video, writes exactly which
+   objects it added to `runs/videos-<time>/videos.json` (it writes the list of planned
+   videos there **before** ingesting, so even a crashed run can be rolled back), and runs
+   the retrieval gate. Exit 1 means a video failed or produced no chunks, the proof failed
+   or the gate failed; it prints the video and the reason.
+5. **Check it:** `make sync-videos DRY=1` now says there is nothing to ingest, and the
+   preflight is green. Ask a question the video answers and look at the cited timestamp.
+6. **Promote:** `make promote-plan` shows the new chunks as **adds** and nothing else: no
+   replace, no delete, no vector refresh, no schema change. If it shows anything else,
+   stop and find out what changed. Then follow section 4.
+
+**Rollback:** `make sync-videos ROLLBACK=runs/videos-<time>` deletes every object of the
+videos that run ingested, which were new when it began, so it removes exactly what the run
+added and nothing else. It changes local only: after a promotion, `make promote-plan` will
+then show the matching deletes, and they need their own promotion. That is also how to redo one video that was stored wrongly: roll
+the run back, fix the cause, and run again. The snapshot in the same run directory is the
+backstop.
+
 ## 4. Stage B: promote to hosted
 
 Choose a quiet moment. While the promotion runs, some hosted chunks hold new vectors and
@@ -206,6 +264,11 @@ that corrects forward.
 | `N% of <host>'s pages are missing from its sitemap` | Looks like a sitemap fault | Look at the sitemap before accepting |
 | A gate line says FAIL after an apply | New content outranks a canary's source | Read the lines; roll back local, or fix the canary if the page really moved |
 | `Failed verification: a text or a vector changed` after a conversion | Should be impossible: the conversion sends no text or vector | Restore the snapshot it printed and report it |
+| `Refused: ... identity would be a guess` | The registry address is not a watch, youtu.be or embed link | Register it as `https://www.youtube.com/watch?v=<id>` and push |
+| `Refused: ... are the same video` | Two registry entries for one video | Remove one and push |
+| `a video has no manual captions and GEMINI_API_KEY is unset` | Nothing can transcribe that video | Set the key; the preflight's `gemini key` line says whether it is accepted |
+| `VISION_MODEL is not set` | The lane will not store a video without frame descriptions | Set it, or pass `ALLOW_NO_VISION=1` knowing it is permanent |
+| A video fails with a vision error | A frame could not be described; nothing of that video was stored | Run again; check the Gemini quota first |
 | Firecrawl fails or credits run out | The fetch stops | Failed pages are listed; wait or top up, then build a new plan |
 
 ## 7. Routine
@@ -221,8 +284,9 @@ that corrects forward.
 
 ## 8. Not covered yet
 
-- **Adding or changing a video.** Not built (SYNC-011). Do not run `make ingest` for it; see
-  rule 5. When it is built it will ingest only sources with no stored chunks.
+- **Changing a video that is already stored** (a new cut at the same address). Not built
+  (SYNC-011, second half). A video with any stored chunk is never looked at again, so
+  re-recording one needs the fingerprint work. Adding a new video is section 3b.
 - **Screenshot descriptions** (SYNC-010) are never touched by the web lane.
 - **Unattended runs** (SYNC-009) are not allowed. Removals will always need a person.
 - **Operations:** spend caps, abuse limits, alerting and a dedicated service account (OPS-001
@@ -247,6 +311,7 @@ that corrects forward.
 | `make sync-plan` | Sitemaps, pages, local | `runs/`, the bucket | 10 needs review |
 | `make sync-apply RUN=` | The plan | **Local**, ledger | 10 needs review, 1 failed or gate failed |
 | `make sync-convert` | Local, sitemaps, ledger | **Local properties** (`DRY=1` writes nothing) | 1 on failed verification |
+| `make sync-videos` | Registry, local, YouTube metadata | **Local** (`DRY=1` writes nothing; `ROLLBACK=` deletes what a run added) | 1 on a refusal, a failed video or a failed gate |
 | `make promote-plan` | Local, hosted | `runs/` | 10 needs review |
 | `make promote RUN=` | The plan | **Hosted**, backups | 10 needs review, 1 failed |
 | `make promote-rollback` | A snapshot | **Hosted** or rehearsal | 1 if any difference remains |
