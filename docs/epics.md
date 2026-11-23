@@ -943,7 +943,7 @@ what is left:
 | 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
 | 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | not started; before the first new video | Local, then promotion |
-| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built on `feature/SYNC-011-video-lane` (not merged); first real run waits for SYNC-012 | Local, then promotion |
+| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built and merged; first real run waits for SYNC-012 | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
 
