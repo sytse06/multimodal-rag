@@ -1575,7 +1575,7 @@ Evidence: `docs/screenshot-description-pilot.md`.
 
 **Scope:** `models/chunks.py`, `ingest/web_images.py`, `models/llm.py`
 
-#### SYNC-011 — Video Lane: New and Changed Videos
+#### SYNC-011 — Video Lane: New and Changed Videos (new videos built; first real run pending)
 
 **Branch:** `feature/SYNC-011-video-lane`
 
@@ -1599,6 +1599,61 @@ hosted through SYNC-007.
   Cross-Over Pilot Lines and Angled Connections", 2:04, auto captions, about 5 frames)
 - Moved here from SYNC-008: a Gemini vision path (the vision client always uses
   OpenRouter) and thinking and output limits on that client
+
+**Built, new-video half (2026-11-23), not yet run on real data:** `make sync-videos`
+(`DRY=1`, `ROLLBACK=runs/videos-<id>`, `YES=1`, `ALLOW_NO_VISION=1`), local only.
+
+- `ingest/videos.py::ingest_video` is the one per-video function; `make ingest` now calls
+  it too, so the two cannot drift (the existing tests cover all three paths through it).
+- **Selection** (`sync/videos.py`): new means no stored chunk carries the video's
+  `document_id`. It refuses, instead of guessing, an address that is not a watch, youtu.be
+  or embed link, two registry entries for one video, a stored video without a
+  `document_id`, and a registry that differs from the bucket's. On the real data all 25
+  registered videos match their stored chunks, including the nine `youtu.be` ones.
+- **All or nothing per video:** a video that already has chunks is never looked at again,
+  so a half-described one would stay that way. `strict` mode (new in `video_frames.py`)
+  fails the whole video when one frame cannot be described, before anything is stored, and
+  the lane refuses to run without `VISION_MODEL`. (Voxtral already raised on failure.)
+- **Transcript source (2026-11-23, replaces Voxtral):** the video's **manual English
+  captions** if it has them, otherwise a **Gemini transcription** (`gemini-3.8-flash`,
+  mono 16 kHz audio, temperature 0, JSON segments); automatic YouTube captions are never
+  used. `ingest/transcripts.py` returns segments in the shape the fused 30-second windows
+  already consume, so new videos look like the existing 25. The run record keeps each
+  video's source and the model version Gemini reported. A failed transcription fails the
+  video. Why: the default path always used Voxtral, the Mistral key in `.env` turned out to
+  be rejected (401) and the preflight could not see it, and `voxtral-mini-latest` is a
+  floating alias. **Spike** (3 existing videos with manual captions as ground truth, plus
+  the new one): word error rate 0.010 to 0.040 for Gemini against 0.028 to 0.054 for the
+  stored Voxtral text; every product name correct (Voxtral wrote "HydroSim" for HydroSym
+  in 8 of 8 mentions); timestamp offset median 0.4 to 0.6 s; coverage 0.99 to 1.02. By the
+  criteria written beforehand it missed three marginal checks (window agreement 0.901
+  against 0.967 on the 113 s video, one 6.1 s offset against a 5 s limit, run-to-run word
+  error rate 0.032 against 0.03). 18 of 26 videos have manual captions, 8 only automatic.
+  `Mistral` and `voxtral.py` are no longer used by video ingest; deleting them and the
+  `mistralai` package is a follow-up.
+- **Estimate** per real path: spoken videos one frame per 30 s plus the minutes of audio
+  Gemini must transcribe (none when manual captions exist), silent recordings one frame
+  per 5 s. For `yWuBQik8KPs` (2:04, automatic captions only): 5 vision calls, 2.07 minutes
+  of Gemini transcription. The preflight now checks that the Gemini key is *accepted*, not
+  just set. `yt-dlp` was upgraded to 2026.10.26: the locked version got HTTP 403 on some
+  videos.
+- **Known:** the existing 25 videos' transcripts say "HydroSim"; re-transcribing them
+  would change text and vectors (re-embed and a promotion) and is a separate decision.
+  Gemini's model name is a floating alias (no dated ID was listed), so each run records the
+  version it reported.
+- **Proof and rollback:** after the run every earlier object must be unchanged and every
+  new one must belong to a new video; the exact UUIDs are written to `videos.json` and
+  `ROLLBACK=` deletes only those (never `make purge-video`, which deletes all 214 video
+  chunks). The snapshot is the backstop; the retrieval gate runs afterwards.
+- **Hardened after review:** a real run refuses while `config/sources.yaml` has edits not
+  pushed to the bucket (the dry run only warns), so the registry stays the source of truth;
+  the planned videos are written to `videos.json` **before** ingesting, and the rollback
+  deletes every object of those videos, so a crashed run can still be undone; a video that
+  yields no chunks counts as failed (it would otherwise be retried silently); an unknown
+  duration is shown as unknown and the total is marked incomplete.
+- Runbook section 3b "Adding a video" is written from this code. **Not done:** the first
+  real run, which is the maintainer's acceptance test of the runbook; changed videos
+  (fingerprint and pipeline version); the Gemini vision path.
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
 
