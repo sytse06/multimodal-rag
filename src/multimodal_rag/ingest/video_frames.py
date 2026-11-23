@@ -4,13 +4,13 @@ import base64
 import logging
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import yt_dlp
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
-from multimodal_rag.ingest.voxtral import transcribe_with_voxtral
 from multimodal_rag.models.chunks import TranscriptChunk
 
 logger = logging.getLogger(__name__)
@@ -129,28 +129,6 @@ def describe_frame(
     return str(response.content)
 
 
-def extract_audio(video_path: Path, output_dir: Path) -> Path:
-    """Extract and re-encode audio from a video file to mp3 via ffmpeg.
-
-    Returns the path to the extracted audio file.
-    Raises subprocess.CalledProcessError on ffmpeg failure.
-    """
-    audio_path = output_dir / (video_path.stem + ".mp3")
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-i",
-            str(video_path),
-            "-vn",
-            "-q:a",
-            "4",
-            str(audio_path),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    return audio_path
-
 
 def fetch_frame_chunks(
     video_url: str,
@@ -159,11 +137,13 @@ def fetch_frame_chunks(
     interval_seconds: int = 30,
     cookies_file: str = "",
     transcribe_mode: bool = False,
+    strict: bool = False,
 ) -> list[TranscriptChunk]:
     """Download a video, extract keyframes, and describe each with a vision LLM.
 
     Returns a list of TranscriptChunks where text is the frame description
-    and start_seconds is the frame timestamp.
+    and start_seconds is the frame timestamp. With ``strict`` a frame that cannot be
+    described fails the whole video, so nothing half-described is stored.
     """
     chunks: list[TranscriptChunk] = []
 
@@ -195,6 +175,8 @@ def fetch_frame_chunks(
                     )
                 )
             except Exception:
+                if strict:
+                    raise
                 logger.warning(
                     "Failed to describe frame at %ds for %s, skipping",
                     timestamp,
@@ -208,12 +190,19 @@ def fetch_frame_chunks(
 def fetch_fused_chunks(
     video_url: str,
     source_name: str,
-    mistral_api_key: str,
+    transcribe: Callable[[Path, Path], list[dict[str, float | str]]],
     vision_llm: BaseChatModel | None,
     cookies_file: str = "",
     window_seconds: int = 30,
+    strict: bool = False,
 ) -> list[TranscriptChunk]:
-    """Download video once, transcribe with Voxtral, describe keyframes, merge per window."""  # noqa: E501
+    """Download video once, get its transcript, describe keyframes, merge per window.
+
+    ``transcribe(video_path, work_dir)`` returns segments as ``{text, start, duration}``.
+
+    With ``strict`` a frame that cannot be described fails the whole video instead of
+    leaving that window transcript-only.
+    """  # noqa: E501
     chunks: list[TranscriptChunk] = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -228,10 +217,8 @@ def fetch_fused_chunks(
             video_url, video_dir, cookies_file=cookies_file, include_audio=True
         )
 
-        logger.info("Extracting audio for Voxtral: %s", source_name)
-        audio_path = extract_audio(video_path, tmp_path)
-        logger.info("Transcribing with Voxtral: %s", source_name)
-        segments = transcribe_with_voxtral(audio_path, mistral_api_key)
+        logger.info("Getting the transcript: %s", source_name)
+        segments = transcribe(video_path, tmp_path)
 
         frames: list[tuple[Path, int]] = []
         if vision_llm is not None:
@@ -270,6 +257,8 @@ def fetch_fused_chunks(
                 try:
                     frame_description = describe_frame(frame_path, vision_llm)
                 except Exception:
+                    if strict:
+                        raise
                     logger.warning(
                         "Failed to describe frame at %ds for %s, skipping visual",
                         window_start,

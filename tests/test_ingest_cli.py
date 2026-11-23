@@ -43,7 +43,7 @@ def _setup_store_cls(mock_store_cls: MagicMock, mock_store: MagicMock) -> None:
 class TestRun:
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_ingests_youtube_per_video(
@@ -84,20 +84,17 @@ class TestRun:
         run()
 
         mock_create_emb.assert_called_once()
-        mock_yt.assert_called_once_with(
-            video_url="https://www.youtube.com/watch?v=abc",
-            source_name="Test",
-            target_tokens=400,
-            mistral_api_key="",
-            cookies_file="",
-        )
+        kwargs = mock_yt.call_args.kwargs
+        assert kwargs["video_url"] == "https://www.youtube.com/watch?v=abc"
+        assert kwargs["source_name"] == "Test"
+        assert callable(kwargs["transcribe"])
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_called_once()
 
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
     @patch("multimodal_rag.ingest.__main__.crawl_knowledge_base")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_ingests_kb_per_page(
@@ -150,7 +147,7 @@ class TestRun:
 
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_youtube_failure_continues(
@@ -198,7 +195,7 @@ class TestRun:
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
     @patch("multimodal_rag.ingest.__main__.crawl_knowledge_base")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_kb_page_failure_continues(
@@ -252,7 +249,7 @@ class TestRun:
 
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_no_chunks_opens_store_but_adds_nothing(
@@ -279,11 +276,11 @@ class TestRun:
         mock_store.ensure_collection.assert_called_once()
         mock_store.add_chunks.assert_not_called()
 
-    @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_frame_chunks")
     @patch("multimodal_rag.ingest.__main__.create_vision_llm")
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_skip_voxtral_uses_vision_only_path(
@@ -320,15 +317,15 @@ class TestRun:
 
         run()
 
-        # skip_voxtral uses vision-only path — fetch_transcript_chunks not called
+        # skip_voxtral uses the vision-only path: no transcript, no fused windows
         mock_yt.assert_not_called()
         mock_fetch_frames.assert_called_once()
 
-    @patch("multimodal_rag.ingest.__main__.fetch_frame_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_frame_chunks")
     @patch("multimodal_rag.ingest.__main__.create_vision_llm")
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_visual_grounding_skipped_when_vision_model_not_set(
@@ -359,18 +356,16 @@ class TestRun:
         mock_create_vision.assert_not_called()
         mock_fetch_frames.assert_not_called()
 
-    @patch("multimodal_rag.ingest.__main__.fetch_fused_chunks")
+    @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.create_vision_llm")
     @patch("multimodal_rag.ingest.__main__.WeaviateStore")
     @patch("multimodal_rag.ingest.__main__.create_embeddings")
-    @patch("multimodal_rag.ingest.__main__.fetch_transcript_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
     def test_visual_grounding_runs_when_vision_model_set(
         self,
         mock_settings_cls: MagicMock,
         mock_load: MagicMock,
-        mock_yt: MagicMock,
         mock_create_emb: MagicMock,
         mock_store_cls: MagicMock,
         mock_create_vision: MagicMock,
@@ -387,7 +382,6 @@ class TestRun:
         mock_load.return_value = SourceConfig(
             youtube=[YouTubeSource(url="https://youtube.com/watch?v=abc", name="Vid")]
         )
-        mock_yt.return_value = []
         mock_fetch_fused.return_value = [
             TranscriptChunk(
                 text="[Transcript] hello\n[Visual] A menu is visible",
