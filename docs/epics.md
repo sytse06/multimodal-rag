@@ -942,7 +942,7 @@ what is left:
 | 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | done | The only hosted write |
 | 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
-| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | not started; before the first new video | Local, then promotion |
+| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | measured; build not started; before the first new video | Local, then promotion |
 | 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built and merged; first real run waits for SYNC-012 | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
@@ -1690,7 +1690,7 @@ hosted through SYNC-007.
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
 
-#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (not started; evidence collected 2026-11-23)
+#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (measured 2026-11-23; build not started)
 
 **Branch:** `feature/SYNC-012-frame-descriptions`
 
@@ -1727,39 +1727,105 @@ collection, 2026-11-23; the scripts were exploratory and are not in the reposito
   favours narration-only by construction. It says nothing about questions that depend on
   what is on screen, so it cannot show that the descriptions are useless.
 
-**Work**
+**Measurement (2026-11-23).** About 82 vision calls on `gemini-3.8-flash` and local
+re-embedding with the pinned Ollama; the scripts were exploratory and are not in the
+repository. Frames came from the project's own `extract_keyframes`; every claim below was
+checked against the frame image, not the log.
 
-- **A new prompt** for `_PROMPT_DESCRIBE`: only the action and the step being demonstrated,
-  the dialog or panel that is open and the values in it; no inventory of the window, no
-  hedging, plain text without markdown, about 40 to 60 words. Back it with a hard
-  `max_output_tokens`, a low thinking level, a **repetition guard** (reject a description
-  with a low distinct-word ratio or over a length cap, retry once, and fail the video in
-  strict mode) and a recorded `prompt_version`. `_PROMPT_TRANSCRIBE` (silent recordings) is
-  checked for the same problems, though none of the 25 stored videos uses it.
-- **A chunk with a budget.** Compose the chunk so that the text the embedder sees is
-  planned, not cut by accident: narration first within a word budget, the description
-  capped, the total under the limit, and a warning (or a failure) when a chunk would be
-  truncated.
-- **The vision path.** Add the Gemini provider to the vision factory (it goes through
-  OpenRouter only), shared with SYNC-010 and moved here from SYNC-008 and SYNC-011.
-- **Measure before adopting.** Re-describe about 5 frames from existing videos with each
-  candidate prompt (the frames are not stored, so the videos are downloaded again) and
-  compare them with the stored description by the diagnostic above, by the three canaries
-  in the retrieval gate, and by about 12 questions whose answer depends on what is on
-  screen (which dialog, which button, which value), judged by whether the right video
-  chunk ranks in the top 3. Keep a candidate only if retrieval does not get worse on any of
-  the three.
-- **The runaway chunk** (Dimensions at 60 s, 42,843 words) is a defect whatever the prompt
-  decision is: replace its description, or cap it, and promote the replace.
-- **The existing 213 other chunks** are a separate decision, not part of the default scope:
-  leave them, or re-describe and re-embed them locally (text and vectors change, so a
-  promotion of replaces) once the new prompt has proved itself. Record the choice here.
+- **Today's prompt is not the cause.** The prompt in `video_frames.py` (P0), run today,
+  writes 38 to 72 words with almost no window inventory. The stored 300 to 757-word
+  descriptions came from an older prompt or model. P0's real flaws are markdown and thin
+  detail.
+- **Stage 1, three prompts on five frames.** Candidate A (anchored on the video title and
+  the window's narration) and B (unanchored) both gave 110 to 134 plain-text words and
+  answered "No relevant on-screen content." on a title card. **Neither passed "every value
+  correct":** A said the Join and DV Bottom toggles were inactive when they are on, and in
+  a first run claimed a right-click because the narrator says "right-click" while the mouse
+  graphic showed the left button; B garbled a quoted field as `ø<><X<>` for `ø<>x<>`.
+  Anchoring on the narration added a way to be wrong and no demonstrated benefit, so A was
+  dropped. Errors came from enumerating many fields, which a higher word cap invites.
+- **Stage 2, prompt C on 52 frames of 6 videos.** C is today's prompt with its last
+  sentence changed to "Write plain text in one paragraph of at most 100 words. No markdown,
+  no lists, no bold." Result: 64 to 100 words (median 90), no markdown or hedging, no loop
+  (distinct-word ratio at least 0.63), 7 of 52 still mention the title, menu, tool or status
+  bar. A rebuilt chunk is at most 195 words against a stored median of 540, so nothing is
+  cut at the embedding limit. Of 8 descriptions drawn at random, none had a wrong dialog
+  name or value; one overreached ("actively clicking" a button the cursor only hovered on).
+  Control: re-embedding the stored text reproduces the stored vectors (cosine 1.0000).
 
-**Acceptance:** no description over 80 words and none with a repetition loop; no chunk cut
-at the embedding limit; on the diagnostic the new chunks do at least as well as the stored
-ones and within 5 points of the narration-only baseline (47% top-1); the three canaries do
-not get worse; the on-screen questions rank the right chunk in the top 3 at least as often
-as the stored chunks do. The first video of SYNC-011 is ingested only after this.
+  | Swapped into the stored vectors | Narrator diagnostic top-1 / top-3 | On-screen questions in the top 3 | Canaries |
+  |---|---|---|---|
+  | stored | 15% / 37% | 1 of 6 | 1, 1, 4 |
+  | C, one hybrid vector | 27% / 44% | 4 of 6 | 1, 5, 4 |
+  | C, narration and visual as two vectors or two chunks | 46% / 63% | 5 of 6 | 1, 5, 4 |
+  | narration only | 48% / 67% | 2 of 6 | 1, 5, 4 |
+
+  Against the criteria fixed beforehand, C passed length, loops and chunk size, the
+  diagnostic against stored, the on-screen questions and accuracy, and **failed** two: the
+  diagnostic within 5 points of the narration-only baseline (27% against 48%, a ceiling
+  that favours narration by construction), and "canaries rank no worse" (the oilflow canary
+  fell from 1 to 5; the top six sit within 0.023, narration alone also gives 5, and the
+  gate would WARN, not FAIL). The 6 on-screen questions were written by the assistant from
+  frames it had viewed, then shown to and accepted by the maintainer before any run; with 6
+  questions one question is a 17-point swing.
+- **Length.** Cutting C's descriptions to the first 20, 40, 60 or 90 words (re-embedded,
+  no new calls) moves the diagnostic top-1 from 37% to 27% and the on-screen questions from
+  3 to 4 of 6; about 60 words looks like the knee. This is truncation of 90-word text, not
+  what a 60-word prompt would write.
+- **Why two vectors help.** One embedding averages two kinds of content, what is said and
+  what is shown, so a hybrid sits between both kinds of query. Scoring a query against a
+  narration vector and a visual vector and taking the better match closes most of the gap
+  to narration-only (46% against 48%) and keeps the screen-detail gains. The simulation is
+  optimistic: only the 52 swapped windows had two chances to match.
+- **Splitting the existing 213 chunks needs no vision calls.** Splitting each stored chunk
+  into its narration and its stored description and embedding both raised the narrator
+  diagnostic over 213 windows from 14% / 30% (median rank 12) to 40% / 65% (median rank 2),
+  and fixed the "weak" import canary (rank 4 to 1), while the oilflow canary fell from 1 to
+  6. The stored descriptions add nothing for screen-detail questions (2 of 6, the same as
+  narration alone), and trimming them changes nothing: the on-screen gains need new
+  descriptions. The diagnostic overstates the real gain because the queries come from the
+  narration.
+- **The frame labelled "30 s" is not the video's 30 s.** The pipeline's frame for a window
+  matches about 42 to 54 s of the video for the window starting at 30 s: inside the window,
+  later than its label. Feeding a window's narration to a frame at its start made the
+  narration and the picture disagree.
+- **8 of the 25 registered videos cannot be downloaded now,** though YouTube's oEmbed
+  endpoint serves all 25 as public. `yt-dlp` answers "This video is not available" with or
+  without cookies, for videos that downloaded this morning. The cause is unknown and may be
+  transient. They include the Dimensions video behind the 42,843-word chunk, so that chunk
+  cannot be re-described and is fixed by cutting its stored text.
+
+**Work, in three parts**
+
+1. **New videos** (the build). Prompt C with a hard output limit and a cap of 60 to 100
+   words, a low thinking level, a **repetition guard** (reject a description with a low
+   distinct-word ratio or over a length cap, retry once, fail the video in strict mode), a
+   recorded `prompt_version`, and **two chunks per window** written at ingest: the
+   narration, and the visual description under its own id (`<url>|visual|<start>`), both
+   with the same `source_url` and timestamp. The embedded text is planned, not cut by
+   accident: a warning or a failure when a chunk would exceed the embedding limit. Add the
+   Gemini provider to the vision factory (it goes through OpenRouter only), shared with
+   SYNC-010. Not feeding the narration to the vision call. Two chunks need no schema change
+   and use the pattern the web screenshots already follow; named vectors would need a schema
+   change and changes to the store, search, promotion, snapshot and app, tested with
+   `make weaviate-compat`.
+2. **The existing 213 chunks:** split each into a narration chunk and a visual chunk by
+   re-embedding locally (a promotion of 213 replaces and 213 adds, the collection growing
+   from 943 to about 1,156). Cut the stored text of the 42,843-word chunk. No vision calls.
+3. **Re-describing the existing chunks** with the new prompt, for the on-screen gains.
+   Deferred: it needs the 8 videos that cannot be downloaded now, and it changes text and
+   vectors again.
+
+**Open decisions:** the cap (60 or 100 words; a 12-call check of real 60-word output would
+settle it); whether to keep the oilflow canary and accept a WARN or point it at a better
+expected source; whether the old visual chunks should be kept or left out of retrieval.
+
+**Acceptance:** for part 1, no description over the cap and none with a repetition loop, no
+chunk cut at the embedding limit, accuracy checked on a sample against the frame images
+(none wrong about a dialog name or a value), and the three canaries not worse than a WARN.
+For part 2, the narrator diagnostic and the canaries measured before and after on the real
+collection, the object count equal to the plan, and a rehearsal first. The first video of
+SYNC-011 is ingested only after part 1.
 
 **Scope:** `ingest/video_frames.py`, `ingest/videos.py`, `models/llm.py`, `models/chunks.py`
 
