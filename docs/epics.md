@@ -1921,6 +1921,10 @@ instances 1 limits throughput, not spend.
   rehearsal is no longer an exact copy of hosted (`make sync-preflight` warns). This makes
   the keep-alive query above a priority: test that a scheduled read-only query keeps the
   cluster awake, and add the cluster's state to the preflight
+  Version changes are now checked with `make weaviate-compat VERSION=<x.y.z>` (a throwaway
+  server, the newest hosted backup, optionally `CLIENT=` and `UPGRADE=1`); on 2026-11-23
+  it passed for 1.40.5 and failed as expected for 1.28.4, which predates the `hfresh`
+  index. The procedure is runbook section 7a. Local and the client are not bumped yet.
 - Record the decision on moving to the Flex plan ($45 per month minimum: 7-day backups,
   replication, 99.5% availability, 1,000 collections) and the trigger for it, which is
   SYNC-009 or the first suspension
