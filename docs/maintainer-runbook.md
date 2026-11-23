@@ -142,6 +142,13 @@ REPLACE=1`. The conversion changes nothing the snapshot does not hold.
 
 ### 3b. Adding a video
 
+> **Hold new videos until SYNC-012 is done.** The stored frame descriptions run a median 476
+> words against the prompt's 80, mostly an inventory of the window's menus and toolbars, and
+> the embedder cuts them at 400 words, so a vector encodes that inventory and not what is
+> being demonstrated. A video that has chunks is never looked at again, so one added now
+> keeps whatever description style it is given today. `docs/epics.md` (SYNC-012) has the
+> evidence and the plan. `make sync-videos DRY=1` is safe to run at any time.
+
 A video is new when no stored chunk carries its `document_id`, which is a hash of the
 canonical address, so `youtu.be/<id>` and `watch?v=<id>` are the same video. Only new
 videos are ingested; nothing already stored is touched. Everything happens on local.
