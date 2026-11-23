@@ -931,18 +931,21 @@ story below.
 
 #### Order of work
 
-The story numbers are stable identifiers, not the order. Build in this order:
+The story numbers are stable identifiers, not the order. The order they were built in, and
+what is left:
 
-| Order | Story | What | Hosted impact |
-|-------|-------|------|---------------|
-| 1 | SYNC-002 | Page ledger, inventory and plan (read-only) | None |
-| 2 | SYNC-003 | Apply a plan to the local collection, then the retrieval gate | None |
-| 3 | SYNC-004 | Removals, behind explicit confirmation | None |
-| 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | The only hosted write |
-| 5 | SYNC-008 (rest) | Runbook, `--json` and exit codes on preflight and gate | None |
-| 6 | SYNC-011 | Video lane: new videos first, changed videos later | Local, then promotion |
-| Later | SYNC-001, SYNC-010 | Stored identity and conversion; screenshot re-description | Schema change only when taken |
-| After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | Via promotion |
+| Order | Story | What | Status | Hosted impact |
+|-------|-------|------|--------|---------------|
+| 1 | SYNC-002 | Page ledger, inventory and plan (read-only) | done | None |
+| 2 | SYNC-003 | Apply a plan to the local collection, then the retrieval gate | done | None |
+| 3 | SYNC-004 | Removals, behind explicit confirmation | done | None |
+| 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | done | The only hosted write |
+| 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
+| 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
+| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | not started; before the first new video | Local, then promotion |
+| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built on `feature/SYNC-011-video-lane` (not merged); first real run waits for SYNC-012 | Local, then promotion |
+| Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
+| After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
 
 SYNC-005 and SYNC-006 are dissolved into the stories that need them.
 
@@ -989,7 +992,8 @@ SYNC-010 requires stored values.
   a re-ingest replaces whole objects, so a chunk written without these fields would erase
   backfilled values
 - Hash inputs, never generated outputs (design note D7)
-- Convert the existing 922 chunks without a crawl: `document_id` and a `content_hash`
+- Convert the existing chunks without a crawl (922 when this was written, 943 when it
+  ran): `document_id` and a `content_hash`
   from stored text for every chunk, `source_lastmod` where the page is unchanged, `legacy`
   markers for fields that cannot be known. Run it on the local collection with
   metadata-only `data.update`, verify texts and vectors are unchanged, then promote
@@ -1493,7 +1497,7 @@ Tests and docs ship with this story.
   targets stop with a message instead. The local default now matches production
   (`LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.6-flash`, one line each), `VISION_MODEL` is
   `google/gemini-3.8-flash`, and the app logs a warning at startup when the default model
-  is not in the model registry. Moved to SYNC-011: a Gemini vision path (the vision
+  is not in the model registry. Moved to SYNC-012: a Gemini vision path (the vision
   client always uses OpenRouter) and thinking and output limits on that client
 - Align the compose image with the hosted Weaviate version (done 2026-11-13: both 1.39.13)
 - Done: `make sync-preflight` (`LOCAL_ONLY=1` skips the cloud checks) reports missing
@@ -1583,14 +1587,15 @@ Depends on SYNC-001 for the stored fields. Not a prerequisite for sync: the pilo
 that screenshot descriptions did not improve any answer and two got worse, so this is an
 experiment to run behind the retrieval gate, not a precondition.
 
-- In the hosted collection 381 of 922 chunks (41%) are keyed on `uuid5(image_url)` while
-  `image_url` is not stored. Add `image_url`, `image_hash`, `description_model` and
-  `prompt_version`, and backfill `image_url` by re-deriving `uuid5(image_url)` from each
+- In the hosted collection 381 of 943 chunks (40%) are keyed on `uuid5(image_url)` while
+  `image_url` is not stored. SYNC-001 added the `image_url` property but left it empty;
+  add `image_hash`, `description_model` and `prompt_version`, and backfill `image_url`
+  by re-deriving `uuid5(image_url)` from each
   live page (a one-page test matched 3 of 4 stored chunks, and 19 of 19 and 7 of 7 on two
   more pages)
 - Add the Gemini provider path to the vision factory (it goes through OpenRouter only)
   with `thinking_level="low"` and a `max_output_tokens` cap, and record the model that
-  wrote each description
+  wrote each description. SYNC-012 builds this for video frames; do it once and share it
 - Re-describe with the page-anchored prompt, with a repetition guard, decorative images
   skipped and the application named only if visible; replace the three runaway chunks
   (81k to 229k characters). Needs Gemini quota for roughly 380 images; run a 5-image
@@ -1624,10 +1629,84 @@ hosted through SYNC-007.
   frame per 30 seconds) before anything is spent; the runbook gains an "Adding a video"
   section from the first real run (first customer: `yWuBQik8KPs`, "HydroMan Tutorials:
   Cross-Over Pilot Lines and Angled Connections", 2:04, auto captions, about 5 frames)
-- Moved here from SYNC-008: a Gemini vision path (the vision client always uses
-  OpenRouter) and thinking and output limits on that client
+- Moved on to SYNC-012 (frame descriptions), after coming from SYNC-008: a Gemini vision
+  path (the vision client always uses OpenRouter) and thinking and output limits on that
+  client
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
+
+#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (not started; evidence collected 2026-11-23)
+
+**Branch:** `feature/SYNC-012-frame-descriptions`
+
+Do this **before the first new video is ingested**: a video that has chunks is never looked
+at again, so a video stored with the current descriptions keeps them. It is independent of
+the lane's mechanics (SYNC-011) and shares the vision path and the repetition guard with
+SYNC-010 (web screenshots), which should be built once.
+
+**Evidence** (read-only analysis of the 214 stored video chunks of the 25 videos, local
+collection, 2026-11-23; the scripts were exploratory and are not in the repository):
+
+- **Length.** All 214 descriptions exceed the 80 words the prompt in `video_frames.py` asks
+  for: median 476, and one with **42,843 words** (HydroSym Explainer: Dimensions at 60 s,
+  distinct-word ratio 0.014, a repetition loop). Retrieved, that chunk goes into the LLM's
+  context whole. The description is a median 87% of a chunk's words; the narration is about
+  70.
+- **Boilerplate.** The prompt says not to describe static UI, but 86% of the descriptions
+  describe the menu bar, 92% the toolbar, 71% the title bar and 78% the status bar; 62%
+  list the identical menu ("File, Edit, Draw, Modify, Format, Assist, Window, Print,
+  Tools, Library, Help"). 194 hedge ("likely", "appears to"), 191 open with "This video
+  frame displays" or "The image displays", and 212 are markdown with headings and bullets.
+  Which prompt produced them is not known: the one in the code cannot yield 476 words.
+- **What the vector sees.** `embed_texts` cuts every text to its first 400 words, and a
+  chunk is the narration followed by the description, so 206 of 214 chunks are cut and a
+  median 32% of the description is lost. The words that remain are mostly the window
+  inventory (median 6 chrome mentions inside them); the part that says what is being
+  demonstrated comes later. The stored vector is closer to the description alone than to
+  the narration alone in 39 of 40 sampled chunks (cosine 0.967 against 0.918).
+- **Dilution.** Chunks of different videos have a mean cosine of 0.841 (0.739 when embedded
+  from the narration alone), and chunks of the same video 0.938 (0.872).
+- **Diagnostic retrieval.** A sentence the narrator says, used as the query, finds its own
+  chunk among the 214 at top-1 in 32% and top-3 in 51% of cases with the stored vectors,
+  against 47% and 75% with narration-only vectors. **Limit:** this measures dilution and
+  favours narration-only by construction. It says nothing about questions that depend on
+  what is on screen, so it cannot show that the descriptions are useless.
+
+**Work**
+
+- **A new prompt** for `_PROMPT_DESCRIBE`: only the action and the step being demonstrated,
+  the dialog or panel that is open and the values in it; no inventory of the window, no
+  hedging, plain text without markdown, about 40 to 60 words. Back it with a hard
+  `max_output_tokens`, a low thinking level, a **repetition guard** (reject a description
+  with a low distinct-word ratio or over a length cap, retry once, and fail the video in
+  strict mode) and a recorded `prompt_version`. `_PROMPT_TRANSCRIBE` (silent recordings) is
+  checked for the same problems, though none of the 25 stored videos uses it.
+- **A chunk with a budget.** Compose the chunk so that the text the embedder sees is
+  planned, not cut by accident: narration first within a word budget, the description
+  capped, the total under the limit, and a warning (or a failure) when a chunk would be
+  truncated.
+- **The vision path.** Add the Gemini provider to the vision factory (it goes through
+  OpenRouter only), shared with SYNC-010 and moved here from SYNC-008 and SYNC-011.
+- **Measure before adopting.** Re-describe about 5 frames from existing videos with each
+  candidate prompt (the frames are not stored, so the videos are downloaded again) and
+  compare them with the stored description by the diagnostic above, by the three canaries
+  in the retrieval gate, and by about 12 questions whose answer depends on what is on
+  screen (which dialog, which button, which value), judged by whether the right video
+  chunk ranks in the top 3. Keep a candidate only if retrieval does not get worse on any of
+  the three.
+- **The runaway chunk** (Dimensions at 60 s, 42,843 words) is a defect whatever the prompt
+  decision is: replace its description, or cap it, and promote the replace.
+- **The existing 213 other chunks** are a separate decision, not part of the default scope:
+  leave them, or re-describe and re-embed them locally (text and vectors change, so a
+  promotion of replaces) once the new prompt has proved itself. Record the choice here.
+
+**Acceptance:** no description over 80 words and none with a repetition loop; no chunk cut
+at the embedding limit; on the diagnostic the new chunks do at least as well as the stored
+ones and within 5 points of the narration-only baseline (47% top-1); the three canaries do
+not get worse; the on-screen questions rank the right chunk in the top 3 at least as often
+as the stored chunks do. The first video of SYNC-011 is ingested only after this.
+
+**Scope:** `ingest/video_frames.py`, `ingest/videos.py`, `models/llm.py`, `models/chunks.py`
 
 ### Phase 3: Production hardening
 
