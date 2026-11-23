@@ -942,7 +942,7 @@ what is left:
 | 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | done | The only hosted write |
 | 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
-| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | measured; build not started; before the first new video | Local, then promotion |
+| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | measured; part 1 built, not merged; before the first new video | Local, then promotion |
 | 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built and merged; first real run waits for SYNC-012 | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
@@ -1690,7 +1690,7 @@ hosted through SYNC-007.
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
 
-#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (measured 2026-11-23; build not started)
+#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (measured 2026-11-23; part 1 built, not yet merged)
 
 **Branch:** `feature/SYNC-012-frame-descriptions`
 
@@ -1789,6 +1789,19 @@ checked against the frame image, not the log.
   matches about 42 to 54 s of the video for the window starting at 30 s: inside the window,
   later than its label. Feeding a window's narration to a frame at its start made the
   narration and the picture disagree.
+- **Two chunks per window share the top results (retrieval note).** The production answer
+  to "What advantages will I have when I import my HydroSym schematic into HydroMan?" listed
+  10 sources: 5 were windows of one video (0:00, 0:30, 1:00, 2:00, 2:30) and 5 were articles.
+  HydroMan has little content (about 48 articles; HydroSym has 99), so such a question
+  reaches weak matches quickly and several windows of the one relevant video are partly
+  correct, a content gap more than a ranking fault. A local simulation with the existing
+  chunks split gave a top 10 of 6 video chunks (5 windows of that video plus one other
+  video) and 4 articles, against 2 video chunks and 8 articles for the stored hybrid
+  vectors. The hosted list differs in its tail from the local ranking (294, 444 and 276
+  against three more windows of the video), so the exact makeup on hosted cannot be read
+  from local. With new descriptions both chunks of a window can rank, taking two slots and
+  listing one timestamp twice. A mitigation, not built: fetch extra results and merge a
+  window's chunks into one source (best score, narration first) before the answer is made.
 - **8 of the 25 registered videos cannot be downloaded now,** though YouTube's oEmbed
   endpoint serves all 25 as public. `yt-dlp` answers "This video is not available" with or
   without cookies, for videos that downloaded this morning. The cause is unknown and may be
@@ -1797,8 +1810,9 @@ checked against the frame image, not the log.
 
 **Work, in three parts**
 
-1. **New videos** (the build). Prompt C with a hard output limit and a cap of 60 to 100
-   words, a low thinking level, a **repetition guard** (reject a description with a low
+1. **New videos** (the build). Prompt C with a hard output limit and a cap of **100
+   words** (60 was chosen first, tried on real output and set back on 2026-11-23, see the
+   checks below), a low thinking level, a **repetition guard** (reject a description with a low
    distinct-word ratio or over a length cap, retry once, fail the video in strict mode), a
    recorded `prompt_version`, and **two chunks per window** written at ingest: the
    narration, and the visual description under its own id (`<url>|visual|<start>`), both
@@ -1816,9 +1830,32 @@ checked against the frame image, not the log.
    Deferred: it needs the 8 videos that cannot be downloaded now, and it changes text and
    vectors again.
 
-**Open decisions:** the cap (60 or 100 words; a 12-call check of real 60-word output would
-settle it); whether to keep the oilflow canary and accept a WARN or point it at a better
-expected source; whether the old visual chunks should be kept or left out of retrieval.
+**Decided 2026-11-23:** the cap is 100 words; the oilflow canary stays as it is and its fall
+to rank 5 is accepted (the maintainer calls it a glitch). **Checked 2026-11-23 on the real `gemini:` path (13 calls, then 12 more after two fixes):**
+the mocked tests could not see two defects, both fixed. (1) Gemini 3 returns a list of
+content blocks, and `str()` of it would have put `[{'type': 'text', ...}]` at the start of
+every stored description, so a `message_text` helper now reads only the text blocks (it
+also serves `web_images`). (2) Every measurement sent the image before the prompt and the
+code sent it after; with the image first the LangChain path reproduces the earlier SDK
+output nearly word for word (same opening, same quoted names, a couple of words differ,
+as Gemini is not fully deterministic at temperature 0). On the final code, 12 frames at the
+60-word cap gave 37 to 56 words (median 52), none over the cap, none rejected, no markdown,
+one chrome mention, and no wrong claim in the four frames behind the on-screen questions.
+**The cap costs detail.** The four on-screen questions' frames lost exactly what some
+questions ask for (the machine and material checkboxes, "Hold Ctrl to Copy"). On those
+12 windows the on-screen questions in the top 3 went from 4 of 6 (100 words, one vector) to
+3 of 6, and from 5 of 6 to 3 of 6 with two chunks (still above the stored 1 of 6), while
+the narrator diagnostic did not move. The truncation test had predicted no loss. Six
+questions are a thin sample, and an in-between cap of 80 words is untested. **The maintainer
+set the cap back to 100.** What 100 costs over 60: about 70 more output tokens per frame
+(1.73 tokens per word, measured in Stage 1; input is about 1,300 tokens per call, dominated
+by the image), so about 350 per 2-minute video; about 40 more words in the context of each
+retrieved visual chunk; no narration dilution with two chunks; and a possibly higher risk of
+a wrong detail, on thin evidence (two errors in 5 frames at 110 to 134 words in Stage 1, none
+in the 8 sampled at 100 words in Stage 2). The price of the model was not looked up.
+**Deferred until after the first video:** how a window's two chunks share the top results
+(see the retrieval note above; the merge at retrieval is not built), and whether the old
+visual chunks should be kept or left out of retrieval.
 
 **Acceptance:** for part 1, no description over the cap and none with a repetition loop, no
 chunk cut at the embedding limit, accuracy checked on a sample against the frame images

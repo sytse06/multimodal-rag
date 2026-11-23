@@ -127,7 +127,7 @@ All configurable via environment variables (`.env`):
 | `WEAVIATE_VIEWER_API_KEY` | Hosted runtime/read-only key | — |
 | `FIRECRAWL_API_KEY` | Firecrawl API access | — |
 | `MISTRAL_API_KEY` | Legacy Voxtral key: demoted, not used by ingest, safe to leave unset | — |
-| `VISION_MODEL` | Vision LLM for frame/screenshot description (empty = disabled) | `""` |
+| `VISION_MODEL` | Vision LLM for frame/screenshot description (empty = disabled). `gemini:<model>` calls Gemini directly (temperature 0, low thinking, capped output); any other value is an OpenRouter id | `""` |
 | `GRADIO_SHARE` | Enable a public Gradio share link | `false` |
 
 The fixed `SupportChunk` collection uses Ollama `nomic-embed-text` vectors with a
