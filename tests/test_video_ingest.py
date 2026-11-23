@@ -176,12 +176,17 @@ def fused_with_one_bad_frame(
     )
 
 
-def test_a_failed_frame_leaves_a_transcript_only_window_unless_strict(
+def test_a_failed_frame_drops_only_its_own_visual_chunk_unless_strict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chunks = fused_with_one_bad_frame(monkeypatch, strict=False)
 
-    assert len(chunks) == 1 and "[Visual]" in chunks[0].text
+    # window 0 keeps its narration and description; window 1 had no speech and its
+    # frame failed, so it yields nothing
+    assert [(c.kind, c.start_seconds) for c in chunks] == [
+        ("transcript", 0),
+        ("visual", 0),
+    ]
 
 
 def test_a_failed_frame_fails_the_whole_video_when_strict(

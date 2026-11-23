@@ -142,12 +142,20 @@ REPLACE=1`. The conversion changes nothing the snapshot does not hold.
 
 ### 3b. Adding a video
 
-> **Hold new videos until SYNC-012 is done.** The stored frame descriptions run a median 476
-> words against the prompt's 80, mostly an inventory of the window's menus and toolbars, and
-> the embedder cuts them at 400 words, so a vector encodes that inventory and not what is
-> being demonstrated. A video that has chunks is never looked at again, so one added now
-> keeps whatever description style it is given today. `docs/epics.md` (SYNC-012) has the
-> evidence and the plan. `make sync-videos DRY=1` is safe to run at any time.
+> **Two things changed in SYNC-012 (part 1).** The 25 videos already stored have frame
+> descriptions of a median 476 words, mostly an inventory of the window's menus and
+> toolbars, cut at the embedder's 400-word limit. A new video now gets a plain-text
+> description of at most 100 words, and each 30-second window is stored as **two chunks**:
+> its narration (`[Transcript] ...`) and its description (`[Visual] ...`), with the same
+> address and timestamp, so a question can match either without the other diluting it.
+> `make ingest` writes the same format. Before you add a video, set `VISION_MODEL` in
+> `.env` to `gemini:gemini-3.8-flash`: that calls Gemini directly with the
+> settings the prompt was measured with (temperature 0, low thinking, a capped output). An
+> OpenRouter id such as `google/gemini-3.8-flash` still works but runs at temperature 0.3
+> with no cap, which nobody measured; the preflight's `vision model` line checks the
+> name. A video that has chunks is never looked at again. `docs/epics.md` (SYNC-012) has
+> the evidence and the open decisions. `make sync-videos DRY=1` is safe to run at any
+> time.
 
 A video is new when no stored chunk carries its `document_id`, which is a hash of the
 canonical address, so `youtu.be/<id>` and `watch?v=<id>` are the same video. Only new
@@ -178,7 +186,10 @@ videos are ingested; nothing already stored is touched. Everything happens on lo
      registry and push it; nothing is ingested while anything is refused.
 4. **Ingest:** `make sync-videos`. It asks, takes the lock, snapshots local, then ingests
    each new video **all or nothing**: if a frame cannot be described the whole video fails
-   and none of its chunks are stored. Afterwards it proves that every earlier object is
+   and none of its chunks are stored (a description that is empty, far over the cap or a
+   repetition loop is retried once, then counts as a failed frame). Each window stores up
+   to two chunks, narration and description, and a chunk the embedder would cut also fails
+   the video. Afterwards it proves that every earlier object is
    unchanged and that every new object belongs to a new video, writes exactly which
    objects it added to `runs/videos-<time>/videos.json` (it writes the list of planned
    videos there **before** ingesting, so even a crashed run can be rolled back), and runs
@@ -186,7 +197,8 @@ videos are ingested; nothing already stored is touched. Everything happens on lo
    or the gate failed; it prints the video and the reason.
 5. **Check it:** `make sync-videos DRY=1` now says there is nothing to ingest, and the
    preflight is green. Ask a question the video answers and look at the cited timestamp.
-6. **Promote:** `make promote-plan` shows the new chunks as **adds** and nothing else: no
+6. **Promote:** `make promote-plan` shows the new chunks as **adds**, about two per
+   30-second window, and nothing else: no
    replace, no delete, no vector refresh, no schema change. If it shows anything else,
    stop and find out what changed. Then follow section 4.
 

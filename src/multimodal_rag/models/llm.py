@@ -118,14 +118,55 @@ def create_chat_model(
     raise ValueError(f"Unsupported chat provider: {provider}")
 
 
-def create_vision_llm(settings: AppSettings) -> BaseChatModel:
-    """Create a vision-capable LangChain chat model via OpenRouter.
+def message_text(message: Any) -> str:
+    """The text of a chat reply.
 
-    Always uses OpenRouter (no Ollama vision path).
+    OpenRouter returns a string; Gemini 3 returns a list of content blocks, and
+    ``str()`` of that list would put ``[{'type': 'text', ...}]`` into a stored
+    description. Only text blocks count: thinking blocks are left out.
+    """
+    content = message.content
+    if isinstance(content, str):
+        return content
+    return "".join(
+        block
+        if isinstance(block, str)
+        else str(block.get("text", ""))
+        for block in content
+        if isinstance(block, str)
+        or (isinstance(block, dict) and block.get("type") == "text")
+    )
+
+
+GEMINI_VISION_PREFIX = "gemini:"
+# Room for the answer plus the model's own reasoning: Gemini 3 counts thinking tokens
+# against the output limit, and the measured descriptions needed this much headroom.
+GEMINI_VISION_MAX_OUTPUT_TOKENS = 600
+
+
+def create_vision_llm(settings: AppSettings) -> BaseChatModel:
+    """Create a vision-capable LangChain chat model.
+
+    ``VISION_MODEL=gemini:<model>`` calls Gemini directly with the settings the frame
+    prompt was measured with (temperature 0, low thinking, a capped output); any other
+    value is an OpenRouter model id and goes through OpenRouter as before.
     Raises ValueError if vision_model is not configured.
     """
     if not settings.vision_model:
         raise ValueError("vision_model is not configured in settings")
+    if settings.vision_model.startswith(GEMINI_VISION_PREFIX):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        key = settings.credentials.gemini_api_key
+        if not key.get_secret_value():
+            raise ValueError("GEMINI_API_KEY is required for a gemini: vision model")
+        return ChatGoogleGenerativeAI(
+            model=settings.vision_model.removeprefix(GEMINI_VISION_PREFIX),
+            api_key=key,
+            temperature=0,
+            thinking_level="low",
+            max_output_tokens=GEMINI_VISION_MAX_OUTPUT_TOKENS,
+        )
     from langchain_openrouter import ChatOpenRouter
 
     return ChatOpenRouter(

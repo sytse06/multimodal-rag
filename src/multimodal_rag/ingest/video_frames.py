@@ -12,6 +12,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from multimodal_rag.models.chunks import TranscriptChunk
+from multimodal_rag.models.llm import message_text
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,13 @@ def extract_keyframes(
     return [(frame, (i) * interval_seconds) for i, frame in enumerate(frames)]
 
 
+# Bumped whenever the frame prompt changes; recorded in the run record, not stored.
+FRAME_PROMPT_VERSION = "c1-2026-11"
+# The cap the prompt asks for: 100, the value every measurement used. A real 60-word
+# cap was tried on 12 frames and lost on-screen detail the questions ask for (SYNC-012),
+# at a saving of about 70 output tokens per frame.
+FRAME_DESCRIPTION_WORDS = 100
+
 _PROMPT_DESCRIBE = (
     "This is a frame from a software tutorial video. "
     "Describe ONLY what is actively happening or being demonstrated: "
@@ -94,7 +102,8 @@ _PROMPT_DESCRIBE = (
     "Do NOT describe static UI chrome: title bar, menu bar, toolbar icons, "
     "sidebar tool palettes, or window controls — these are the same in every frame "
     "and add no value. "
-    "Keep the description under 80 words."
+    f"Write plain text in one paragraph of at most {FRAME_DESCRIPTION_WORDS} words. "
+    "No markdown, no lists, no bold."
 )
 
 _PROMPT_TRANSCRIBE = (
@@ -105,28 +114,63 @@ _PROMPT_TRANSCRIBE = (
 )
 
 
+class DescriptionRejected(ValueError):
+    """The vision model's description failed the guard twice."""
+
+
+def description_problem(
+    text: str, cap: int = FRAME_DESCRIPTION_WORDS
+) -> str | None:
+    """Why a frame description must be rejected, or None if it is acceptable.
+
+    Rejects empty text, text far over the cap (the prompt asks for at most ``cap``
+    words) and repetition loops: the stored descriptions included one of 42,843 words
+    with a distinct-word ratio of 0.014, where healthy ones stay above 0.6.
+    """
+    words = text.split()
+    if not words:
+        return "empty"
+    limit = cap * 3 // 2
+    if len(words) > limit:
+        return f"{len(words)} words, over {limit}"
+    if len(words) >= 20 and len({w.lower() for w in words}) / len(words) < 0.3:
+        return "a repetition loop"
+    return None
+
+
 def describe_frame(
     frame_path: Path, llm: BaseChatModel, transcribe_mode: bool = False
 ) -> str:
     """Describe or transcribe a video frame using a vision LLM.
 
     In transcribe_mode, extracts on-screen text only (for silent screen recordings).
-    Returns the LLM's text response.
+    A description that fails ``description_problem`` is retried once, then raises
+    ``DescriptionRejected``. Returns the LLM's text response.
     """
     image_bytes = frame_path.read_bytes()
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     prompt = _PROMPT_TRANSCRIBE if transcribe_mode else _PROMPT_DESCRIBE
+    # The image comes first: every measurement of the frame prompt sent it that way, and
+    # text first gave noticeably different wording on the same frame.
     message = HumanMessage(
         content=[
-            {"type": "text", "text": prompt},
             {
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
             },
+            {"type": "text", "text": prompt},
         ]
     )
-    response = llm.invoke([message])
-    return str(response.content)
+    if transcribe_mode:
+        return message_text(llm.invoke([message]))
+    problem = None
+    for _ in range(2):
+        text = message_text(llm.invoke([message])).strip()
+        problem = description_problem(text)
+        if problem is None:
+            return text
+        logger.warning("Frame description rejected (%s)", problem)
+    raise DescriptionRejected(f"the description was rejected twice ({problem})")
 
 
 
@@ -196,8 +240,10 @@ def fetch_fused_chunks(
     window_seconds: int = 30,
     strict: bool = False,
 ) -> list[TranscriptChunk]:
-    """Download video once, get its transcript, describe keyframes, merge per window.
+    """Download video once, get its transcript, describe keyframes, window by window.
 
+    Each window yields up to two chunks: its narration (``kind="transcript"``) and its
+    on-screen description (``kind="visual"``).
     ``transcribe(video_path, work_dir)`` returns segments as ``{text, start, duration}``.
 
     With ``strict`` a frame that cannot be described fails the whole video instead of
@@ -266,24 +312,21 @@ def fetch_fused_chunks(
                         exc_info=True,
                     )
 
-            if not speech_text and frame_description is None:
-                continue
-
-            if speech_text and frame_description:
-                text = f"[Transcript] {speech_text}\n[Visual] {frame_description}"
-            elif speech_text:
-                text = speech_text
-            else:
-                text = f"[Visual] {frame_description}"
-
-            chunks.append(
-                TranscriptChunk(
-                    text=text,
-                    source_url=video_url,
-                    source_name=source_name,
-                    start_seconds=window_start,
-                    end_seconds=window_end,
-                )
-            )
+            # Narration and description are separate chunks of one window: a query
+            # can match either without the other diluting it.
+            narration = f"[Transcript] {speech_text}" if speech_text else ""
+            visual = f"[Visual] {frame_description}" if frame_description else ""
+            for kind, text in (("transcript", narration), ("visual", visual)):
+                if text:
+                    chunks.append(
+                        TranscriptChunk(
+                            text=text,
+                            source_url=video_url,
+                            source_name=source_name,
+                            start_seconds=window_start,
+                            end_seconds=window_end,
+                            kind=kind,  # type: ignore[arg-type]
+                        )
+                    )
 
     return chunks

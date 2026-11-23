@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from enum import StrEnum
 from hashlib import sha256
+from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, Field, computed_field
@@ -23,6 +24,9 @@ class TranscriptChunk(BaseModel):
     source_name: str
     start_seconds: int
     end_seconds: int
+    # A window's narration and its on-screen description are separate chunks, so a
+    # query can match either without one diluting the other (SYNC-012).
+    kind: Literal["transcript", "visual"] = "transcript"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -145,6 +149,27 @@ class SupportChunk(BaseModel):
         stable_id = uuid5(
             NAMESPACE_URL,
             chunk.source_url + "|fused|" + str(chunk.start_seconds),
+        )
+        return cls(
+            chunk_id=stable_id,
+            text=chunk.text,
+            source_type=SourceType.VIDEO,
+            source_url=chunk.source_url,
+            source_name=chunk.source_name,
+            timestamp_seconds=chunk.start_seconds,
+        )
+
+    @classmethod
+    def from_visual_chunk(cls, chunk: TranscriptChunk) -> "SupportChunk":
+        """Create a SupportChunk from the on-screen description of one video window.
+
+        chunk_id is stable: keyed on source_url + window timestamp, not LLM text. It
+        shares source_url and timestamp with the window's narration chunk
+        (from_fused_chunk), so a citation points at the same moment.
+        """
+        stable_id = uuid5(
+            NAMESPACE_URL,
+            chunk.source_url + "|visual|" + str(chunk.start_seconds),
         )
         return cls(
             chunk_id=stable_id,

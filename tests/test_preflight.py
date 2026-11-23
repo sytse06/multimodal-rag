@@ -275,3 +275,29 @@ def test_a_missing_gemini_key_warns_and_names_the_consequence() -> None:
     check = check_gemini(_settings(gemini_api_key=""))
 
     assert check.status is Status.WARN and "manual captions" in check.detail
+
+
+def test_a_gemini_vision_model_is_checked_against_the_keys_models() -> None:
+    known = {"gemini-3.8-flash"}
+    with patch.object(preflight, "_gemini_model_ids", return_value=known):
+        good = {
+            c.name: c
+            for c in check_config(_settings(vision_model="gemini:gemini-3.8-flash"))
+        }
+        bad = {
+            c.name: c for c in check_config(_settings(vision_model="gemini:nope-1"))
+        }
+
+    assert good["vision model"].status is Status.OK
+    assert bad["vision model"].status is Status.FAIL
+    assert "not a model this Gemini key can use" in bad["vision model"].detail
+
+
+def test_a_gemini_vision_model_that_cannot_be_checked_only_warns() -> None:
+    with patch.object(preflight, "_gemini_model_ids", side_effect=ConnectionError("x")):
+        checks = {
+            c.name: c
+            for c in check_config(_settings(vision_model="gemini:gemini-3.8-flash"))
+        }
+
+    assert checks["vision model"].status is Status.WARN

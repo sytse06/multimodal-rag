@@ -205,6 +205,14 @@ def check_keys(settings: AppSettings) -> list[Check]:
     ]
 
 
+def _gemini_model_ids(settings: AppSettings) -> set[str]:
+    from google import genai
+
+    key = settings.credentials.gemini_api_key.get_secret_value()
+    client = genai.Client(api_key=key)
+    return {str(m.name).removeprefix("models/") for m in client.models.list()}
+
+
 def _openrouter_vision_ids() -> set[str]:
     data = _get_json(OPENROUTER_MODELS)["data"]
     return {
@@ -240,6 +248,18 @@ def check_config(settings: AppSettings) -> list[Check]:
     vision = settings.vision_model
     if not vision:
         checks.append(Check("vision model", Status.WARN, "not set; grounding is off"))
+    elif vision.startswith("gemini:"):
+        name = vision.removeprefix("gemini:")
+        try:
+            known = name in _gemini_model_ids(settings)
+        except Exception:  # a network or key problem is not a verdict on the model
+            checks.append(Check("vision model", Status.WARN, f"{vision}: not verified"))
+        else:
+            unknown = f"{name} is not a model this Gemini key can use"
+            detail = vision if known else unknown
+            checks.append(
+                Check("vision model", Status.OK if known else Status.FAIL, detail)
+            )
     else:
         try:
             known = vision in _openrouter_vision_ids()

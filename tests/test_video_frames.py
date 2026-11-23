@@ -305,11 +305,12 @@ class TestFetchFusedChunks:
             self.VIDEO_URL, self.SOURCE_NAME, mock_transcribe, mock_vision
         )
 
-        assert len(result) == 2
-        assert result[0].text == "[Transcript] Hello world\n[Visual] UI screenshot"
-        assert result[0].start_seconds == 0
-        assert result[1].text == "[Transcript] Second window\n[Visual] Button panel"
-        assert result[1].start_seconds == 30
+        assert [(c.kind, c.text, c.start_seconds) for c in result] == [
+            ("transcript", "[Transcript] Hello world", 0),
+            ("visual", "[Visual] UI screenshot", 0),
+            ("transcript", "[Transcript] Second window", 30),
+            ("visual", "[Visual] Button panel", 30),
+        ]
 
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_transcript_only_when_no_vision_llm(
@@ -329,9 +330,9 @@ class TestFetchFusedChunks:
             self.VIDEO_URL, self.SOURCE_NAME, mock_transcribe, None
         )
 
-        assert len(result) == 1
-        assert result[0].text == "Just audio"
-        assert "[Visual]" not in result[0].text
+        assert [(c.kind, c.text) for c in result] == [
+            ("transcript", "[Transcript] Just audio")
+        ]
 
     @patch("multimodal_rag.ingest.video_frames.describe_frame")
     @patch("multimodal_rag.ingest.video_frames.extract_keyframes")
@@ -361,9 +362,12 @@ class TestFetchFusedChunks:
             self.VIDEO_URL, self.SOURCE_NAME, mock_transcribe, mock_vision
         )
 
-        assert len(result) == 2
-        assert "[Transcript]" in result[0].text
-        assert result[1].text == "[Visual] Window 1 desc"
+        # window 0 has speech and a frame, window 1 only a frame
+        assert [(c.kind, c.text, c.start_seconds) for c in result] == [
+            ("transcript", "[Transcript] Hello", 0),
+            ("visual", "[Visual] Window 0 desc", 0),
+            ("visual", "[Visual] Window 1 desc", 30),
+        ]
 
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_skips_empty_window_when_no_vision(
@@ -385,8 +389,9 @@ class TestFetchFusedChunks:
         )
 
         # Only window 0 (t=0..30) has content; others are empty with no vision
-        assert len(result) == 1
-        assert result[0].text == "Only here"
+        assert [(c.kind, c.text) for c in result] == [
+            ("transcript", "[Transcript] Only here")
+        ]
 
     @patch("multimodal_rag.ingest.video_frames.download_video")
     def test_single_download_call(
