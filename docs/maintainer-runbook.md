@@ -9,6 +9,23 @@ An update has two stages. **Stage A** refreshes the copy on your Mac (local Dock
 reaches hosted without passing through local first, and a person approves each step that
 writes.
 
+**Where the truth lives.** Content and configuration follow different directions.
+
+| State | Source of truth | Direction |
+|---|---|---|
+| Content (the chunks) | Local Weaviate, until promoted | local → hosted, by `make promote` |
+| Registry, page ledger, locks, run records, backups | The state bucket | You edit a local copy and push it; runs read and write the bucket |
+
+The bucket leads for configuration and state, for four reasons. (1) It is not tied to one
+machine: the registry once existed on one Mac only, and a laptop file cannot be read by a
+second maintainer or a scheduled job. (2) It is versioned with soft delete, so a bad edit
+is recoverable. (3) The ledger, the locks and every run record already live there, and a
+plan is refused if the registry or the ledger changed after it was built, so the registry
+must sit with the state it is checked against. (4) The serving app has no access to it, so
+configuration and the published content stay separate. The local `config/sources.yaml` is
+an editing buffer, nothing more. Full automation (SYNC-009) will read the bucket and no
+laptop file.
+
 ## 0. Rules that are never bent
 
 1. **Local first.** Hosted changes only through `make promote`. The store refuses any other
@@ -45,8 +62,11 @@ Do these in order. Stop at the first problem.
 1. **Docker Desktop is running and its disk is under 80%.** `docker system df` shows what is
    reclaimable; `make docker-up` starts Weaviate and the pinned Ollama together. The first
    time only, `make ollama-up` also pulls the model.
-2. **Fetch the registry:** `make sources-pull`. It lists the knowledge bases and the videos.
-   It refuses to overwrite local edits unless you pass `FORCE=1`.
+2. **Registry:** the preflight (next step) says whether your local copy matches the bucket.
+   You only need `make sources-pull` when it does not, or before you edit the registry
+   (section 3b). It refuses to overwrite local edits. If it refuses, you have edits that are
+   not pushed: push them, or compare with `config/sources.yaml.prev`. Do not reach for
+   `FORCE=1`; it discards those edits.
 3. **Run the readiness report:** `make sync-preflight` (`LOCAL_ONLY=1` skips the cloud
    checks). Read it before anything else:
 
@@ -165,8 +185,8 @@ videos are ingested; nothing already stored is touched. Everything happens on lo
    YouTube cookies not expired, the Gemini key accepted, and `VISION_MODEL` set. Without a vision model the lane
    refuses (`--allow-no-vision` overrides it): a video stored with no frame descriptions is
    never revisited, so it would stay different from the others for good.
-2. **Add it to the registry:** `make sources-pull`, edit `config/sources.yaml`, then
-   `make sources-push`. Use `https://www.youtube.com/watch?v=<id>` without the `?si=...`
+2. **Add it to the registry:** `make sources-pull` first (the bucket is the source of truth,
+   your file is a copy), edit `config/sources.yaml`, then `make sources-push`. Use `https://www.youtube.com/watch?v=<id>` without the `?si=...`
    share token (it would end up in every stored address and citation link), and the video's
    own title as the name. Set `skip_voxtral: true` only for a silent screen recording (it
    has no transcript at all; the name is historical).
@@ -345,7 +365,7 @@ predates the `hfresh` index.
 
 | What | Where |
 |---|---|
-| Source registry, page ledger, locks, backups, run records | The private bucket `multimodal-rag-state-gen-lang-client-0552956404` (`registry/`, `ledger/`, `locks/`, `snapshots/`, `runs/`) |
+| Source registry, page ledger, locks, backups, run records (the bucket leads; see the start of this runbook) | The private bucket `multimodal-rag-state-gen-lang-client-0552956404` (`registry/`, `ledger/`, `locks/`, `snapshots/`, `runs/`) |
 | Fetched pages, plans, local snapshots | `runs/` in the repo (git-ignored) |
 | Limits | `config/sync-policy.yaml` |
 | Canary questions | `config/canaries.yaml` |
