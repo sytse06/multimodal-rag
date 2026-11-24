@@ -25,7 +25,15 @@ make quality-fix  # Auto-fix linting issues
 make pre-commit   # Full pre-commit validation (quality + tests)
 make clean        # Clean build artifacts
 make git-status   # Show git overview
+make release VERSION=x.y.z  # Bump, commit, tag and push (run via /release)
 ```
+
+## Skills
+
+- **release** (`.claude/skills/release.md`, versioned in git) — full release routine: pre-flight, epic status, CHANGELOG, version bump, tag and push, Cloud Run deploy, revision ledger row, GitHub release, health check. Trigger: `/release [version]`
+
+When the user types `/release`, invoke the Skill tool with `skill: "release"` before doing anything else.
+Releases and content promotions are recorded in `CHANGELOG.md`; epics.md describes the stories.
 
 ## Architecture
 

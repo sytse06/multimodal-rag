@@ -1,80 +1,75 @@
 # Changelog
 
-All notable changes to this project. Format follows [Keep a Changelog](https://keepachangelog.com);
-versions follow `docs/version-split.md` (the tag, `pyproject.toml` and the release commit
-must match). Stories are described in `docs/epics.md`; this file says **when and where each
-one reached users**.
+All notable changes to this project are documented here.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+Versioning: [Semantic Versioning](https://semver.org/); the routine is `docs/version-split.md`
+and the `/release` skill (`.claude/skills/release.md`).
 
-Two kinds of change reach colleagues, and they are recorded separately:
+Stories are described in `docs/epics.md`; this file says when each one shipped. Two kinds of
+change reach colleagues, and the release entries below cover the first. Both are also listed
+in ledgers at the end of this file:
 
 | Kind | Reaches users by | Recorded as |
 |---|---|---|
-| Code (app, query, generator) | `make deploy` | A version and a Cloud Run revision |
-| Content (chunks in hosted Weaviate) | `make promote` | A content promotion, with its backup name |
+| Code (app, query, generator) | `make deploy` | A release entry, plus a row in "Cloud Run revisions" |
+| Content (chunks in hosted Weaviate) | `make promote` | A row in "Content promotions" |
 
-Most of Epic 11 is tooling or content: it changes what a maintainer can do, not what the app
-does. Only a deploy changes the app.
+---
 
-## [Unreleased]
+## [0.3.0] — unreleased
 
-Everything since `v0.2.0` (2026-09-30). Nothing here is tagged: the work was deployed as
-Cloud Run revisions 00015 to 00025 without a version bump (see "Deployed revisions" below).
-The next release, **v0.3.0**, will tag this together with whatever is deployed next, following
-`docs/version-split.md` (bump `pyproject.toml` on `main`, annotated tag, push both).
+*Draft written at the backfill (2026-11-24). `/release 0.3.0` finalises it: date, test count,
+and whatever else is deployed first.*
+
+v0.3.0 is the first release since v0.2.0 (2026-09-30) and records nine Cloud Run revisions with new code (and four configuration-only ones) that were deployed from 2026-11-05 to 2026-11-17 without a version bump. For the support colleague it makes answers reproduce the full procedure from the sources, and it makes the live service observable: one structured record per generation with token counts, secrets redacted and the user's question never logged (OBS-001 to OBS-003). For the maintainer it adds the whole hosted-sync toolchain of Epic 11: a source registry in the state bucket, a preflight, a retrieval gate, a page ledger, plan and apply, removals a person must name, and a promotion from local to hosted with a canary write, backups and rollback (SYNC-000 to SYNC-004, SYNC-007, SYNC-008). Hosted chunks now carry a stored identity (SYNC-001). The video lane (`make sync-videos`) and the new frame descriptions (SYNC-011, SYNC-012 part 1) are tooling and are not part of any deployed revision yet. All N tests pass.
 
 ### Added
 
-- **Query:** answers reproduce full procedures, and the context budget is larger (`d8b6ec5`).
-- **Observability, OBS-001 to OBS-003 (Epic 11, Phase 1):** shared logging with JSON output and
-  correlation IDs; one structured metrics record per generation; secrets redacted and the
-  user's query text no longer logged.
-- **Hosted sync, SYNC-000 to SYNC-004, SYNC-007, SYNC-008 (Epic 11, Phase 2):**
-  - additive schema properties and the `document_id` / `content_hash` / `source_lastmod`
-    fields on every chunk (SYNC-000, SYNC-001)
-  - the source registry in the state bucket with `make sources-pull` / `sources-push`
-  - `make sync-preflight`, the retrieval gate and canary questions (`make sync-gate`)
-  - the sitemap inventory, page ledger and hashed sync plan (SYNC-002), applying a reviewed
-    plan to local (SYNC-003), and removals that a person must name (SYNC-004)
-  - `make promote` with a canary write, backups before and after, verification and rollback,
-    plus a rehearsal copy of hosted (SYNC-007)
-  - the pinned embedding runtime (Ollama 0.40.14 on port 11435) and a check that stored
-    vectors match a fresh embedding
-  - the maintainer runbook, `docs/maintainer-runbook.md` (SYNC-008)
-- **Video lane, SYNC-011:** `make sync-videos` ingests only videos with no stored chunks; the
-  transcript is the manual captions, else a Gemini transcription (Voxtral is demoted).
-- **Video frame descriptions, SYNC-012 part 1:** a plain-text description of at most 100
-  words, and two chunks per 30-second window (`[Transcript]` and `[Visual]`); an opt-in
-  Gemini vision path (`VISION_MODEL=gemini:<model>`).
+- **OBS-001, OBS-002, OBS-003** — shared logging with JSON output and correlation IDs; one structured metrics record per generation; secrets redacted and the question text no longer logged.
+- **SYNC-000, SYNC-001** — additive schema properties and `document_id`, `content_hash`, `source_lastmod` and video links on every chunk; writes to the hosted collection are refused unless a promotion passes the flag.
+- **SYNC-002 to SYNC-004** — the sitemap inventory, page ledger and hashed sync plan; applying a reviewed plan to local; removals only when a person names them.
+- **SYNC-007** — `make promote` with a canary write, verification, backups before and after, and rollback; a rehearsal copy of hosted.
+- **SYNC-008** — `make sync-preflight`, the retrieval gate and canary questions (`make sync-gate`), the pinned embedding runtime check, and the maintainer runbook (`docs/maintainer-runbook.md`).
+- **SYNC-011** — `make sync-videos` ingests only videos with no stored chunks; the transcript comes from manual captions, else Gemini (Voxtral is demoted).
+- **SYNC-012 (part 1)** — a frame description of at most 100 words and two chunks per 30-second window (`[Transcript]`, `[Visual]`); an opt-in Gemini vision path (`VISION_MODEL=gemini:<model>`).
 - `make weaviate-compat` tests our code against a given Weaviate version.
-
-### Changed
-
-- Gemini and OpenAI model defaults updated; temperature skipped for `gpt-6` (`c4109c5`).
-- Cloud Run image pins Ollama to 0.40.14 and downloads it from GitHub releases (`393c9bb`).
-- Local Weaviate aligned with the hosted 1.39.13 and the client floor raised (`8a2c232`).
-- The registry in the bucket is the source of truth; `config/sources.yaml` is an editing
-  buffer (decided 2026-11-24, documented in the runbook and SYNC-009).
-- The app warns at startup when the default model is not in the registry (`a9783ad`).
-- Writes to the hosted collection are refused unless a promotion passes the flag (`1cbdecc`).
+- The source registry in the state bucket: `make sources-pull` and `sources-push`.
+- `CHANGELOG.md`, the `/release` skill and `make release`.
 
 ### Fixed
 
-- Gemini token counts: usage is summed across streamed chunks and all-zero chunks are
-  ignored (`3f40d15`, `f81ddc0`); OpenAI streamed usage is requested explicitly (`3e164c8`).
+- Gemini token counts: usage is summed across streamed chunks and all-zero chunks are ignored (`3f40d15`, `f81ddc0`); OpenAI streamed usage is requested explicitly (`3e164c8`).
 - google-genai function-calling notices dropped from the logs (`d971abc`).
-- Real environment variables override `.env` for flat settings (`f82c90c`); `VISION_MODEL`
-  is read from `.env` (`9d7056f`).
+- Real environment variables override `.env` for flat settings (`f82c90c`); `VISION_MODEL` is read from `.env` (`9d7056f`).
 - A promotion treats an unset property as absent when verifying (`721d920`).
 - yt-dlp upgraded to 2026.10.26 (`7dfb203`).
 
-### Planned
+### Changed
 
-- Epic 12, answer and source quality calibration (QUAL-001 to QUAL-007): not started.
-- SYNC-013, SYNC-009 and the OPS tickets: see `docs/epics.md`.
+- Answers reproduce full procedures and the context budget is larger (`d8b6ec5`).
+- Gemini and OpenAI model defaults updated; temperature skipped for `gpt-6` (`c4109c5`).
+- The Cloud Run image pins Ollama to 0.40.14 and downloads it from GitHub releases (`393c9bb`).
+- Local Weaviate aligned with the hosted 1.39.13 and the client floor raised (`8a2c232`).
+- The registry in the bucket is the source of truth; `config/sources.yaml` is an editing buffer (decided 2026-11-24).
+- The app warns at startup when the default model is not in the registry (`a9783ad`).
 
-## Deployed revisions since v0.2.0
+## [0.2.0] — 2026-09-30
 
-Cloud Run service `multimodal-rag`, region `europe-west4`. **The commit is inferred:** it is the
+v0.2.0 deploys the inference app to Google Cloud Run (Epic 10, DATA-007) and documents branch and release versioning.
+
+## [0.1.2] — 2026-09-25
+
+v0.1.2 completes hosted storage and runtime validation (DATA-004, DATA-005), restores fixed Weaviate snapshots (DATA-003), documents local and hosted Weaviate deployment (DATA-006) and defines the hosted embedding deployment (DATA-007).
+
+## [0.1.1] — 2026-09-24
+
+v0.1.1 is the first tagged release. Weaviate cloud configuration and snapshot export (Epic 9) landed around it; earlier work (Epics 1 to 8) is in the history before it.
+
+---
+
+## Cloud Run revisions
+
+Cloud Run service `multimodal-rag`, region `europe-west4`. Revisions 00013 to 00025 were deployed without a release, so **their commit is inferred:** it is the
 last non-merge commit on `main` (documentation commits included) before the revision was created, because `make deploy` builds
 from the working tree (`--source .`) and the exact tree is not recorded. Treat it as the
 nearest commit, not proof. "Image" says whether the container image changed from the revision
@@ -112,19 +107,3 @@ older backup holds the March vectors (see `docs/maintainer-runbook.md`, section 
 | 2026-11-17 | SYNC-001: stored identity properties added to every chunk | 943 | `snapshots/20261117T134901Z-promote-after` |
 | 2026-11-17 | SYNC-007: hosted made equal to local after SYNC-003/004 (pages replaced, article 437 removed); every vector re-embedded on the pinned runtime | 943 | `snapshots/20261117T125431Z-promote-after` |
 | 2026-03 | Initial ingest of the YouTube transcripts and knowledge bases (922 objects at the 2026-11-13 backup) | 922 | Older backups hold the March vectors; do not restore from them |
-
-## [0.2.0] - 2026-09-30
-
-- Inference app deployed to Google Cloud Run (Epic 10, DATA-007).
-- Branch and release versioning documented (`docs/version-split.md`).
-
-## [0.1.2] - 2026-09-25
-
-- Hosted storage and runtime validation (DATA-004, DATA-005); restore of fixed Weaviate
-  snapshots (DATA-003); local and hosted Weaviate deployment documented (DATA-006); hosted
-  embedding deployment defined (DATA-007).
-
-## [0.1.1] - 2026-09-24
-
-- First tagged release. Weaviate cloud configuration and snapshot export (Epic 9) landed
-  around it; earlier work (Epics 1 to 8) is in the history before it.
