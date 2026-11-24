@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy release
 
 SHELL := /bin/bash
 
@@ -69,6 +69,7 @@ help:
 	@echo ""
 	@echo "Deployment:"
 	@echo "  make deploy       - Build and deploy to Cloud Run (see docs/gcp-deployment.txt)"
+	@echo "  make release VERSION=x.y.z - Bump, commit, tag and push a release (the /release skill runs the full routine)"
 	@echo ""
 	@echo "Git:"
 	@echo "  make git-status   - Show git overview"
@@ -338,6 +339,38 @@ deploy:
 		--quiet
 	@echo -e "$(GREEN)✅ Deployed to Cloud Run$(NC)"
 	@echo "Env vars and secrets are managed separately - see docs/gcp-deployment.txt"
+
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo -e "$(RED)Usage: make release VERSION=x.y.z$(NC)"; exit 1; \
+	fi
+	@if ! echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo -e "$(RED)VERSION must look like 1.2.3$(NC)"; exit 1; \
+	fi
+	@if [ "$$(git branch --show-current)" != main ]; then \
+		echo -e "$(RED)Releases are cut from main$(NC)"; exit 1; \
+	fi
+	@if [ -n "$$(git status --porcelain --untracked-files=no | grep -v '^ M CHANGELOG.md$$')" ]; then \
+		echo -e "$(RED)Only CHANGELOG.md may have uncommitted changes: commit or stash the rest$(NC)"; exit 1; \
+	fi
+	@if ! grep -q '^## \[$(VERSION)\]' CHANGELOG.md; then \
+		echo -e "$(RED)CHANGELOG.md has no '## [$(VERSION)]' entry: write it first$(NC)"; exit 1; \
+	fi
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
+		echo -e "$(RED)Tag v$(VERSION) already exists$(NC)"; exit 1; \
+	fi
+	@if [ -n "$$(git log origin/main..HEAD --oneline 2>/dev/null)" ]; then \
+		echo -e "$(RED)Unpushed commits: run git push first$(NC)"; exit 1; \
+	fi
+	@echo -e "$(BLUE)Releasing v$(VERSION)...$(NC)"
+	sed -i.bak '/^\[project\]/,/^\[/ s/^version = ".*"/version = "$(VERSION)"/' pyproject.toml && rm pyproject.toml.bak
+	uv lock
+	git add CHANGELOG.md pyproject.toml uv.lock
+	git commit -m "chore: release v$(VERSION)"
+	git tag -a v$(VERSION) -m "Release v$(VERSION)"
+	git push
+	git push origin v$(VERSION)
+	@echo -e "$(GREEN)Released v$(VERSION). Next: make deploy, then gh release create v$(VERSION)$(NC)"
 
 git-status:
 	@echo -e "$(CYAN)📊 Git Status Overview$(NC)"

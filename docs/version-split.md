@@ -45,6 +45,10 @@ references and must not be treated as production dependencies.
 
 ## Release workflow
 
+The routine below is automated: `/release X.Y.Z` runs the whole sequence (the skill is
+`.claude/skills/release.md`) and `make release VERSION=X.Y.Z` does steps 4 to 6 with guards.
+What each release contains is recorded in `CHANGELOG.md`.
+
 1. Create a feature branch from the current `main`.
 2. Implement and test the change on that branch.
 3. Merge the accepted work into `main`.

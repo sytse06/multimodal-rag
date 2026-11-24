@@ -1,5 +1,9 @@
 # Development Epics
 
+When and where each story reached users (code releases, Cloud Run revisions and content
+promotions) is recorded in [`CHANGELOG.md`](../CHANGELOG.md). This file describes what a story
+is; the changelog says when it shipped.
+
 ## Epic 1: Ingestion Pipeline (completed)
 
 Batch CLI process that fetches, chunks, embeds, and stores all source material into Weaviate.
