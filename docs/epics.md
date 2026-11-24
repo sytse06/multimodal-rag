@@ -2234,6 +2234,193 @@ for its preconditions; the video lane is never scheduled), distributed tracing o
 an external log platform beyond Cloud Logging, embedding-model migration, multi-tenant
 sync, and live webhooks from the content source.
 
+## Epic 12: Answer and Source Quality Calibration (planned)
+
+Epic 11 got the content right: the sync lanes keep hosted equal to what a maintainer
+reviewed. This epic is about what a support colleague sees when they ask a question: the
+form of the answer, the sources it cites, and how far both can be trusted. It starts from
+one observed case and measures before it changes anything.
+
+**The observed case (2026-11-24).** On the first new video (`yWuBQik8KPs`) the question
+"How can I work with angled connections in Hydroman?" retrieved the right chunks on local
+and on hosted, with identical sources and scores. The answers had four problems:
+
+1. **A list of facts, not a procedure.** The system prompt already asks for "the complete
+   numbered procedure" (rule 4) and for citing "once per group of steps" (rule 2). The
+   answer ignored both. First find out whether the sources hold a procedure at all: the
+   tutorial chunks are narration of a two-minute demonstration, not numbered steps
+2. **Duplicate and repeated sources.** The Sources list showed `@ 01:00` twice (the
+   `[Transcript]` and `[Visual]` chunk of one 30-second window) and one article twice (two
+   chunks of article 312). The body repeated the same two or three citations after nearly
+   every sentence
+3. **A weak tail.** The default `top_k` is 10, so the list reached 73 to 76% relevance:
+   two cross-section articles and a HydroSym page about drawing a slanted connection line,
+   which is a different feature
+4. **Claims attached to the wrong source.** The local answer credited angled connections
+   with a step that belongs to the pilot-lines function at 0:30, and said both functions
+   are checked for wall thickness where the transcript says only the pilot lines are. The
+   hosted answer of the same question did not repeat either; that is one sample each, not
+   a result
+
+Local and hosted differ in one setting that is not in the repo: hosted runs with
+`LLM_TEMPERATURE=1` (set on the Cloud Run service), local defaults to `0.3`
+(`.env.example`). Same model, same code, same chunks. So answers cannot be compared across
+the two, and any prompt change has to be judged at the production setting.
+
+**Status:** not started. All of it is query-side: nothing stored changes, so none of it
+goes through a promotion. It needs an app deploy to reach colleagues. The last deploy is
+Cloud Run revision `multimodal-rag-00025-juf` (2026-11-17); no query-side commit has
+landed since, so the live app and `main` agree on answer behaviour. Follow "Before each
+deploy" in `docs/gcp-deployment.txt` (hosted Weaviate is 1.40.5, never tested against the
+app's client on purpose).
+
+#### QUAL-001 — Calibration Set and Baseline (first)
+
+**Branch:** `feature/QUAL-001-calibration-set`
+
+Nothing else in this epic is judged without it. The retrieval gate (`config/canaries.yaml`)
+checks only that three questions keep their rank; it says nothing about the answer.
+
+- A fixed set of about 10 to 15 questions in `config/`, each with the facts a good answer
+  must contain, the sources it should cite, and the form it should take (procedure,
+  factual, "the sources do not say"). Include the angled-connection question, the
+  reducing-valve question (its answer is in a `[Visual]` chunk that ranked 5th), the three
+  canaries, and at least two questions the knowledge base cannot answer
+- A command that runs the set against a chosen store and settings, **3 times per question**
+  at the production temperature, and reports per question: distinct sources cited, repeated
+  citations, required facts present, answer form, and the spread between runs. Output goes
+  to `runs/` and is not part of `make test`
+- Record the baseline before any change in this epic. A change is kept only if it improves
+  the measures it targets and makes none of the others worse
+
+**Scope:** a new module under `src/multimodal_rag/`, `config/`, tests for the scoring only
+(the model calls are not tested)
+
+#### QUAL-002 — Temperature and Setting Parity
+
+**Branch:** `feature/QUAL-002-setting-parity`
+
+- Decide the answer temperature and write it down. Whether `1` on Cloud Run was deliberate
+  is not recorded anywhere; Gemini 3 guidance suggests leaving it at 1.0, which may be why.
+  The decision is the maintainer's
+- Whichever value wins is set the same on local and hosted, in `.env.example` and in
+  `docs/gcp-deployment.txt`, and `make sync-preflight` warns when the deployed value
+  differs from the local one (it already reports the Weaviate version difference)
+- If the chosen value is 1.0, QUAL-001's three runs per question are what show the spread
+
+**Scope:** `.env.example`, `docs/gcp-deployment.txt`, `preflight.py`
+
+#### QUAL-003 — One Source per Idea
+
+**Branch:** `feature/QUAL-003-merge-sources`
+
+The merge at retrieval that SYNC-012 deferred until the first video had run. It has now run.
+
+- Group retrieved video chunks by `(source_url, timestamp_seconds)` before the context is
+  built: one source per window, taking the better score and keeping both texts, so the
+  model sees the narration and what was on screen together
+- Group web chunks of one article the same way, so one article is not two sources
+- The citation list and the inline links show each source once
+- Judge by QUAL-001: fewer repeated citations, no loss of required facts. Check the
+  reducing-valve question in particular, where merging should help a value that lives
+  only in the visual chunk
+
+**Scope:** `query/retriever.py`, `models/query.py`, the context formatter in
+`query/generator.py`
+
+#### QUAL-004 — Relevance Floor and Source Count
+
+**Branch:** `feature/QUAL-004-relevance-floor`
+
+- Measure, do not guess: with QUAL-001 run `top_k` 5, 7 and 10 and a minimum relevance
+  score, and look at which tail sources the model used and which only filled the list
+- Keep `retrieve()`'s guarantee that at least half the results are video chunks unless the
+  measurement shows it adds weak ones; a floor must not remove the only video source
+- Possibly different floors for video and web, since the two score differently
+
+**Scope:** `query/retriever.py`, `models/config.py`
+
+#### QUAL-005 — Answer Form: Procedure First
+
+**Branch:** `feature/QUAL-005-answer-form`
+
+The observed case, point 1. The prompt already asks for the right thing, so the cause comes
+before the fix.
+
+- Diagnose with QUAL-001 on three groups: questions where the sources contain a numbered
+  procedure (does the model produce one?), questions where they hold only narration of a
+  demonstration (what should an honest answer look like?), and questions they do not
+  answer
+- Produce **two or three prompt variants** and compare them on the calibration set at the
+  production setting; the maintainer picks and mixes. Candidates: lead with the best
+  video link and its timestamp; order the steps as the video shows them; one citation per
+  group of steps, enforced rather than requested; say plainly when the sources show a
+  demonstration but no written procedure
+- Prompt changes alter every answer, so the whole calibration set must not get worse, not
+  just the question that triggered this
+
+**Scope:** `query/generator.py` (`SYSTEM_PROMPT`)
+
+#### QUAL-006 — Claims Match Their Sources
+
+**Branch:** `feature/QUAL-006-faithfulness`
+
+The observed case, point 4: a claim true of one function attached to the neighbouring one.
+
+- Add a faithfulness measure to QUAL-001: for each cited claim, is it supported by the
+  chunk it cites? Start with the questions that have a known trap (neighbouring windows
+  that describe different functions) and decide whether an automated judge is worth its
+  cost or whether the required-facts and forbidden-facts lists are enough
+- If prompt wording can reduce it (cite the chunk that says it, do not combine two
+  functions' steps), test it as a QUAL-005 variant. Otherwise record it as a known limit
+  of narration-based sources
+
+**Scope:** the QUAL-001 module; `query/generator.py` only if a variant wins
+
+#### QUAL-007 — Noise in Stored Chunks (measure here, fix in Epic 11)
+
+**Branch:** `docs/QUAL-007-stored-noise`
+
+Some of what hurts an answer is stored, so a prompt cannot fix it.
+
+- Known: March knowledge-base chunks contain the page-footer widget text ("Did this answer
+  your question? Thanks for the feedback … There was a problem submitting your feedback"),
+  near-empty heading fragments, and several chunks of one article; the 25 older videos
+  carry long frame descriptions cut at the embedder's 400-word limit (SYNC-013)
+- QUAL-001 counts how often such chunks reach an answer. If it is often, a ticket in the
+  sync lanes fixes it through the normal route (normaliser in `ingest/template.py`, then
+  a plan and a promotion), and this story ends with that ticket written. No stored data is
+  changed here
+
+**Scope:** documentation and a measurement; the fix belongs to Epic 11
+
+### Order of work
+
+| Order | Story | Why here |
+|---|---|---|
+| 1 | QUAL-001 | Everything else is judged against it |
+| 2 | QUAL-002 | The baseline and every later run need the production setting |
+| 3 | QUAL-003, QUAL-004 | Retrieval-side, cheap, and they change what the prompt sees |
+| 4 | QUAL-005, QUAL-006 | Prompt work, judged after the sources are clean |
+| 5 | QUAL-007 | Needs the measurement; may produce a sync ticket |
+
+Deploy once at the end of a batch that passed the calibration set, not per story.
+
+### Epic 12 acceptance criteria
+
+- A calibration set and a command that scores answers exist, and a baseline from before
+  any change is recorded
+- Local and hosted use the same answer temperature, and the preflight warns when they differ
+- A window's narration and description, and an article's chunks, appear as one source
+- The angled-connection question gives an ordered answer with one citation per group of
+  steps, or says plainly that the sources show a demonstration and no procedure
+- No change is kept that makes any question in the calibration set worse
+- The deployed revision and the calibration run it was approved on are recorded together
+
+**Out of scope:** changing the embedding model, re-ranking with a second model (revisit if
+QUAL-003 and QUAL-004 are not enough), changing stored content (Epic 11 routes), and
+automated answer evaluation in production.
+
 ---
 
 ## Summary
@@ -2251,7 +2438,8 @@ sync, and live webhooks from the content source.
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
 | 11 — Observability, Hosted Content Sync and Production Hardening | 21 | in progress (Phase 1 and SYNC-000 done and deployed; SYNC-002 next; 17 open) | ~148 |
-| **Total** | **59** | **10 completed, 1 in progress** | **395 current** |
+| 12 — Answer and Source Quality Calibration | 7 | planned (not started) | TBD |
+| **Total** | **66** | **10 completed, 1 in progress, 1 planned** | **395 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
