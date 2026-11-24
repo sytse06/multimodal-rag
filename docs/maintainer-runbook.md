@@ -244,11 +244,25 @@ some old, which pushes search results toward the new ones. It lasts a few minute
    `make promote-plan TARGET=rehearsal` should show the same plan as hosted. Run the
    promotion and the rollback against it with `TARGET=rehearsal`, check a new plan shows
    nothing to do, then `make rehearsal-down`.
-3. **Canary first.** `make promote RUN=runs/promote-hosted-<time> CANARY_ONLY=1` (add
-   `ACCEPT_REVIEW=1` only for a reviewed exit-10 plan). It backs hosted up, writes **one**
-   object, reads it back and compares it, and stops. Then build a new plan: hosted changed,
-   so the old one is refused.
-4. **Promote.** `make promote RUN=<the new plan>` asks, then: takes a backup, writes the rest
+3. **Canary first.** A plan is a snapshot of hosted at the moment it was made, with a
+   fingerprint of both sides. **Every write to hosted (the canary, the promotion, a rollback)
+   makes every earlier plan stale, and `make promote` refuses a stale plan.** So the
+   sequence uses three plans, and each command takes the newest one:
+
+   | Step | Command | Plan it takes | What it does to hosted |
+   |---|---|---|---|
+   | 1 | `make promote-plan` | (builds plan A) | nothing |
+   | 2 | `make promote RUN=<plan A> CANARY_ONLY=1` | A | backs hosted up, writes **one** object, reads it back and compares it, stops |
+   | 3 | `make promote-plan` | (builds plan B) | nothing. Plan A is stale now: the canary changed hosted |
+   | 4 | `make promote RUN=<plan B>` | **B, never A** | backs up, writes the rest, verifies, gates, backs up again |
+   | 5 | `make promote-plan` | (builds plan C) | nothing. It must say 0, 0, 0, 0 |
+
+   Add `ACCEPT_REVIEW=1` only for a reviewed exit-10 plan. The newest plan is the directory
+   the last `make promote-plan` printed (`kept: runs/promote-hosted-<time>`); `ls -t runs |
+   grep promote-hosted | head -1` shows it too. Copy that name, not an earlier one from your
+   terminal history. If you paste the wrong one, nothing is written: the command stops with
+   `the hosted changed after the plan was made`. Build a plan again and use that.
+4. **Promote.** `make promote RUN=<plan B>` asks, then: takes a backup, writes the rest
    in batches, deletes last, verifies **every** object, runs the gate, and takes a backup
    after. Status `promoted` is success; `gate-failed` means the write is done but a canary
    question ranks worse, so read the gate lines and decide whether to roll back.
@@ -285,7 +299,7 @@ that corrects forward.
 | What you see | What it means | What to do |
 |---|---|---|
 | `the ledger changed after the plan was made` / `the registry changed...` | The plan is stale | Build a new plan |
-| `the hosted changed after the plan was made` | Something wrote to hosted since | Build a new plan; find out what wrote |
+| `the hosted changed after the plan was made` | Something wrote to hosted since the plan: usually your own canary, because you used the canary's plan again | Run `make promote-plan` and use the plan it prints; if you did not just write to hosted, find out what did |
 | `plan hash does not match` | The plan file was edited | Build a new plan; never edit one |
 | `Ollama X is not the pinned Y` | Wrong embedding runtime | `make ollama-up`; check `EMBEDDING_BASE_URL` |
 | `stored vectors no longer match their text` | Index and runtime differ | `make sync-reembed` (try `DRY=1`), then re-run |
