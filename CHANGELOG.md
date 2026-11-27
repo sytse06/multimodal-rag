@@ -51,7 +51,7 @@ v0.3.0 is the first release since v0.2.0 (2026-09-30) and records nine Cloud Run
 - Answers reproduce full procedures and the context budget is larger (`d8b6ec5`).
 - Gemini and OpenAI model defaults updated; temperature skipped for `gpt-6` (`c4109c5`).
 - The Cloud Run image pins Ollama to 0.40.14 and downloads it from GitHub releases (`393c9bb`).
-- Local Weaviate aligned with the hosted 1.39.13 and the client floor raised (`8a2c232`).
+- Local Weaviate aligned with the hosted 1.39.13 and the client floor raised (`8a2c232`); on 2026-11-27 local and the rehearsal copy moved to 1.40.5, the version hosted had moved to.
 - The registry in the bucket is the source of truth; `config/sources.yaml` is an editing buffer (decided 2026-11-24).
 - The app warns at startup when the default model is not in the registry (`a9783ad`).
 - A refused registry pull points to `make sources-diff` and `make sources-push` instead of `FORCE=1`.

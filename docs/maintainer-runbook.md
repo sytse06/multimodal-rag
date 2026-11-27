@@ -363,8 +363,13 @@ through the drift, but a bump must be tested first:
 5. Bump `weaviate-client`, run the tests, and deploy with `--no-traffic --tag`; check the
    revision became ready, ask one real question through the tag URL, then shift traffic.
 
-State on 2026-11-23: steps 1 to 3 passed for 1.40.5 (every check with client 4.20.4 and
-4.24.1; a copy of the data opened with identical contents). Steps 4 and 5 are not done.
+State on 2026-11-27: steps 1 to 4 are done for 1.40.5. The compatibility check passed (7 of
+7, with the newest hosted backup of 954 objects) and so did the upgrade of a copy (10 of 10);
+the snapshot taken first is `runs/snapshot-local-before-weaviate-1.40.5-20261127` (954
+objects, from 1.39.13); both images in `compose.yaml` are now 1.40.5; after the restart
+local holds 954 objects and the rehearsal copy 943, and a fresh export matches the
+snapshot object for object (same ids, properties and vectors, lowest cosine 1.0). Step 5
+(the `weaviate-client` bump and a deploy) is held for a release.
 `make weaviate-compat VERSION=1.28.4` fails at the restore, as it should: that version
 predates the `hfresh` index.
 

@@ -81,7 +81,7 @@ substring and counted sitemap pages outside the crawler's scope.)
 | Config | A source list for all three knowledge bases and the videos, kept in one private versioned bucket (section 10) | Missing, and held on one Mac only (sections 3 and 10) | SYNC-008 |
 | Config | One `VISION_MODEL` value | Four duplicate lines | SYNC-008 |
 | Config | Separate local and hosted settings so a run cannot write to the wrong target | One shared `.env` | SYNC-008 |
-| Versions | Local Weaviate equal to the hosted version | 1.39.13 on both when aligned (2026-11-13); hosted moved to 1.40.5 on 2026-11-23, local not yet (`docs/gcp-deployment.txt`, "Before each deploy") | **Done.** Fresh volume, restored from the bucket backup: 922 identical objects |
+| Versions | Local Weaviate equal to the hosted version | 1.39.13 on both when aligned (2026-11-13); hosted moved to 1.40.5 on 2026-11-23 and local followed on 2026-11-27 (`docs/gcp-deployment.txt`, "Before each deploy"; runbook 7a) | **Done.** Fresh volume, restored from the bucket backup: 922 identical objects |
 | Data | Local equal to hosted before an update starts | Verified identical | Needs a repeatable check (SYNC-008) |
 | Schema | Deployed app tolerates extra properties | Merged, **not yet deployed** | SYNC-000 deploy |
 | Network | The doc sites, their sitemaps and YouTube reachable | Yes | |
