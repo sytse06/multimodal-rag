@@ -232,6 +232,29 @@ then show the matching deletes, and they need their own promotion. That is also 
 the run back, fix the cause, and run again. The snapshot in the same run directory is the
 backstop.
 
+### 3c. Cutting the old video chunks down to their narration (SYNC-013)
+
+The 213 video chunks stored before SYNC-012 are one hybrid chunk per window: the narration,
+then `[Visual] ` and a long description of menus and toolbars. This converts them to
+narration only under the same ids, and leaves the descriptions out (they stay only in the
+snapshot). It changes local only; it is run once, and a second run finds nothing to do.
+
+1. **Run the checks in section 2.** The readiness report must show local vectors current
+   and the embedding runtime pinned.
+2. **Dry run:** `make sync-split-videos DRY=1`. It lists how many chunks will be cut, how
+   many are already split, the windows that have no narration (left as they are) and the
+   words of description that will be left out. Nothing is written.
+3. **Split:** `make sync-split-videos`. It asks, refuses unless the pinned runtime is in
+   use, takes a lock, snapshots local to `runs/split-<time>/snapshot-local`, rewrites each
+   chunk's text to its narration with a new `content_hash` and a new vector, then proves
+   the object count, every other object and every new vector (re-embedded from the stored
+   text). Any problem is printed with the rollback command and exits 1.
+4. **Check it:** the dry run now says `0 hybrid chunks to cut down`.
+5. **Promote:** `make promote-plan` shows the cut chunks as **replaces** (text, hash and
+   vector) and no adds or deletes. Rehearse first (section 4, step 2), then follow section 4.
+
+**Rollback:** `make snapshot-restore SNAPSHOT_DIR=runs/split-<time>/snapshot-local REPLACE=1`.
+
 ## 4. Stage B: promote to hosted
 
 Choose a quiet moment. While the promotion runs, some hosted chunks hold new vectors and
@@ -437,6 +460,7 @@ tests), so nothing else keeps it awake. Every promotion also needs it awake.
 | `make sync-apply RUN=` | The plan | **Local**, ledger | 10 needs review, 1 failed or gate failed |
 | `make sync-convert` | Local, sitemaps, ledger | **Local properties** (`DRY=1` writes nothing) | 1 on failed verification |
 | `make weaviate-compat` | A throwaway Weaviate, the newest hosted backup | Nothing outside its own container (`UPGRADE=1` stops the rehearsal briefly) | 1 on a failed check |
+| `make sync-split-videos` | Local | **Local** (`DRY=1` writes nothing; rollback is the run's snapshot) | 1 on failed verification |
 | `make sync-videos` | Registry, local, YouTube metadata | **Local** (`DRY=1` writes nothing; `ROLLBACK=` deletes what a run added) | 1 on a refusal, a failed video or a failed gate |
 | `make promote-plan` | Local, hosted | `runs/` | 10 needs review |
 | `make promote RUN=` | The plan | **Hosted**, backups | 10 needs review, 1 failed |

@@ -789,7 +789,7 @@ local both hold 954 chunks (checked 2026-11-27). Phase 2 was reworked on 2026-11
 automating the sync (SYNC-009) needs a scheduler and a policy, not a rewrite: plan and
 apply are separate artifacts, state lives in a ledger in the bucket, and the bucket is the
 source of truth for the registry (see "Design rules for an automatable sync" and "Order of
-work"). Open: SYNC-013 (split the 214 old video chunks; four decisions), SYNC-009a (detect and
+work"). Open: SYNC-013 (applied to local 2026-11-27, promotion pending), SYNC-009a (detect and
 notify, a stub) and OPS-001 to OPS-008. SYNC-009b, SYNC-010, the changed-video half of
 SYNC-011 and SYNC-012 part 3 are deferred with triggers ("Deferred work and its
 triggers"); SYNC-005 and SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to OPS-008) was added
@@ -952,7 +952,7 @@ what is left:
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
 | 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | part 1 built, merged (89d989a) and used on the first new video (2026-11-24); parts 2 and 3 are SYNC-013 and later | Local, then promotion |
 | 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half done: first video ingested and promoted 2026-11-24; changed videos not built | Local, then promotion |
-| 9 | SYNC-013 | Split the existing video chunks into narration and description | ticket written 2026-11-23; four decisions open; not started | Local, then promotion |
+| 9 | SYNC-013 | Split the existing video chunks into narration and description | built and applied to local 2026-11-27 (decisions taken); promotion pending | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009a | Detect and notify (read-only), plus channel discovery | stub | None |
 | On its trigger | SYNC-009b | Automated apply | stub; see the deferred-work table | Via promotion |
@@ -1964,9 +1964,31 @@ SYNC-011 is ingested only after part 1.
 
 **Scope:** `ingest/video_frames.py`, `ingest/videos.py`, `models/llm.py`, `models/chunks.py`
 
-#### SYNC-013 — Split the Existing Video Chunks into Narration and Description (not started; ticket written 2026-11-23)
+#### SYNC-013 — Split the Existing Video Chunks into Narration and Description (built and applied to local 2026-11-27; promotion pending)
 
 **Branch:** `feature/SYNC-013-split-video-chunks`
+
+**Status 2026-11-27.** Decisions taken by the maintainer: the old descriptions are **left
+out** (the collection stays at 954 objects), the one window with no narration is **left
+unchanged** (HydroMan "Using key functions", 210 s), and local and the rehearsal copy
+were bumped to Weaviate 1.40.5 first. Built as `make sync-split-videos` (`DRY=1`, `YES=1`;
+`sync/split_videos.py` and `split_videos_cli.py`, 11 tests). Applied to local: 213 chunks
+cut down to their narration under the same ids, new `content_hash` and new vectors; 8
+chunks of the first new video and the one no-narration window untouched; 142,340 words of
+description left out (median 476, largest 42,843, as the ticket counted). The command's own
+verification passed: count unchanged, every other object unchanged, every new vector
+reproduces from its stored text, and a second run finds nothing to split. Rollback: the
+run's snapshot, `runs/split-20261127T110455Z/snapshot-local`.
+
+Measured on local, before then after (the same fixed queries; the ticket's own scripts
+were not committed, so these are a fresh measurement): narrator diagnostic over 213
+windows (the longest sentence of each narration should find its own chunk) top-1 21% to
+55%, top-3 40% to 78%, median rank 6 to 1; canaries zoom 1 to 1, oilflow 1 to 5 (the
+accepted WARN was 1 to 6), import 4 to 1. **Not done:** the six on-screen questions of the
+acceptance, whose text was never saved (the ticket says the assistant wrote them), so that
+criterion is unchecked; and the promotion. Before promoting: the maintainer's real
+question set run before and after, a rehearsal on the 1.40.5 rehearsal copy, and the
+hosted quiet period of OPS-007 (no hosted access until 2026-12-06).
 
 Part 2 of SYNC-012. SYNC-012 part 1 (merged, `89d989a`) makes every **new** video store a
 window as two chunks: the narration (`[Transcript] ...`, id `<url>|fused|<t>`) and the
