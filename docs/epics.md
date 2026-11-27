@@ -789,7 +789,7 @@ local both hold 954 chunks (checked 2026-11-27). Phase 2 was reworked on 2026-11
 automating the sync (SYNC-009) needs a scheduler and a policy, not a rewrite: plan and
 apply are separate artifacts, state lives in a ledger in the bucket, and the bucket is the
 source of truth for the registry (see "Design rules for an automatable sync" and "Order of
-work"). Open: SYNC-013 (applied to local 2026-11-27, promotion pending), SYNC-009a (detect and
+work"). Open: SYNC-009a (detect and
 notify, a stub) and OPS-001 to OPS-008. SYNC-009b, SYNC-010, the changed-video half of
 SYNC-011 and SYNC-012 part 3 are deferred with triggers ("Deferred work and its
 triggers"); SYNC-005 and SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to OPS-008) was added
@@ -952,7 +952,7 @@ what is left:
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
 | 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | part 1 built, merged (89d989a) and used on the first new video (2026-11-24); parts 2 and 3 are SYNC-013 and later | Local, then promotion |
 | 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half done: first video ingested and promoted 2026-11-24; changed videos not built | Local, then promotion |
-| 9 | SYNC-013 | Split the existing video chunks into narration and description | built and applied to local 2026-11-27 (decisions taken); promotion pending | Local, then promotion |
+| 9 | SYNC-013 | Split the existing video chunks into narration and description | built, applied to local and promoted to hosted 2026-11-27; the on-screen acceptance question is unchecked | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009a | Detect and notify (read-only), plus channel discovery | stub | None |
 | On its trigger | SYNC-009b | Automated apply | stub; see the deferred-work table | Via promotion |
@@ -1972,7 +1972,7 @@ SYNC-011 is ingested only after part 1.
 
 **Scope:** `ingest/video_frames.py`, `ingest/videos.py`, `models/llm.py`, `models/chunks.py`
 
-#### SYNC-013 — Split the Existing Video Chunks into Narration and Description (built and applied to local 2026-11-27; promotion pending)
+#### SYNC-013 — Split the Existing Video Chunks into Narration and Description (built, applied to local and promoted to hosted 2026-11-27)
 
 **Branch:** `feature/SYNC-013-split-video-chunks`
 
@@ -1994,13 +1994,27 @@ windows (the longest sentence of each narration should find its own chunk) top-1
 55%, top-3 40% to 78%, median rank 6 to 1; canaries zoom 1 to 1, oilflow 1 to 5 (the
 accepted WARN was 1 to 6), import 4 to 1. **Not done:** the six on-screen questions of the
 acceptance, whose text was never saved (the ticket says the assistant wrote them), so that
-criterion is unchecked; and the promotion. Before promoting: the question set run before
-and after (a draft of 81 questions is in `config/golden_questions.yaml`, committed
-2026-11-27 and awaiting the maintainer's review; it is mostly article-style questions,
-so the on-screen questions of the acceptance still need writing; the "before" state exists
-only in the snapshot above and needs a restore to a throwaway Weaviate), a rehearsal on
-the 1.40.5 rehearsal copy, and the hosted quiet period of OPS-007 (no hosted access
-until 2026-12-06).
+criterion is unchecked. A provisional run of the unreviewed draft set
+(`config/golden_questions.yaml`, 79 questions with sources, the "before" state restored from
+the snapshot to a throwaway Weaviate) showed no loss: top-1 63% to 71%, top-3 84% to 87%,
+and for the 36 questions about a video the video's own chunk in the top 3 from 28% to 75%
+(median rank 6 to 2). That set has no on-screen questions, and its video questions were
+written from the same transcripts, so it favours narration; web-only questions went from
+91% to 86% in the top 3 (two questions).
+
+**Promoted to hosted 2026-11-27.** Rehearsed on the 1.40.5 rehearsal copy seeded from the
+newest hosted backup (`20261124T125642Z-promote-after`): the plan showed 213 replaces and
+nothing else, the canary and the full promotion passed, a fresh plan showed 0, 0, 0, 0, and
+a rollback to the seed state worked. On hosted (plan `runs/promote-hosted-20261127T140650Z`,
+213 replaces, 0 adds, 0 deletes, 741 unchanged) the maintainer ran `make promote` straight
+from the plan without a canary write: `promoted`, written 213, gate OK (zoom 1 to 1, oilflow
+rank 5, import 1), backups `20261127T141432Z-promote-before` and
+`20261127T141453Z-promote-after`. Confirmed afterwards: a fresh plan says 0, 0, 0, 0 with all
+954 unchanged, and the preflight shows local identical to hosted (954 chunks), hosted vectors
+current (lowest 1.0000), hosted 1.40.5. **The hosted access of this day (preflight,
+plans, the promotion) restarts the OPS-007 clock.** The proof (hosted still awake on
+2026-12-06 with no other access in between) still holds, but only if nothing touches hosted
+again until then.
 
 Part 2 of SYNC-012. SYNC-012 part 1 (merged, `89d989a`) makes every **new** video store a
 window as two chunks: the narration (`[Transcript] ...`, id `<url>|fused|<t>`) and the
@@ -2705,7 +2719,7 @@ automated answer evaluation in production.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability, Hosted Content Sync and Production Hardening | 22 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos) and 012 part 1 done; SYNC-013, SYNC-009a and OPS-001 to 008 open; SYNC-009b, SYNC-010 deferred) | ~148 |
+| 11 — Observability, Hosted Content Sync and Production Hardening | 22 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos), 012 part 1 and SYNC-013 done; SYNC-009a and OPS-001 to 008 open; SYNC-009b, SYNC-010 deferred) | ~148 |
 | 12 — Answer and Source Quality Calibration | 9 | planned (not started) | TBD |
 | **Total** | **68** | **10 completed, 1 in progress, 1 planned** | **395 current** |
 

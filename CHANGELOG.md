@@ -30,7 +30,7 @@ v0.3.0 is the first release since v0.2.0 (2026-09-30) and records nine Cloud Run
 - **SYNC-002 to SYNC-004** — the sitemap inventory, page ledger and hashed sync plan; applying a reviewed plan to local; removals only when a person names them.
 - **SYNC-007** — `make promote` with a canary write, verification, backups before and after, and rollback; a rehearsal copy of hosted.
 - **SYNC-008** — `make sync-preflight`, the retrieval gate and canary questions (`make sync-gate`), the pinned embedding runtime check, and the maintainer runbook (`docs/maintainer-runbook.md`).
-- **SYNC-013** — `make sync-split-videos` cuts the 213 old hybrid video chunks down to their narration under the same ids (the descriptions are left out); applied to local 2026-11-27, promotion pending.
+- **SYNC-013** — `make sync-split-videos` cuts the 213 old hybrid video chunks down to their narration under the same ids (the descriptions are left out); applied to local and promoted to hosted 2026-11-27.
 - **SYNC-011** — `make sync-videos` ingests only videos with no stored chunks; the transcript comes from manual captions, else Gemini (Voxtral is demoted).
 - **yt-dlp 2026.11.23** — the floor is raised from 2026.3.13: with 2026.10.26 eight registered videos (uploaded 2025-10-30 to 2026-03-12) returned "This video is not available"; with 2026.11.23 they download at 1080p.
 - **Voxtral removed** — `voxtral.py`, the `mistralai` dependency, the `MISTRAL_API_KEY` setting and the Voxtral branch of `fetch_transcript_chunks` are deleted; a stray `MISTRAL_API_KEY` in `.env` is ignored. The registry flag `skip_voxtral` is now `silent` (a silent recording); the old name is still accepted, so registries in the bucket need no change.
@@ -109,6 +109,7 @@ older backup holds the March vectors (see `docs/maintainer-runbook.md`, section 
 
 | Date | Change | Hosted chunks after | Backup after |
 |---|---|---|---|
+| 2026-11-27 | SYNC-013: the 213 old hybrid video chunks cut down to their narration under the same ids, new `content_hash` and vectors (213 replaces, no adds or deletes; the descriptions are left out). Rehearsed first on the 1.40.5 copy; promoted in one step from the plan, without a canary write. Gate OK, oilflow canary rank 5 (was 1 before the split, accepted). Backup before: `snapshots/20261127T141432Z-promote-before` | 954 | `snapshots/20261127T141453Z-promote-after` |
 | 2026-11-24 | Web content sync of the HelpScout updates (SYNC-002 to SYNC-007): six changed HydroSym pages, 5 chunks added, 59 replaced (21 text changes, 38 `source_lastmod` only), 2 deleted; the canary wrote 1 first | 954 | `snapshots/20261124T125642Z-promote-after` |
 | 2026-11-24 | First new video `yWuBQik8KPs` (SYNC-011/012): 8 chunks, 4 windows of narration plus description. Canary wrote 1, then 7 | 951 | `snapshots/20261124T111609Z-promote-after` |
 | 2026-11-17 | SYNC-001: stored identity properties added to every chunk | 943 | `snapshots/20261117T134901Z-promote-after` |
