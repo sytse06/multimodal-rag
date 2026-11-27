@@ -1,6 +1,6 @@
 services:
   weaviate:
-    image: cr.weaviate.io/semitechnologies/weaviate:1.39.13
+    image: cr.weaviate.io/semitechnologies/weaviate:1.40.5
     ports:
       - "8080:8080"
       - "50051:50051"
@@ -27,7 +27,7 @@ services:
   # A throwaway copy of the hosted collection to rehearse a promotion and its rollback
   # on, off production. Seed it from a hosted backup (make rehearsal-seed).
   weaviate-rehearsal:
-    image: cr.weaviate.io/semitechnologies/weaviate:1.39.13
+    image: cr.weaviate.io/semitechnologies/weaviate:1.40.5
     profiles: ["rehearsal"]
     ports:
       - "127.0.0.1:8081:8080"
