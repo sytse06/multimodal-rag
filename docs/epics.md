@@ -1994,9 +1994,13 @@ windows (the longest sentence of each narration should find its own chunk) top-1
 55%, top-3 40% to 78%, median rank 6 to 1; canaries zoom 1 to 1, oilflow 1 to 5 (the
 accepted WARN was 1 to 6), import 4 to 1. **Not done:** the six on-screen questions of the
 acceptance, whose text was never saved (the ticket says the assistant wrote them), so that
-criterion is unchecked; and the promotion. Before promoting: the maintainer's real
-question set run before and after, a rehearsal on the 1.40.5 rehearsal copy, and the
-hosted quiet period of OPS-007 (no hosted access until 2026-12-06).
+criterion is unchecked; and the promotion. Before promoting: the question set run before
+and after (a draft of 81 questions is in `config/golden_questions.yaml`, committed
+2026-11-27 and awaiting the maintainer's review; it is mostly article-style questions,
+so the on-screen questions of the acceptance still need writing; the "before" state exists
+only in the snapshot above and needs a restore to a throwaway Weaviate), a rehearsal on
+the 1.40.5 rehearsal copy, and the hosted quiet period of OPS-007 (no hosted access
+until 2026-12-06).
 
 Part 2 of SYNC-012. SYNC-012 part 1 (merged, `89d989a`) makes every **new** video store a
 window as two chunks: the narration (`[Transcript] ...`, id `<url>|fused|<t>`) and the
@@ -2411,11 +2415,37 @@ app's client on purpose).
 Nothing else in this epic is judged without it. The retrieval gate (`config/canaries.yaml`)
 checks only that three questions keep their rank; it says nothing about the answer.
 
-- A fixed set of about 10 to 15 questions in `config/`, each with the facts a good answer
-  must contain, the sources it should cite, and the form it should take (procedure,
-  factual, "the sources do not say"). Include the angled-connection question, the
-  reducing-valve question (its answer is in a `[Visual]` chunk that ranked 5th), the three
-  canaries, and at least two questions the knowledge base cannot answer
+- **One set, two tiers** (decided 2026-11-27, replacing "about 10 to 15 questions"). One
+  question moves a score by 100 divided by the number of questions, so a small set cannot
+  tell a change from noise (the six on-screen questions of SYNC-012 swung 17 points each):
+  - **Retrieval set, about 80 to 100 questions.** Retrieval only, no model call, seconds,
+    free. At 100 questions the noise is about 5 points; at 50 about 7.
+  - **Answer set, 20 to 25 questions**, a hand-verified subset of the retrieval set (every
+    required fact checked against the source). Run 3 times each at the production
+    temperature and judged (QUAL-001b). Below about 20 the spread between runs hides
+    any change.
+- **The set lives in `config/golden_questions.yaml`**, committed as a draft on 2026-11-27:
+  81 questions, every one `review: open`. Each has the question, product, form (procedure,
+  factual, keyword, `not_in_kb`), expected sources, the facts a good answer must contain,
+  and an optional `video` whose chunks are the thing under test. It was drafted from the
+  Help Scout Docs reports (top articles and popular searches), the paro.nl video
+  descriptions, the HydroCam FAQ and the HydroMan tips and tricks, with facts taken from
+  the stored text. The three retrieval-gate canaries are in it (G22 to G24); once the
+  runner exists the gate should read them from here, so the questions live in one place.
+  Today: 39 HydroSym, 28 HydroMan, 14 HydroCam
+- **Still missing before the baseline:** the maintainer's review of every entry; the
+  angled-connection and reducing-valve questions; about 10 questions about what is on
+  screen (the report cannot supply them); not-in-KB questions up to about 10% of the set
+  (2 of 81 now, both unchecked guesses); paraphrases of questions that equal an article
+  title (the HydroCam and HydroMan FAQ entries are the easy case: a page finds itself by
+  its own words); more HydroMan and HydroCam. **Source for the rest: real support
+  conversations** (980 created in the Help Scout period) and failed searches with the
+  scanner traffic removed, not the article-views report, which measures what people read
+  and not what they fail to find
+- **Two rules.** Keep about 20% of the questions out of any tuning (a hold-out): once a
+  question has been tuned on it no longer says whether a change helps in general. After the
+  first baseline do not edit a question except to fix an error, and record each fix, or
+  before-and-after numbers stop being comparable
 - A command that runs the set against a chosen store and settings, **3 times per question**
   at the production temperature, and reports per question: distinct sources cited, repeated
   citations, required facts present, answer form, and the spread between runs. Output goes
