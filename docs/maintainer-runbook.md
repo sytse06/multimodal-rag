@@ -74,6 +74,7 @@ Do these in order. Stop at the first problem.
    |---|---|---|
    | embedding runtime | Ollama at the pinned version, weights `970aa74c0a90` | It names another version: `make ollama-up`, then re-check |
    | local vectors | sampled vectors match a fresh embedding, lowest 1.0000 | Lowest under 0.99: `make sync-reembed` first |
+   | hosted cluster | awake | Paused or unreachable: wake it in the Weaviate Cloud console (section 7b) |
    | registry | matches the bucket | The local copy is stale: `make sources-pull` |
    | latest backup | under 7 days old | Older: `make snapshot-backup TARGET=cloud` |
    | gemini key | accepted by the API | Rejected: a key that is set can still be invalid; fix before any video work |
@@ -364,6 +365,39 @@ State on 2026-11-23: steps 1 to 3 passed for 1.40.5 (every check with client 4.2
 4.24.1; a copy of the data opened with identical contents). Steps 4 and 5 are not done.
 `make weaviate-compat VERSION=1.28.4` fails at the restore, as it should: that version
 predates the `hfresh` index.
+
+### 7b. The hosted cluster pauses when idle: the keep-alive
+
+The free hosted cluster is **paused after about 7 idle days** (it was on 2026-11-23, after
+six days; the app answered 503 until the cluster was woken in the Weaviate Cloud console).
+Colleagues' real use is near zero (1 to 10 inference records a day, mostly maintainer
+tests), so nothing else keeps it awake. Every promotion also needs it awake.
+
+- **The keep-alive:** a Cloud Scheduler job `weaviate-keepalive` (project's `europe-west4`)
+  runs every 12 hours (Europe/Amsterdam) and sends
+  `GET <hosted url>/v1/objects?class=SupportChunk&limit=1` with the read-only viewer key
+  as a request header. First run 2026-11-27 10:46 UTC: HTTP 200. The key sits in the
+  job's configuration (read-only on public content; visible to project admins). After a
+  key rotation: `gcloud scheduler jobs update http weaviate-keepalive
+  --location=europe-west4 --update-headers="Authorization=Bearer <new key>"`.
+- **See it:** `make sync-preflight` has a `hosted cluster` line: `awake`, or a FAIL that
+  says the cluster is paused and how to wake it, in which case the other hosted checks
+  are skipped with one line. `gcloud scheduler jobs describe weaviate-keepalive
+  --location=europe-west4` shows `lastAttemptTime` and an empty `status: {}` when the last
+  attempt succeeded.
+- **Not yet proven that a read counts as activity.** The Weaviate documentation does not
+  say what counts. Proof: hosted still awake on **2026-12-06** with no other access to
+  hosted in between (no app questions, no `promote-plan`, no hosted preflight). Any other
+  access restarts the clock, which is harmless: the job's purpose is availability. If the
+  cluster pauses despite the job, the job does not count as activity; wake the cluster and
+  move to a write-based keep-alive (a write needs the admin key, which Cloud Run and the
+  Scheduler must not hold, so decide then).
+- **Not alerted.** Nothing notifies you when the job fails or the cluster pauses (OPS-004
+  should alert on Scheduler failures). Until then the preflight line is the only warning.
+- **Warning emails:** Weaviate sends one a day before a pause or deletion. The maintainer
+  confirmed on 2026-11-27 that they reach the maintainer's own mailbox (the address is not
+  recorded here). The newest bucket snapshot must stay younger than the suspension window
+  (the preflight's `latest backup` line warns at 7 days).
 
 ## 8. Not covered yet
 

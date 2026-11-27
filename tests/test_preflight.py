@@ -301,3 +301,73 @@ def test_a_gemini_vision_model_that_cannot_be_checked_only_warns() -> None:
         }
 
     assert checks["vision model"].status is Status.WARN
+
+
+def _settings_with_hosted(url: str) -> AppSettings:
+    return _settings(weaviate_hosted_url=url)
+
+
+def test_an_awake_hosted_cluster_is_ok() -> None:
+    response = patch.object(preflight.urllib.request, "urlopen")
+    with response as opened:
+        opened.return_value.__enter__.return_value = object()
+        check = preflight.check_hosted_cluster(_settings_with_hosted("a.example.com"))
+
+    assert check.status is Status.OK
+    assert opened.call_args.args[0] == "https://a.example.com/v1/.well-known/ready"
+
+
+def test_a_paused_hosted_cluster_fails_and_says_how_to_wake_it() -> None:
+    error = urllib.error.HTTPError("u", 503, "no healthy upstream", {}, None)  # type: ignore[arg-type]
+    with patch.object(preflight.urllib.request, "urlopen", side_effect=error):
+        check = preflight.check_hosted_cluster(_settings_with_hosted("a.example.com"))
+
+    assert check.status is Status.FAIL
+    assert "paused" in check.detail and "console" in check.detail
+
+
+def test_an_unreachable_hosted_cluster_fails_with_the_reason() -> None:
+    with patch.object(
+        preflight.urllib.request,
+        "urlopen",
+        side_effect=urllib.error.URLError("name not resolved"),
+    ):
+        check = preflight.check_hosted_cluster(_settings_with_hosted("a.example.com"))
+
+    assert check.status is Status.FAIL
+    assert "unreachable" in check.detail
+
+
+def test_a_missing_hosted_url_fails_before_any_request() -> None:
+    check = preflight.check_hosted_cluster(_settings_with_hosted(""))
+
+    assert check.status is Status.FAIL
+    assert "WEAVIATE_HOSTED_URL" in check.detail
+
+
+def test_a_paused_cluster_skips_the_weaviate_checks_with_one_clear_line() -> None:
+    paused = Check("hosted cluster", Status.FAIL, "paused or down (HTTP 503)")
+    called: list[str] = []
+    cheap = Check("x", Status.OK, "ok")
+    with (
+        patch.object(preflight, "check_hosted_cluster", return_value=paused),
+        patch.object(preflight, "check_tools", return_value=[cheap]),
+        patch.object(preflight, "check_ollama", return_value=cheap),
+        patch.object(preflight, "check_keys", return_value=[cheap]),
+        patch.object(preflight, "check_config", return_value=[cheap]),
+        patch.object(preflight, "check_embeddings", return_value=[cheap]),
+        patch.object(preflight, "check_gemini", return_value=cheap),
+        patch.object(preflight, "check_cookies", return_value=cheap),
+        patch.object(preflight, "check_registry", return_value=cheap),
+        patch.object(preflight, "check_backup", return_value=cheap),
+        patch.object(
+            preflight, "check_weaviate", side_effect=lambda s: called.append("w")
+        ),
+    ):
+        checks = preflight.run_preflight(_settings_with_hosted("a.example.com"))
+
+    assert called == []
+    by_name = {c.name: c for c in checks}
+    assert by_name["hosted cluster"].status is Status.FAIL
+    assert by_name["weaviate"].status is Status.FAIL
+    assert "skipped" in by_name["weaviate"].detail
