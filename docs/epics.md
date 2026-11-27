@@ -789,9 +789,10 @@ local both hold 954 chunks (checked 2026-11-27). Phase 2 was reworked on 2026-11
 automating the sync (SYNC-009) needs a scheduler and a policy, not a rewrite: plan and
 apply are separate artifacts, state lives in a ledger in the bucket, and the bucket is the
 source of truth for the registry (see "Design rules for an automatable sync" and "Order of
-work"). Open: SYNC-013 (split the 214 old video chunks; four decisions), SYNC-009
-(a stub; preconditions 8 and 9 were added 2026-11-24), SYNC-010 (deferred); SYNC-005 and
-SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to OPS-008) was added
+work"). Open: SYNC-013 (split the 214 old video chunks; four decisions), SYNC-009a (detect and
+notify, a stub) and OPS-001 to OPS-008. SYNC-009b, SYNC-010, the changed-video half of
+SYNC-011 and SYNC-012 part 3 are deferred with triggers ("Deferred work and its
+triggers"); SYNC-005 and SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to OPS-008) was added
 after an audit of the live service on 2026-11-13 and waits until the sync works, which it
 now does; none of it has started. Releases and promotions are recorded in `CHANGELOG.md`.
 The design and the supporting evidence
@@ -953,7 +954,8 @@ what is left:
 | 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half done: first video ingested and promoted 2026-11-24; changed videos not built | Local, then promotion |
 | 9 | SYNC-013 | Split the existing video chunks into narration and description | ticket written 2026-11-23; four decisions open; not started | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
-| After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
+| After OPS-001, 003, 004 | SYNC-009a | Detect and notify (read-only), plus channel discovery | stub | None |
+| On its trigger | SYNC-009b | Automated apply | stub; see the deferred-work table | Via promotion |
 
 SYNC-005 and SYNC-006 are dissolved into the stories that need them.
 
@@ -1544,14 +1546,68 @@ Tests and docs ship with this story.
 
 **Scope:** `config/`, `Makefile`, `compose.yaml`, `docs/`, preflight module
 
-#### SYNC-009 — Automate the Web Lane (stub; not started)
+#### SYNC-009 — Automate the Web Lane (split 2026-11-27 into 009a and 009b; both stubs, not started)
 
-**Branch:** `feature/SYNC-009-automate`
+**Branches:** `feature/SYNC-009a-detect`, `feature/SYNC-009b-automate`
+
+The original stub automated the whole web lane: plan, apply, gate, promote. That is two
+very different things, with different risk and cost, and one question that decides whether
+the second is worth building: **how often does the content really change?** Nobody knows.
+The manual cycle has run twice (2026-11-17 and 2026-11-24), each time a handful to a few
+dozen pages, and the cycle costs about four commands. So the lane is split. Detection is
+cheap, read-only and answers that question; applying unattended is expensive, writes to
+production and may never earn its cost.
+
+##### SYNC-009a — Detect and Notify
+
+Goal: a scheduled, **read-only** run that finds what changed and tells the maintainer.
+It never writes to Weaviate, the ledger or the registry, so a bug in it can cost a wrong
+notification and nothing else.
+
+- **What it does.** Reads the registry and the page ledger **from the bucket** (never a
+  local file), runs the inventory (the same classifier as `make sync-inventory`: modified,
+  new and removed pages per knowledge base, a host whose sitemap failed or looks too small
+  skipped and reported), and runs the channel discovery below. It notifies the maintainer
+  through the OPS-004 channel when anything is found, and when a run itself fails: a
+  fetch problem must never read as "nothing changed"
+- **A record of every run** in the bucket under its own prefix (`detect/<timestamp>/`,
+  inventory counts and the discovered uploads). The accumulated records are the evidence
+  009b's trigger needs: pages changed per week, and how many of them differ only by the
+  site template
+- **Credentials.** A job with its own service account that may read `registry/` and
+  `ledger/` and write only `detect/`. No Weaviate key, no Firecrawl key (the inventory
+  reads sitemaps, not pages), no admin key. This is OPS-003's account or a sibling of it
+- **Video discovery (notify only).** Nothing watches the Paro Software YouTube channel
+  today: a video is ingested only when a person adds its URL to the registry. A scheduled
+  check may list the channel's uploads (its public RSS feed, or yt-dlp, which the video lane
+  already uses), compare them with the registry and the stored videos, and notify the
+  maintainer through OPS-004 of any upload that is in neither. It never writes to the
+  registry and never ingests. The maintainer reviews the video, adds it to the registry
+  (`make sources-pull`, edit, `make sources-push`) and runs the video lane by hand.
+  Reasons: each video costs vision and transcription calls, its transcript and
+  descriptions need a person's check, and a video that has chunks is never looked at again,
+  so a bad first ingest stays bad. The registry in the bucket stays the single list of
+  what is in scope; the channel is only a source of suggestions for it. Decide before
+  building: which uploads to skip (Shorts, announcements, live streams), and how a
+  replaced tutorial is flagged (the changed-video half of SYNC-011 is not built)
+- **Preconditions:** OPS-001 (spend cap), OPS-003 (service account) and OPS-004 (the
+  notification channel); the bucket-first registry read (009b precondition 8, the read
+  half only); `make sync-inventory` gains `--json` output and the shared exit codes (0, 10,
+  1), the 009b precondition 7 for the one command this story needs
+
+**Acceptance:** four unattended runs in a row, a week apart, each leaving a record; a
+notification reaches the maintainer for a real change and for a deliberately broken fetch;
+the job's service account cannot write outside `detect/` (checked, not assumed); the first
+four weeks of records are summarised in this epic as the evidence for the 009b decision.
+
+**Scope:** `sync/` (a detect entry point), cloud configuration, `docs/maintainer-runbook.md`
+
+##### SYNC-009b — Automated Apply (decision pending on 009a's evidence)
 
 Goal: a scheduled run of the web lane that plans, checks the plan against the policy,
 applies, runs the gate and promotes only when the policy and the gate both pass; anything
-else stops and notifies a person. This is a stub. It is not built until its preconditions
-are met, and the first one is unresolved.
+else stops and notifies a person. **Not built unless its trigger fires** (see "Deferred work
+and its triggers" below). Manual operation is a legitimate end state, not a failure.
 
 Preconditions, each a decision or a ticket of its own:
 
@@ -1586,7 +1642,7 @@ Preconditions, each a decision or a ticket of its own:
    already holds the ledger, locks and run records that every plan is checked against. The
    manual phase hides this: `make sync-videos` reads the local `config/sources.yaml`, and
    when that file has unpushed edits it warns and carries on. An unattended run must never
-   read a local file. Before SYNC-009 is built:
+   read a local file. Before SYNC-009a and SYNC-009b are built:
    - the lanes read the registry from the bucket, and the local file is only an editing
      buffer (a run that finds the two different uses the bucket and says so);
    - `make sources-edit` fetches, lets the maintainer edit, validates and pushes in one
@@ -1598,24 +1654,11 @@ Preconditions, each a decision or a ticket of its own:
      verifies content before hosted changes (precondition 3) is the open design question
      here; the manual runbook is not the design
 
-9. **Video discovery (notify only).** Nothing watches the Paro Software YouTube channel
-   today: a video is ingested only when a person adds its URL to the registry. A scheduled
-   check may list the channel's uploads (its public RSS feed, or yt-dlp, which the video lane
-   already uses), compare them with the registry and the stored videos, and notify the
-   maintainer through OPS-004 of any upload that is in neither. It never writes to the
-   registry and never ingests. The maintainer reviews the video, adds it to the registry
-   (`make sources-pull`, edit, `make sources-push`) and runs the video lane by hand.
-   Reasons: each video costs vision and transcription calls, its transcript and
-   descriptions need a person's check, and a video that has chunks is never looked at again,
-   so a bad first ingest stays bad. The registry in the bucket stays the single list of
-   what is in scope; the channel is only a source of suggestions for it. Decide before
-   building: which uploads to skip (Shorts, announcements, live streams), and how a
-   replaced tutorial is flagged (the changed-video half of SYNC-011 is not built)
-
 Limits that stay: the video lane is never scheduled and discovery never ingests; removals
-are never confirmed by automation; screenshots are never regenerated by an automated run.
+are never confirmed by automation; screenshots are never regenerated by an automated run;
+009a never writes.
 
-**Scope:** to be set once preconditions are met
+**Scope:** to be set once the trigger fires and the preconditions are met
 
 #### SYNC-010 — Screenshot Provenance and Re-description (experiment; deferred)
 
@@ -2005,6 +2048,24 @@ the 8 videos that cannot be downloaded now.
 
 **Scope:** `sync/` (a split module and command), `Makefile`, `docs/maintainer-runbook.md`
 
+#### Deferred work and its triggers
+
+Work that is not scheduled, written down with the evidence that would start it, so the
+epic can close without these drifting open. A trigger is a proposal for the maintainer to
+adjust; none of it is built until its trigger fires.
+
+| Work | Trigger | Needs first |
+|---|---|---|
+| **SYNC-009b**, automated apply | 009a's records show content changing at least weekly over eight weeks **and** the maintainer judges the manual cycle (plan, apply, promote) a burden. Otherwise manual stays the design | The embedding spike (precondition 2), the plan decision (precondition 3, probably Flex at $45 a month), OPS-001/003/004 |
+| **SYNC-011**, changed videos (fingerprint, pipeline version) | A registered video is re-recorded or replaced at the same address (009a's discovery flags a new upload that looks like a replacement), or a stored video's length or captions change. Until then a person redoes one video: roll its run back, fix, run again (runbook section 3) | Nothing beyond the lane that exists |
+| **SYNC-012 part 3**, re-describe the 214 old video chunks with prompt C | After SYNC-013, a measured question set (QUAL-001, or the real-question set written for SYNC-013) shows old-video answers losing on-screen detail. Costs about one vision call per 30-second window | The cause of the 8 videos yt-dlp cannot download, found and fixed (re-describing needs the frames) |
+| **SYNC-010**, screenshot re-description | Measurement shows screenshot chunks reaching answers and misleading them (QUAL-007), or a decision to re-describe. The 2026-11-09 pilot found descriptions improved no answer and worsened two | The shared Gemini vision path, which SYNC-012 already built |
+
+**Closing Epic 11.** The epic closes when SYNC-013 is done or decided, OPS-001 to OPS-008
+are each done or consciously deferred, and SYNC-009a has delivered its four weeks of
+evidence. Everything in the table above stays open as deferred, with its trigger, and is
+not a reason to keep the epic open.
+
 ### Phase 3: Production hardening
 
 An audit of the live service on 2026-11-13 found the application layer sound (non-root
@@ -2251,8 +2312,8 @@ Sync
 - Colleagues see no outage while a promotion runs
 - A failed promotion can be rolled back from the pre-promotion snapshot
 
-**Out of scope:** running the sync unattended on a schedule (SYNC-009 is a stub that waits
-for its preconditions; the video lane is never scheduled), distributed tracing or
+**Out of scope:** applying changes unattended (SYNC-009b waits for its trigger; scheduled
+detection is SYNC-009a; the video lane is never scheduled), distributed tracing or
 an external log platform beyond Cloud Logging, embedding-model migration, multi-tenant
 sync, and live webhooks from the content source.
 
@@ -2503,9 +2564,9 @@ automated answer evaluation in production.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability, Hosted Content Sync and Production Hardening | 21 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos) and 012 part 1 done; SYNC-013, SYNC-009, SYNC-010 and OPS-001 to 008 open) | ~148 |
+| 11 — Observability, Hosted Content Sync and Production Hardening | 22 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos) and 012 part 1 done; SYNC-013, SYNC-009a and OPS-001 to 008 open; SYNC-009b, SYNC-010 deferred) | ~148 |
 | 12 — Answer and Source Quality Calibration | 8 | planned (not started) | TBD |
-| **Total** | **67** | **10 completed, 1 in progress, 1 planned** | **395 current** |
+| **Total** | **68** | **10 completed, 1 in progress, 1 planned** | **395 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
