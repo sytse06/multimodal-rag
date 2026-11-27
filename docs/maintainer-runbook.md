@@ -293,6 +293,42 @@ some old, which pushes search results toward the new ones. It lasts a few minute
    in batches, deletes last, verifies **every** object, runs the gate, and takes a backup
    after. Status `promoted` is success; `gate-failed` means the write is done but a canary
    question ranks worse, so read the gate lines and decide whether to roll back.
+   **The command.** `RUN=` takes the plan's **directory**, the one `make promote-plan`
+   printed after `kept:` (not `plan.json` inside it):
+
+   ```
+   make promote RUN=runs/promote-hosted-20261127T140650Z
+   ```
+
+   It prints the plan again, asks `Write these changes to the HOSTED collection? [y/N]`
+   (`YES=1` skips the question, use it only on a rehearsal), writes, and ends with a status
+   line. **What a good run ends with** (the SYNC-013 promotion, 2026-11-27, 213 replaces):
+
+   ```
+   status: promoted
+     written 213, deleted 0
+     backup before: runs/promote-hosted-<time>/snapshot-hosted-before and gs://<bucket>/snapshots/<time>-promote-before
+     backup after:  runs/promote-hosted-<time>/snapshot-hosted-after and gs://<bucket>/snapshots/<time>-promote-after
+     gate [OK] How can I zoom out in my schematic?: rank 1 before, 1 after
+     ...
+   ```
+
+   Read the status line and the gate lines, nothing else. `promoted` is success; `canary-ok`
+   (with `CANARY_ONLY=1`) means one object was written and checked; `gate-failed` means the
+   write is done but a canary question lost its source, see section 5. A gate **WARN** (a
+   rank that fell by 3 or more) does not stop or fail the run. The Pydantic and Weaviate-client
+   deprecation warnings, `Truncating text from N to 400 words` and the `ResourceWarning`
+   lines about sockets on port 11435 appear in every run, rehearsals included, and are noise.
+   The two `backup` lines are your rollback: keep the `snapshot-hosted-before` directory
+   until a fresh `make promote-plan` has confirmed the result.
+
+   **Without a canary.** Steps 2 and 3 of the table above (the canary write and a second
+   plan) can be skipped by running `make promote RUN=<plan A>` straight away. The SYNC-013
+   promotion was done that way on 2026-11-27, after the same plan had been rehearsed
+   successfully on the rehearsal copy (step 2 of this section). The canary exists to catch
+   a write that fails on the first object before 900 more follow; the rehearsal is the other
+   way to catch it.
+
 5. **Confirm it.** `make promote-plan` must say 0 to add, replace, refresh and delete.
    `make sync-preflight` should show local identical to hosted and hosted vectors current.
    Then ask the three canary questions in the app (`config/canaries.yaml`).
