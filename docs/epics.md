@@ -1901,11 +1901,19 @@ checked against the frame image, not the log.
   from local. With new descriptions both chunks of a window can rank, taking two slots and
   listing one timestamp twice. A mitigation, not built: fetch extra results and merge a
   window's chunks into one source (best score, narration first) before the answer is made.
-- **8 of the 25 registered videos cannot be downloaded now,** though YouTube's oEmbed
-  endpoint serves all 25 as public. `yt-dlp` answers "This video is not available" with or
-  without cookies, for videos that downloaded this morning. The cause is unknown and may be
-  transient. They include the Dimensions video behind the 42,843-word chunk, so that chunk
-  cannot be re-described and is fixed by cutting its stored text.
+- **8 of the 25 registered videos could not be downloaded (2026-11-23); fixed 2026-11-27 by
+  upgrading yt-dlp.** YouTube's oEmbed endpoint served all of them as public, but `yt-dlp`
+  2026.10.26 answered "This video is not available", with or without cookies and with either
+  URL form. They are the eight videos uploaded between 2025-10-30 and 2026-03-12 (four
+  HydroMan tutorials and the four HydroSym explainers, including Dimensions behind the
+  42,843-word chunk); the videos before and after that window downloaded fine. With
+  2026.10.26 the `tv samsung` and `visionos` clients returned no playable formats for them
+  and only the `android` client served them, at 360p (format 18) alone. With **2026.11.23**
+  all eight list 1080p again and a 20-second test download of two of them gave 1080p H.264.
+  Not established: why those eight in particular (the page shows nothing unusual: public,
+  embeddable, not age-restricted). The cause was the client, not the videos, and the
+  `pyproject.toml` floor is now `yt-dlp>=2026.11.23`. The installed version is part of the
+  answer when this happens again: try the newest release before anything else.
 
 **Work, in three parts**
 
@@ -1925,7 +1933,7 @@ checked against the frame image, not the log.
 2. **The existing chunks:** split each into a narration chunk and a description chunk by
    re-embedding locally, with no vision calls. Now its own ticket, **SYNC-013**.
 3. **Re-describing the existing chunks** with the new prompt, for the on-screen gains.
-   Deferred: it needs the 8 videos that cannot be downloaded now, and it changes text and
+   Deferred: it needed the 8 videos that could not be downloaded (now fixed), and it changes text and
    vectors again.
 
 **Decided 2026-11-23:** the cap is 100 words; the oilflow canary stays as it is and its fall
@@ -2069,7 +2077,7 @@ equal to the plan; every old id present; a second run a no-op. After the promoti
 identical, the app answers a real question with a cited answer.
 
 **Not in scope:** re-describing the existing chunks (SYNC-012 part 3), the merge at retrieval,
-the 8 videos that cannot be downloaded now.
+the 8 videos that could not be downloaded (fixed 2026-11-27).
 
 **Scope:** `sync/` (a split module and command), `Makefile`, `docs/maintainer-runbook.md`
 
@@ -2083,7 +2091,7 @@ adjust; none of it is built until its trigger fires.
 |---|---|---|
 | **SYNC-009b**, automated apply | 009a's records show content changing at least weekly over eight weeks **and** the maintainer judges the manual cycle (plan, apply, promote) a burden. Otherwise manual stays the design | The embedding spike (precondition 2), the plan decision (precondition 3, probably Flex at $45 a month), OPS-001/003/004 |
 | **SYNC-011**, changed videos (fingerprint, pipeline version) | A registered video is re-recorded or replaced at the same address (009a's discovery flags a new upload that looks like a replacement), or a stored video's length or captions change. Until then a person redoes one video: roll its run back, fix, run again (runbook section 3) | Nothing beyond the lane that exists |
-| **SYNC-012 part 3**, re-describe the 214 old video chunks with prompt C | After SYNC-013, a measured question set (QUAL-001, or the real-question set written for SYNC-013) shows old-video answers losing on-screen detail. Costs about one vision call per 30-second window | The cause of the 8 videos yt-dlp cannot download, found and fixed (re-describing needs the frames) |
+| **SYNC-012 part 3**, re-describe the 214 old video chunks with prompt C | After SYNC-013, a measured question set (QUAL-001, or the real-question set written for SYNC-013) shows old-video answers losing on-screen detail. Costs about one vision call per 30-second window | Nothing: the 8 videos yt-dlp could not download are fixed (yt-dlp 2026.11.23, 2026-11-27) |
 | **SYNC-010**, screenshot re-description | Measurement shows screenshot chunks reaching answers and misleading them (QUAL-007), or a decision to re-describe. The 2026-11-09 pilot found descriptions improved no answer and worsened two | The shared Gemini vision path, which SYNC-012 already built |
 
 **Closing Epic 11.** The epic closes when SYNC-013 is done or decided, OPS-001 to OPS-008

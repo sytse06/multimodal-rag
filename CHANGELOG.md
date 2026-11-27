@@ -32,6 +32,7 @@ v0.3.0 is the first release since v0.2.0 (2026-09-30) and records nine Cloud Run
 - **SYNC-008** — `make sync-preflight`, the retrieval gate and canary questions (`make sync-gate`), the pinned embedding runtime check, and the maintainer runbook (`docs/maintainer-runbook.md`).
 - **SYNC-013** — `make sync-split-videos` cuts the 213 old hybrid video chunks down to their narration under the same ids (the descriptions are left out); applied to local 2026-11-27, promotion pending.
 - **SYNC-011** — `make sync-videos` ingests only videos with no stored chunks; the transcript comes from manual captions, else Gemini (Voxtral is demoted).
+- **yt-dlp 2026.11.23** — the floor is raised from 2026.3.13: with 2026.10.26 eight registered videos (uploaded 2025-10-30 to 2026-03-12) returned "This video is not available"; with 2026.11.23 they download at 1080p.
 - **Voxtral removed** — `voxtral.py`, the `mistralai` dependency, the `MISTRAL_API_KEY` setting and the Voxtral branch of `fetch_transcript_chunks` are deleted; a stray `MISTRAL_API_KEY` in `.env` is ignored. The registry flag `skip_voxtral` is now `silent` (a silent recording); the old name is still accepted, so registries in the bucket need no change.
 - **SYNC-012 (part 1)** — a frame description of at most 100 words and two chunks per 30-second window (`[Transcript]`, `[Visual]`); an opt-in Gemini vision path (`VISION_MODEL=gemini:<model>`).
 - `make weaviate-compat` tests our code against a given Weaviate version.
