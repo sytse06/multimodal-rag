@@ -2238,7 +2238,20 @@ instances 1 limits throughput, not spend.
   rule, and must never remove the newest backup that holds the identity fields
   (`20261117T134901Z-promote-after`). Decide, then verify after several backups
 
-**Scope:** runbook, `docs/content-update-workflow.md`; no application code
+**Status 2026-11-27 (keep-alive and preflight, branch `feature/OPS-007-cluster-state`):**
+colleagues' use is near zero (1 to 10 inference records a day, mostly maintainer tests, none
+on 11-18 to 11-22), so nothing else keeps the cluster awake. Built: a `hosted cluster`
+line in `make sync-preflight` (awake, or paused with how to wake it; the other hosted checks
+are skipped with one line), and the Cloud Scheduler job `weaviate-keepalive` (every 12 hours,
+a read-only object query with the viewer key in the job header; first run HTTP 200). Chosen
+over a Cloud Run Job, GitHub Actions and a Pi cron for simplicity and because it is
+cloud-resident like SYNC-009a. **Open:** proof that a read counts as activity (hosted awake on
+2026-12-06 with no other access; runbook section 7b), alerts on Scheduler failures
+(OPS-004), the snapshot retention and Flex decisions above. Done: the warning emails reach
+the maintainer (confirmed 2026-11-27).
+
+**Scope:** runbook, `docs/content-update-workflow.md`, `preflight.py`; the keep-alive is
+cloud configuration
 
 #### OPS-008 — Trust Boundary for Ingested Content
 
