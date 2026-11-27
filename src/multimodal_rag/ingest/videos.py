@@ -69,12 +69,12 @@ def ingest_video(
     looked at again.
     """
     label = f"youtube:{video.name}"
-    if video.skip_voxtral:
+    if video.silent:
         # Silent screen recording: vision-only path, dense frames, no transcript
-        logger.info("[%s] skip_voxtral=true — using vision-only path", label)
+        logger.info("[%s] silent=true — using vision-only path", label)
         if vision_llm is None:
             logger.warning(
-                "[%s] skip_voxtral=true but VISION_MODEL not set, skipping", label
+                "[%s] silent=true but VISION_MODEL not set, skipping", label
             )
             return Ingested(0)
         frames = fetch_frame_chunks(

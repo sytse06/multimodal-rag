@@ -196,11 +196,11 @@ Restructured the ingestion pipeline from monolithic batch processing to per-sour
 > Voxtral text writes "HydroSim" for HydroSym (8 of 8 mentions). Gemini also keeps one
 > vendor, key and quota for chat, vision and transcription.
 >
-> **What stays.** The code is not deleted yet: `voxtral.py`, the `mistralai` dependency and
-> the `MISTRAL_API_KEY` setting, `fetch_transcript_chunks` (a captions path that still
-> imports Voxtral and is no longer reached by ingest), and the `skip_voxtral` flag in the
-> registry, which now only means "silent recording, no transcript". Deleting them is a
-> follow-up.
+> **Removed 2026-11-27.** `voxtral.py` and its tests, the `mistralai` dependency, the
+> `MISTRAL_API_KEY` setting and the Voxtral branch of `fetch_transcript_chunks` are
+> deleted. **Renamed:** the registry flag `skip_voxtral` is now `silent` ("silent
+> recording, no transcript"); `skip_voxtral` is kept as an accepted alias, so registries
+> in the bucket need no migration.
 >
 > **Existing data.** The 25 videos already stored were transcribed by Voxtral and are
 > unchanged, "HydroSim" included. Re-transcribing them changes their text and vectors
@@ -1754,8 +1754,8 @@ hosted through SYNC-007.
   criteria written beforehand it missed three marginal checks (window agreement 0.901
   against 0.967 on the 113 s video, one 6.1 s offset against a 5 s limit, run-to-run word
   error rate 0.032 against 0.03). 18 of 26 videos have manual captions, 8 only automatic.
-  `Mistral` and `voxtral.py` are no longer used by video ingest; deleting them and the
-  `mistralai` package is a follow-up.
+  `Mistral` and `voxtral.py` are no longer used by video ingest; deleted 2026-11-27
+  together with the `mistralai` package.
 - **Estimate** per real path: spoken videos one frame per 30 s plus the minutes of audio
   Gemini must transcribe (none when manual captions exist), silent recordings one frame
   per 5 s. For `yWuBQik8KPs` (2:04, automatic captions only): 5 vision calls, 2.07 minutes

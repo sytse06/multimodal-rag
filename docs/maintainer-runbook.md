@@ -191,8 +191,9 @@ videos are ingested; nothing already stored is touched. Everything happens on lo
 2. **Add it to the registry:** `make sources-pull` first (the bucket is the source of truth,
    your file is a copy), edit `config/sources.yaml`, then `make sources-push`. Use `https://www.youtube.com/watch?v=<id>` without the `?si=...`
    share token (it would end up in every stored address and citation link), and the video's
-   own title as the name. Set `skip_voxtral: true` only for a silent screen recording (it
-   has no transcript at all; the name is historical).
+   own title as the name. Set `silent: true` only for a silent screen recording (it
+   has no transcript at all). The older name `skip_voxtral` is still accepted, so
+   registries that use it keep working.
 3. **Dry run:** `make sync-videos DRY=1`. Read it:
    - how many registry videos are already stored and how many are new;
    - per new video its length, the path ingest will take, the vision calls (one frame per

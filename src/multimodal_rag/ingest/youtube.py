@@ -12,7 +12,6 @@ from youtube_transcript_api import (
     YouTubeTranscriptApi,
 )
 
-from multimodal_rag.ingest.voxtral import fetch_voxtral_transcript
 from multimodal_rag.models.chunks import TranscriptChunk
 
 logger = logging.getLogger(__name__)
@@ -125,13 +124,11 @@ def fetch_transcript_chunks(
     video_url: str,
     source_name: str,
     target_tokens: int = 400,
-    mistral_api_key: str = "",
     cookies_file: str = "",
 ) -> list[TranscriptChunk]:
     """Fetch and chunk a YouTube video's transcript.
 
-    Falls back to Voxtral audio transcription when captions are disabled,
-    if mistral_api_key is provided. Returns empty list if unavailable.
+    Returns an empty list if no captions are available.
     """
     video_id = extract_video_id(video_url)
     if not video_id:
@@ -141,26 +138,10 @@ def fetch_transcript_chunks(
     try:
         segments = fetch_transcript(video_id, cookies_file=cookies_file)
     except (TranscriptsDisabled, NoTranscriptFound) as exc:
-        if mistral_api_key:
-            logger.info(
-                "Captions unavailable for %s (%s) — falling back to Voxtral",
-                video_url,
-                type(exc).__name__,
-            )
-            try:
-                segments = fetch_voxtral_transcript(
-                    video_url, mistral_api_key, cookies_file=cookies_file
-                )
-            except Exception:
-                logger.exception("Voxtral fallback failed for %s", video_url)
-                return []
-        else:
-            logger.warning(
-                "Captions unavailable for %s (%s) and no MISTRAL_API_KEY set",
-                video_url,
-                type(exc).__name__,
-            )
-            return []
+        logger.warning(
+            "Captions unavailable for %s (%s)", video_url, type(exc).__name__
+        )
+        return []
     except IpBlocked:
         logger.warning("IP blocked by YouTube for %s — skipping", video_url)
         return []

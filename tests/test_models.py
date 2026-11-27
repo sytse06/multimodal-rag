@@ -55,21 +55,35 @@ class TestSourceConfig:
 
 
 class TestYouTubeSource:
-    def test_skip_voxtral_defaults_to_false(self) -> None:
+    def test_silent_defaults_to_false(self) -> None:
         from multimodal_rag.models.sources import YouTubeSource
 
         source = YouTubeSource(url="https://youtube.com/watch?v=abc", name="Vid")
-        assert source.skip_voxtral is False
+        assert source.silent is False
 
-    def test_skip_voxtral_can_be_set(self) -> None:
+    def test_silent_can_be_set(self) -> None:
         from multimodal_rag.models.sources import YouTubeSource
 
         source = YouTubeSource(
-            url="https://youtube.com/watch?v=abc", name="Vid", skip_voxtral=True
+            url="https://youtube.com/watch?v=abc", name="Vid", silent=True
         )
-        assert source.skip_voxtral is True
+        assert source.silent is True
 
-    def test_skip_voxtral_parsed_from_dict(self) -> None:
+    def test_silent_parsed_from_dict(self) -> None:
+        from multimodal_rag.models.sources import SourceConfig
+
+        config = SourceConfig.model_validate({
+            "youtube": [
+                {
+                    "url": "https://youtube.com/watch?v=abc",
+                    "name": "Vid",
+                    "silent": True,
+                }
+            ]
+        })
+        assert config.youtube[0].silent is True
+
+    def test_the_old_name_skip_voxtral_is_still_accepted(self) -> None:
         from multimodal_rag.models.sources import SourceConfig
 
         config = SourceConfig.model_validate({
@@ -81,7 +95,7 @@ class TestYouTubeSource:
                 }
             ]
         })
-        assert config.youtube[0].skip_voxtral is True
+        assert config.youtube[0].silent is True
 
 
 class TestTranscriptChunk:

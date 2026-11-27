@@ -79,7 +79,7 @@ def test_the_estimate_follows_the_path_and_transcript_source_ingest_will_take() 
     captioned = estimate(video(WATCH), 124, manual_captions=True, has_vision=True)
     spoken = estimate(video(WATCH), 124, manual_captions=False, has_vision=True)
     silent = estimate(
-        video(WATCH, skip_voxtral=True), 124, manual_captions=False, has_vision=True
+        video(WATCH, silent=True), 124, manual_captions=False, has_vision=True
     )
     no_vision = estimate(video(WATCH), 124, manual_captions=True, has_vision=False)
 

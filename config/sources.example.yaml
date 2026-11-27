@@ -6,7 +6,9 @@ youtube:
     name: "Product tutorials: Quickstart"
   - url: https://youtu.be/VIDEO_ID
     name: "Silent screen recording"
-    skip_voxtral: true
+    # No narration: skip the transcript and describe a frame every 5 seconds instead.
+    # (Older registries call this skip_voxtral; both names work.)
+    silent: true
 
 knowledge_bases:
   - url: https://support.example.com/knowledge-base

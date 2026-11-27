@@ -21,7 +21,7 @@ screenshot problems is in `docs/screenshot-description-pilot.md`.
 | Persona | Who today | Goal | Touches | Needs from this system |
 |---|---|---|---|---|
 | **Support colleague** | Paro support staff | Correct, current, cited answers | The hosted Cloud Run app (read-only viewer key). Never runs ingestion. | No outage while content is updated. Open: a way to see how current the content is. |
-| **Maintainer** (data steward) | The project owner, from a laptop | Keep the collection in step with the sources and decide what goes live | `config/sources.yaml`, local Docker Weaviate, Firecrawl, Mistral, a vision model, the hosted admin key | A preview of every change, cost and quota control, tests before going live, a rollback |
+| **Maintainer** (data steward) | The project owner, from a laptop | Keep the collection in step with the sources and decide what goes live | `config/sources.yaml`, local Docker Weaviate, Firecrawl, a vision model, the hosted admin key | A preview of every change, cost and quota control, tests before going live, a rollback |
 | **Operator** (developer) | Same person today | Deploy, monitor, rotate keys | Cloud Run, Secret Manager, Cloud Logging, schema compatibility | Deploy ordering rules, the observability from Epic 11 Phase 1 |
 | **Content owner** | Paro documentation and video authors | Publish and correct documentation | The doc sites and YouTube | Not a system user. Their change rate sizes the workload. |
 
@@ -73,7 +73,6 @@ substring and counted sitemap pages outside the crawler's scope.)
 |---|---|---|---|
 | Tools | Docker, Ollama with `nomic-embed-text` (768-dimensional), ffmpeg, yt-dlp, uv and Python 3.12 to 3.14 | All present | None |
 | Keys | `FIRECRAWL_API_KEY` (crawling, uses credits) | Set | Credit balance not checked |
-| Keys | `MISTRAL_API_KEY` (Voxtral transcription of videos) | Set | |
 | Keys | Vision model access. Today OpenRouter only. The new descriptions use Gemini directly. | OpenRouter key set | `create_vision_llm` has no Gemini path (SYNC-001) |
 | Quota | Gemini quota and spend cap for about 380 image descriptions | The pilot hit a 429 after 8 calls | Needs a known quota before a full run |
 | Keys | `WEAVIATE_ADMIN_API_KEY` for hosted writes | Set | |
@@ -202,7 +201,7 @@ everything else:
 | Class | Examples | Home | Copies |
 |---|---|---|---|
 | **Registry and state** | The source registry (the list of knowledge bases and videos, scope, crawl rules, owner); per-run reports; sitemap captures; the manifest of what each run ingested (URLs, `lastmod`, hashes); snapshots of the collection | **One private Cloud Storage bucket** with object versioning, soft delete and uniform bucket-level access | The bucket, with versions; a local cache of the registry |
-| **Credentials** | Firecrawl, Mistral, OpenRouter, Gemini and Weaviate admin keys; the YouTube cookie files (a logged-in session is a credential) | **Secret Manager**, which already holds the three runtime secrets. The local `.env` is a gitignored cache, never the only copy. | Secret Manager plus a password manager for recovery |
+| **Credentials** | Firecrawl, OpenRouter, Gemini and Weaviate admin keys; the YouTube cookie files (a logged-in session is a credential) | **Secret Manager**, which already holds the three runtime secrets. The local `.env` is a gitignored cache, never the only copy. | Secret Manager plus a password manager for recovery |
 
 ### One bucket for registry and state
 

@@ -136,7 +136,7 @@ def test_a_silent_recording_without_vision_is_skipped_not_half_done(
     monkeypatch.setattr(videos, "fetch_frame_chunks", never)
     store = Store()
 
-    result = ingest(store, source(skip_voxtral=True), settings(), None)
+    result = ingest(store, source(silent=True), settings(), None)
 
     assert result.chunks == 0 and result.transcript_source is None
     assert store.added == []

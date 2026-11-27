@@ -251,7 +251,6 @@ class InfrastructureSettings(BaseModel):
     weaviate_tenant: str = ""
     weaviate_vector_dimension: int = 768
     firecrawl_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
-    mistral_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     youtube_cookies_file: str = ""
     youtube_cookies_secret: str = ""
     gcp_project: str = ""
@@ -545,7 +544,6 @@ class AppSettings(BaseSettings):
                     data, "weaviate_vector_dimension", 768
                 ),
                 "firecrawl_api_key": cls._value(data, "firecrawl_api_key", ""),
-                "mistral_api_key": cls._value(data, "mistral_api_key", ""),
                 "youtube_cookies_file": cls._value(data, "youtube_cookies_file", ""),
                 "youtube_cookies_secret": cls._value(
                     data, "youtube_cookies_secret", ""
@@ -668,10 +666,6 @@ class AppSettings(BaseSettings):
     @property
     def firecrawl_api_key(self) -> SecretStr:
         return self.infrastructure.firecrawl_api_key
-
-    @property
-    def mistral_api_key(self) -> SecretStr:
-        return self.infrastructure.mistral_api_key
 
     @property
     def youtube_cookies_file(self) -> str:
