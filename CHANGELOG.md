@@ -103,6 +103,7 @@ older backup holds the March vectors (see `docs/maintainer-runbook.md`, section 
 
 | Date | Change | Hosted chunks after | Backup after |
 |---|---|---|---|
+| 2026-11-24 | Web content sync of the HelpScout updates (SYNC-002 to SYNC-007): six changed HydroSym pages, 5 chunks added, 59 replaced (21 text changes, 38 `source_lastmod` only), 2 deleted; the canary wrote 1 first | 954 | `snapshots/20261124T125642Z-promote-after` |
 | 2026-11-24 | First new video `yWuBQik8KPs` (SYNC-011/012): 8 chunks, 4 windows of narration plus description. Canary wrote 1, then 7 | 951 | `snapshots/20261124T111609Z-promote-after` |
 | 2026-11-17 | SYNC-001: stored identity properties added to every chunk | 943 | `snapshots/20261117T134901Z-promote-after` |
 | 2026-11-17 | SYNC-007: hosted made equal to local after SYNC-003/004 (pages replaced, article 437 removed); every vector re-embedded on the pinned runtime | 943 | `snapshots/20261117T125431Z-promote-after` |

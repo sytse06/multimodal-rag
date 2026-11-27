@@ -778,20 +778,23 @@ The tool is in use, so Phase 1 (observability) ships first. It is small, low-ris
 shippable on its own. Phase 2 (sync) writes to production data and reuses the Phase 1
 logging.
 
-**Status:** Phase 1 (OBS-001 to OBS-003) is complete, merged to `main`, deployed and
-verified against live traffic on Cloud Run revision 00021 (2026-11-13). Verification
-found and fixed three defects after the first deploy: Gemini token usage (reported per
-chunk as deltas, now summed), the Gemini function-calling log noise (filtered), and
-OpenAI streamed usage (now requested explicitly). Phase 2 (sync) has started: SYNC-000
-(schema readiness) is done and deployed (revision 00024, 2026-11-13) and the local
-Weaviate now matches the hosted version. Phase 2 was reworked on 2026-11-16 so that
+**Status (2026-11-27):** Phase 1 (OBS-001 to OBS-003) is complete, merged, deployed and
+verified against live traffic on Cloud Run revision 00021 (2026-11-13). Phase 2 (sync) works
+end to end for both lanes. SYNC-000 to SYNC-004, SYNC-007 and SYNC-001 are done (SYNC-000 and
+SYNC-001 deployed, revisions 00024 and 00025), SYNC-008 is done for manual operation, and
+the video lane SYNC-011 and SYNC-012 part 1 have had their first real run: the video
+`yWuBQik8KPs` was ingested and promoted on 2026-11-24. The same day a web content sync (the first since 2026-11-17) ran
+through plan, apply and promotion for six changed HydroSym pages. Hosted and
+local both hold 954 chunks (checked 2026-11-27). Phase 2 was reworked on 2026-11-16 so that
 automating the sync (SYNC-009) needs a scheduler and a policy, not a rewrite: plan and
-apply are separate artifacts, state lives in a ledger in the bucket, and the first
-syncs need no change to the hosted schema (see "Design rules for an automatable sync" and
-"Order of work"). SYNC-002 is next; SYNC-008 is partly done; SYNC-001 and SYNC-010 are
-deferred; SYNC-005 and SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to
-OPS-008) was added after an audit of the live service on 2026-11-13 and waits until the
-sync works; none of it has started. The design and the supporting evidence
+apply are separate artifacts, state lives in a ledger in the bucket, and the bucket is the
+source of truth for the registry (see "Design rules for an automatable sync" and "Order of
+work"). Open: SYNC-013 (split the 214 old video chunks; four decisions), SYNC-009
+(a stub; preconditions 8 and 9 were added 2026-11-24), SYNC-010 (deferred); SYNC-005 and
+SYNC-006 are dissolved. Phase 3 (production hardening, OPS-001 to OPS-008) was added
+after an audit of the live service on 2026-11-13 and waits until the sync works, which it
+now does; none of it has started. Releases and promotions are recorded in `CHANGELOG.md`.
+The design and the supporting evidence
 are in `docs/chunk-parent-design.md`; the operating model is in
 `docs/content-update-workflow.md`.
 
@@ -946,8 +949,8 @@ what is left:
 | 4 | SYNC-007 | Promote to hosted: snapshot, copy vectors, verify | done | The only hosted write |
 | 5 | SYNC-008 | Preflight, registry, runbook | done for manual operation | None |
 | 6 | SYNC-001 | Stored identity and conversion | done, deployed | Schema change, done |
-| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | part 1 built and merged (89d989a); parts 2 and 3 are SYNC-013 and later | Local, then promotion |
-| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half built and merged; first real run is next (needs the `.env` change and the registry entry) |
+| 7 | SYNC-012 | Video frame descriptions: prompt and chunk structure | part 1 built, merged (89d989a) and used on the first new video (2026-11-24); parts 2 and 3 are SYNC-013 and later | Local, then promotion |
+| 8 | SYNC-011 | Video lane: new videos first, changed videos later | new-video half done: first video ingested and promoted 2026-11-24; changed videos not built | Local, then promotion |
 | 9 | SYNC-013 | Split the existing video chunks into narration and description | ticket written 2026-11-23; four decisions open; not started | Local, then promotion |
 | Later | SYNC-010 | Screenshot re-description (an experiment behind the gate) | deferred | Replaces of screenshot chunks |
 | After OPS-001, 003, 004 | SYNC-009 | Automate the web lane | stub | Via promotion |
@@ -1642,9 +1645,17 @@ Evidence: `docs/screenshot-description-pilot.md`.
 
 **Scope:** `models/chunks.py`, `ingest/web_images.py`, `models/llm.py`
 
-#### SYNC-011 — Video Lane: New and Changed Videos (new videos built; first real run pending)
+#### SYNC-011 — Video Lane: New and Changed Videos (new videos done, first run 2026-11-24; changed videos not built)
 
 **Branch:** `feature/SYNC-011-video-lane`
+
+**First real run (2026-11-24):** `yWuBQik8KPs`, 2:04, no manual captions, so a Gemini
+transcription (2.07 minutes). 8 chunks in 4 windows (narration plus description), 5 vision
+calls, the retrieval gate held (ranks 1, 1 and 4 before and after). Promoted to hosted with
+a canary write and then 7 adds; local and hosted were identical afterwards (951). Two things
+the run taught the runbook: pulling the registry with `FORCE=1` threw away a local edit
+(now: pull only before editing, never `FORCE=1`), and the promotion after a canary needs the
+newest plan, not the canary's (runbook section 4, step 3).
 
 Today `make ingest` reprocesses every video and re-crawls every knowledge base on each
 run, with no per-source option. Both cases below write to the local collection and reach
@@ -1719,15 +1730,22 @@ hosted through SYNC-007.
   deletes every object of those videos, so a crashed run can still be undone; a video that
   yields no chunks counts as failed (it would otherwise be retried silently); an unknown
   duration is shown as unknown and the total is marked incomplete.
-- Runbook section 3b "Adding a video" is written from this code. **Not done:** the first
-  real run, which is the maintainer's acceptance test of the runbook; changed videos
-  (fingerprint and pipeline version); the Gemini vision path.
+- Runbook section 3b "Adding a video" is written from this code and was used for the first
+  real run (2026-11-24). **Not done:** changed videos (fingerprint and pipeline version).
 
 **Scope:** `ingest/__main__.py`, `ingest/youtube.py`, `Makefile`
 
-#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (measured 2026-11-23; part 1 built, not yet merged)
+#### SYNC-012 — Video Frame Descriptions: Prompt and Chunk Structure (measured 2026-11-23; part 1 built, merged and used 2026-11-24)
 
 **Branch:** `feature/SYNC-012-frame-descriptions`
+
+**First real result (2026-11-24):** the four descriptions of `yWuBQik8KPs` were 70 to 96
+words, named concrete on-screen values (180 bar, 80 bar, cavity codes, the B-key prompt) and
+showed no repetition. They were written through OpenRouter (`VISION_MODEL=google/gemini-3.7-flash`,
+the maintainer's choice), not the direct `gemini:` path the 100-word cap was measured on, so
+one video is a sanity check, not a re-measurement. In answers the description chunks
+corroborate the narration and carry values the narration does not, but a window's two chunks
+appear as two sources (see QUAL-003).
 
 Do this **before the first new video is ingested**: a video that has chunks is never looked
 at again, so a video stored with the current descriptions keeps them. It is independent of
@@ -2441,7 +2459,7 @@ automated answer evaluation in production.
 | 8 — Configurable AI Inference | 6 | completed | 63+ |
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
-| 11 — Observability, Hosted Content Sync and Production Hardening | 21 | in progress (Phase 1 and SYNC-000 done and deployed; SYNC-002 next; 17 open) | ~148 |
+| 11 — Observability, Hosted Content Sync and Production Hardening | 21 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos) and 012 part 1 done; SYNC-013, SYNC-009, SYNC-010 and OPS-001 to 008 open) | ~148 |
 | 12 — Answer and Source Quality Calibration | 7 | planned (not started) | TBD |
 | **Total** | **66** | **10 completed, 1 in progress, 1 planned** | **395 current** |
 
