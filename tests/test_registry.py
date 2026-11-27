@@ -166,7 +166,7 @@ def test_pull_refuses_to_overwrite_local_edits_unless_forced(
     local, gen = paths
     local.write_text(GOOD + "# unpushed\n")
     with _with(FakeBucket(GOOD)):
-        with pytest.raises(RuntimeError, match="differs"):
+        with pytest.raises(RuntimeError, match="not in the registry"):
             pull(_settings(), local, gen)
         assert "unpushed" in local.read_text()
 
@@ -190,3 +190,93 @@ def test_missing_bucket_setting_is_reported(paths: tuple[Path, Path]) -> None:
     settings.state_bucket = ""
     with pytest.raises(ValueError, match="STATE_BUCKET"):
         pull(settings, local, gen)
+
+
+def test_compare_says_matches_right_after_a_pull(paths: tuple[Path, Path]) -> None:
+    local, gen = paths
+    with _with(FakeBucket(GOOD)):
+        pull(_settings(), local, gen)
+
+        assert registry.compare(_settings(), local, gen) == registry.MATCHES
+
+
+def test_compare_spots_unpushed_local_edits(paths: tuple[Path, Path]) -> None:
+    local, gen = paths
+    with _with(FakeBucket(GOOD)):
+        pull(_settings(), local, gen)
+        local.write_text(GOOD + "# my edit\n")
+
+        assert registry.compare(_settings(), local, gen) == registry.UNPUSHED_EDITS
+
+
+def test_compare_spots_a_bucket_that_moved_since_the_pull(
+    paths: tuple[Path, Path],
+) -> None:
+    local, gen = paths
+    bucket = FakeBucket(GOOD)
+    with _with(bucket):
+        pull(_settings(), local, gen)
+        bucket.content = GOOD + "# someone else\n"
+        bucket.generation += 1
+
+        assert registry.compare(_settings(), local, gen) == registry.BUCKET_CHANGED
+
+
+def test_compare_reports_a_missing_local_copy_and_a_missing_registry(
+    paths: tuple[Path, Path],
+) -> None:
+    local, gen = paths
+    with _with(FakeBucket(GOOD)):
+        assert registry.compare(_settings(), local, gen) == registry.NO_LOCAL_COPY
+    local.write_text(GOOD)
+    with _with(FakeBucket()):
+        assert registry.compare(_settings(), local, gen) == registry.NOT_IN_BUCKET
+
+
+def test_diff_shows_only_what_the_local_edit_changed(paths: tuple[Path, Path]) -> None:
+    local, gen = paths
+    with _with(FakeBucket(GOOD)):
+        pull(_settings(), local, gen)
+        local.write_text(GOOD + "  - url: https://youtu.be/new\n    name: New\n")
+        text = registry.diff(_settings(), local, gen)
+
+    assert "not pushed" in text
+    assert "+  - url: https://youtu.be/new" in text
+    assert "-" not in [line[:1] for line in text.splitlines() if "abc" in line]
+
+
+def test_diff_says_identical_when_nothing_differs(paths: tuple[Path, Path]) -> None:
+    local, gen = paths
+    with _with(FakeBucket(GOOD)):
+        pull(_settings(), local, gen)
+
+        assert "Identical" in registry.diff(_settings(), local, gen)
+
+
+def test_diff_explains_a_bucket_that_moved(paths: tuple[Path, Path]) -> None:
+    local, gen = paths
+    bucket = FakeBucket(GOOD)
+    with _with(bucket):
+        pull(_settings(), local, gen)
+        bucket.content = GOOD + "# someone else\n"
+        bucket.generation += 1
+        text = registry.diff(_settings(), local, gen)
+
+    assert "bucket changed" in text
+    assert "+# someone else" not in text and "-# someone else" in text
+
+
+def test_a_refused_pull_points_to_diff_and_push_not_to_force(
+    paths: tuple[Path, Path],
+) -> None:
+    local, gen = paths
+    with _with(FakeBucket(GOOD)):
+        pull(_settings(), local, gen)
+        local.write_text(GOOD + "# my edit\n")
+        with pytest.raises(RuntimeError) as refused:
+            pull(_settings(), local, gen)
+
+    message = str(refused.value)
+    assert "make sources-diff" in message and "make sources-push" in message
+    assert "FORCE" not in message
+    assert "# my edit" in local.read_text()

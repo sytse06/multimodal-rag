@@ -296,18 +296,27 @@ def check_cookies(settings: AppSettings) -> Check:
 
 def check_registry(settings: AppSettings) -> Check:
     path = registry.SOURCES_PATH
-    if not path.exists():
+    state = registry.compare(settings)
+    if state == registry.NO_LOCAL_COPY:
         return Check("registry", Status.FAIL, "no local copy; run make sources-pull")
+    if state == registry.NOT_IN_BUCKET:
+        return Check("registry", Status.FAIL, "not in the bucket; run the first push")
     config = registry.validate(path)
-    recorded = registry.GENERATION_PATH
-    remote = registry._remote(registry._url(settings), settings.gcp_project)
     summary = (
         f"{len(config.youtube)} videos, {len(config.knowledge_bases)} knowledge bases"
     )
-    if remote is None:
-        return Check("registry", Status.FAIL, "not in the bucket; run the first push")
-    if not recorded.exists() or recorded.read_text().strip() != remote[0]:
-        return Check("registry", Status.WARN, f"{summary}; local copy is stale (pull)")
+    if state == registry.UNPUSHED_EDITS:
+        return Check(
+            "registry",
+            Status.WARN,
+            f"{summary}; local has edits not pushed (make sources-diff)",
+        )
+    if state == registry.BUCKET_CHANGED:
+        return Check(
+            "registry",
+            Status.WARN,
+            f"{summary}; the bucket changed since your last pull (make sources-diff)",
+        )
     return Check("registry", Status.OK, f"{summary}; matches the bucket")
 
 

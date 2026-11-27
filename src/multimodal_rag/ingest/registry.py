@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import difflib
 import hashlib
 import json
 import shutil
@@ -74,6 +75,76 @@ def _recorded_generation(path: Path) -> str | None:
     return path.read_text().strip() if path.exists() else None
 
 
+NO_LOCAL_COPY = "no-local-copy"
+NOT_IN_BUCKET = "not-in-bucket"
+MATCHES = "matches"
+UNPUSHED_EDITS = "unpushed-edits"
+BUCKET_CHANGED = "bucket-changed"
+
+
+def compare(
+    settings: AppSettings,
+    path: Path = SOURCES_PATH,
+    generation_path: Path = GENERATION_PATH,
+) -> str:
+    """How the local registry file stands against the bucket's.
+
+    Content decides ``matches``. When they differ, the recorded generation says who
+    moved: unchanged generation means the local file was edited, a newer generation
+    means the bucket changed (and the local file may have been edited too).
+    """
+    if not path.exists():
+        return NO_LOCAL_COPY
+    remote = _remote(_url(settings), settings.gcp_project)
+    if remote is None:
+        return NOT_IN_BUCKET
+    generation, remote_md5 = remote
+    if _md5_hex(path) == remote_md5:
+        return MATCHES
+    if _recorded_generation(generation_path) == generation:
+        return UNPUSHED_EDITS
+    return BUCKET_CHANGED
+
+
+def diff(
+    settings: AppSettings,
+    path: Path = SOURCES_PATH,
+    generation_path: Path = GENERATION_PATH,
+) -> str:
+    """A unified diff of the bucket's registry against the local file."""
+    state = compare(settings, path, generation_path)
+    if state == NO_LOCAL_COPY:
+        raise RuntimeError(f"No local copy at {path}; run make sources-pull")
+    if state == NOT_IN_BUCKET:
+        raise RuntimeError("No registry in the bucket; create it with a push (INIT=1)")
+    generation, _ = _remote(_url(settings), settings.gcp_project) or ("?", "")
+    if state == MATCHES:
+        return f"Identical to the bucket's registry (generation {generation})."
+    with tempfile.TemporaryDirectory(prefix="registry-") as tmp:
+        downloaded = Path(tmp) / "sources.yaml"
+        run_gcloud(
+            ["storage", "cp", _url(settings), str(downloaded)], settings.gcp_project
+        )
+        theirs = downloaded.read_text(encoding="utf-8").splitlines(keepends=True)
+    ours = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines = list(
+        difflib.unified_diff(
+            theirs,
+            ours,
+            fromfile=f"bucket (generation {generation})",
+            tofile=str(path),
+        )
+    )
+    headline = {
+        UNPUSHED_EDITS: "Your local file has edits that are not pushed"
+        " (make sources-push publishes them):",
+        BUCKET_CHANGED: "The bucket changed since your last pull; your file may also"
+        " hold edits. Merge by hand, then push; a pull would refuse to overwrite them:",
+    }[state]
+    body = "".join(lines) or "(the files differ only in trailing whitespace)\n"
+    return f"{headline}\n{body}".rstrip("\n")
+
+
 def pull(
     settings: AppSettings,
     path: Path = SOURCES_PATH,
@@ -89,8 +160,8 @@ def pull(
     if path.exists() and _md5_hex(path) != remote_md5:
         if not force:
             raise RuntimeError(
-                f"{path} differs from the registry; push your edits or pull with"
-                " FORCE=1 (the old file is kept as .prev)"
+                f"{path} has edits that are not in the registry. See them with"
+                " make sources-diff and publish them with make sources-push."
             )
         shutil.copy2(path, path.with_name(path.name + ".prev"))
     with tempfile.TemporaryDirectory(prefix="registry-") as tmp:
@@ -146,17 +217,18 @@ def push(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("pull", "push"))
+    parser.add_argument("action", choices=("pull", "push", "diff"))
     parser.add_argument("--init", action="store_true", help="first push only")
     parser.add_argument("--force", action="store_true", help="pull over local edits")
     args = parser.parse_args()
     settings = AppSettings()
     try:
-        message = (
-            pull(settings, force=args.force)
-            if args.action == "pull"
-            else push(settings, init=args.init)
-        )
+        if args.action == "pull":
+            message = pull(settings, force=args.force)
+        elif args.action == "diff":
+            message = diff(settings)
+        else:
+            message = push(settings, init=args.init)
     except (RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
