@@ -267,6 +267,24 @@ make purge
 
 Do not run these commands as part of ordinary onboarding.
 
+### Update the hosted collection
+
+`make ingest` reprocesses every video and page, so it is not how content is updated. The
+procedure for bringing changed pages and new videos into the collection colleagues search
+is the [maintainer runbook](docs/maintainer-runbook.md): refresh local first, then promote
+the reviewed state to hosted. The commands you will use most:
+
+| Command | What it does |
+|---|---|
+| `make sync-preflight` | Read-only readiness report: tools, keys, embedding runtime, registry, hosted cluster, backups, local versus hosted |
+| `make sources-diff` | How your local `config/sources.yaml` differs from the registry in the state bucket |
+| `make sources-pull` / `make sources-push` | Fetch / publish the source registry (pull before you edit it; never `FORCE=1`) |
+| `make sync-inventory`, `make sync-plan`, `make sync-apply RUN=` | Find changed pages, plan the change, apply it to local |
+| `make sync-videos` | Ingest videos that are not stored yet (local) |
+| `make promote-plan`, `make promote RUN=` | Copy local to hosted: canary first, and always the newest plan |
+
+Releases and content promotions are recorded in [CHANGELOG.md](CHANGELOG.md).
+
 ## Development checks
 
 ```bash
@@ -366,6 +384,8 @@ GROUP BY model
 
 - [Product requirements](docs/PRD.md)
 - [Epics and acceptance criteria](docs/epics.md)
+- [Maintainer runbook: updating the hosted collection](docs/maintainer-runbook.md)
+- [Changelog: releases and content promotions](CHANGELOG.md)
 - [Query and inference pipeline](docs/pipeline.md)
 - [Cloud Run deployment](docs/gcp-deployment.txt)
 - [Logging, reading logs, and privacy](#logging)

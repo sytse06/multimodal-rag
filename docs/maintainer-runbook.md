@@ -62,11 +62,13 @@ Do these in order. Stop at the first problem.
 1. **Docker Desktop is running and its disk is under 80%.** `docker system df` shows what is
    reclaimable; `make docker-up` starts Weaviate and the pinned Ollama together. The first
    time only, `make ollama-up` also pulls the model.
-2. **Registry:** the preflight (next step) says whether your local copy matches the bucket.
-   You only need `make sources-pull` when it does not, or before you edit the registry
-   (section 3b). It refuses to overwrite local edits. If it refuses, you have edits that are
-   not pushed: push them, or compare with `config/sources.yaml.prev`. Do not reach for
-   `FORCE=1`; it discards those edits.
+2. **Registry:** the preflight (next step) compares your local copy with the bucket's by
+   content and says one of three things: it matches; your local file has edits not pushed;
+   or the bucket changed since your last pull. `make sources-diff` shows exactly what
+   differs. You only need `make sources-pull` before you edit the registry (section 3b) or
+   when the bucket changed. A pull refuses to overwrite local edits: push them with
+   `make sources-push`, or merge by hand if the bucket also changed. Do not reach for
+   `FORCE=1`; it discards those edits (kept only as `config/sources.yaml.prev`).
 3. **Run the readiness report:** `make sync-preflight` (`LOCAL_ONLY=1` skips the cloud
    checks). Read it before anything else:
 
@@ -75,7 +77,7 @@ Do these in order. Stop at the first problem.
    | embedding runtime | Ollama at the pinned version, weights `970aa74c0a90` | It names another version: `make ollama-up`, then re-check |
    | local vectors | sampled vectors match a fresh embedding, lowest 1.0000 | Lowest under 0.99: `make sync-reembed` first |
    | hosted cluster | awake | Paused or unreachable: wake it in the Weaviate Cloud console (section 7b) |
-   | registry | matches the bucket | The local copy is stale: `make sources-pull` |
+   | registry | matches the bucket | Edits not pushed: `make sources-diff`, then `make sources-push`. Bucket changed: `make sources-diff`, merge by hand, push |
    | latest backup | under 7 days old | Older: `make snapshot-backup TARGET=cloud` |
    | gemini key | accepted by the API | Rejected: a key that is set can still be invalid; fix before any video work |
    | local vs hosted | identical, or a difference you expect | A difference you cannot explain |
@@ -424,6 +426,7 @@ tests), so nothing else keeps it awake. Every promotion also needs it awake.
 | Command | Reads | Writes | Exit |
 |---|---|---|---|
 | `make sync-preflight` | Everything | Nothing | 1 on a FAIL |
+| `make sources-diff` | The bucket's registry, local file | Nothing | 1 on error |
 | `make sync-inventory` | Sitemaps, ledger, local | Nothing (`INIT=1` creates the ledger once) | 1 on error |
 | `make sync-plan` | Sitemaps, pages, local | `runs/`, the bucket | 10 needs review |
 | `make sync-apply RUN=` | The plan | **Local**, ledger | 10 needs review, 1 failed or gate failed |

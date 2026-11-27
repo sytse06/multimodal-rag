@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy release
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push sources-diff snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy release
 
 SHELL := /bin/bash
 
@@ -59,6 +59,7 @@ help:
 	@echo "  make sync-gate             - Retrieval gate: hosted (before) against local (after)"
 	@echo "  make sources-pull          - Fetch the source registry from the state bucket (FORCE=1)"
 	@echo "  make sources-push          - Publish edits to the registry (INIT=1 for the first push)"
+	@echo "  make sources-diff          - Show how the local registry differs from the bucket's"
 	@echo "  make snapshot-export       - Export the fixed collection outside Git"
 	@echo "  make snapshot-backup       - Export the collection and upload it to the state bucket"
 	@echo "  make snapshot-restore      - Restore a snapshot into local Weaviate"
@@ -285,6 +286,9 @@ sources-pull:
 
 sources-push:
 	@uv run python -m multimodal_rag.ingest.registry push $(if $(INIT),--init,)
+
+sources-diff:
+	@uv run python -m multimodal_rag.ingest.registry diff
 
 snapshot-export:
 	@echo -e "$(BLUE)📦 Exporting Weaviate snapshot...$(NC)"

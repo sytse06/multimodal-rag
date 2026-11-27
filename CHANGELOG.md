@@ -33,6 +33,8 @@ v0.3.0 is the first release since v0.2.0 (2026-09-30) and records nine Cloud Run
 - **SYNC-011** — `make sync-videos` ingests only videos with no stored chunks; the transcript comes from manual captions, else Gemini (Voxtral is demoted).
 - **SYNC-012 (part 1)** — a frame description of at most 100 words and two chunks per 30-second window (`[Transcript]`, `[Visual]`); an opt-in Gemini vision path (`VISION_MODEL=gemini:<model>`).
 - `make weaviate-compat` tests our code against a given Weaviate version.
+- **OPS-007** — a `hosted cluster` line in the preflight (awake, or paused with how to wake it) and the Cloud Scheduler job `weaviate-keepalive`.
+- `make sources-diff`, and a preflight registry line that compares content, so unpushed local edits no longer read as "matches the bucket".
 - The source registry in the state bucket: `make sources-pull` and `sources-push`.
 - `CHANGELOG.md`, the `/release` skill and `make release`.
 
@@ -52,6 +54,7 @@ v0.3.0 is the first release since v0.2.0 (2026-09-30) and records nine Cloud Run
 - Local Weaviate aligned with the hosted 1.39.13 and the client floor raised (`8a2c232`).
 - The registry in the bucket is the source of truth; `config/sources.yaml` is an editing buffer (decided 2026-11-24).
 - The app warns at startup when the default model is not in the registry (`a9783ad`).
+- A refused registry pull points to `make sources-diff` and `make sources-push` instead of `FORCE=1`.
 
 ## [0.2.0] — 2026-09-30
 

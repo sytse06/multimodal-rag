@@ -371,3 +371,27 @@ def test_a_paused_cluster_skips_the_weaviate_checks_with_one_clear_line() -> Non
     assert by_name["hosted cluster"].status is Status.FAIL
     assert by_name["weaviate"].status is Status.FAIL
     assert "skipped" in by_name["weaviate"].detail
+
+
+@pytest.mark.parametrize(
+    ("state", "status", "fragment"),
+    [
+        ("matches", Status.OK, "matches the bucket"),
+        ("unpushed-edits", Status.WARN, "edits not pushed"),
+        ("bucket-changed", Status.WARN, "bucket changed"),
+        ("no-local-copy", Status.FAIL, "sources-pull"),
+        ("not-in-bucket", Status.FAIL, "first push"),
+    ],
+)
+def test_the_registry_check_reports_each_state_by_content(
+    state: str, status: Status, fragment: str
+) -> None:
+    fake_config = SimpleNamespace(youtube=[1, 2], knowledge_bases=[1])
+    with (
+        patch.object(preflight.registry, "compare", return_value=state),
+        patch.object(preflight.registry, "validate", return_value=fake_config),
+    ):
+        check = preflight.check_registry(_settings())
+
+    assert check.status is status
+    assert fragment in check.detail

@@ -1650,6 +1650,9 @@ Preconditions, each a decision or a ticket of its own:
      bucket changed since the fetch (a generation check), which also protects an edit
      against a scheduled run; `FORCE=1` on a pull is the way an edit gets lost and should
      go away;
+   - done 2026-11-27: `make sources-diff` and a preflight registry line that compares
+     content (matches, unpushed local edits, bucket changed), and a refused pull no longer
+     suggests `FORCE=1`; `make sources-edit` and the bucket-first read in the lanes remain;
    - the "local → hosted" flow describes the manual phase only. Where a run builds and
      verifies content before hosted changes (precondition 3) is the open design question
      here; the manual runbook is not the design
