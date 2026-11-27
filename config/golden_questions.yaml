@@ -1,0 +1,1169 @@
+# Golden question set: DRAFT for the maintainer's review (written 2026-11-27).
+#
+# Basis: the Help Scout Docs report for 2025-11-01 to 2026-10-31 (top articles by views and
+# the popular searches). The report lists articles, not questions, so each question below
+# is written the way a colleague would ask it, NOT copied from the article title (a title
+# would find its own page too easily). Required facts are taken from the stored article
+# text, so a reviewer can check them against the source.
+#
+# This is the first part of the QUAL-001 calibration set and the real-question set that
+# SYNC-013 asks for. It is not wired to any command yet. Nothing has been run against it.
+#
+# Fields
+#   id              stable key, never reused
+#   question        what is asked
+#   product         hydrosym | hydroman | hydrocam
+#   form            procedure | factual | keyword | not_in_kb
+#   basis           the report line this comes from, with its views (or search count)
+#   expect          sources that answer it; at least one should be retrieved
+#   required_facts  what a good answer must contain (empty for not_in_kb)
+#   video           optional: the video whose chunks are the thing under test. A question counts
+#                   as a video hit only if a chunk of this video is retrieved (the KB article
+#                   in `expect` may answer it too)
+#   review          open = the maintainer has not looked at it yet
+#
+# Basis, second report: Docs Report 2026-06-01 to 2026-11-26 (171 articles, the same count
+# as the collection), used for G37 to G45.
+#
+# Not included, because their stored text is only screenshot descriptions so no facts can
+# be checked against it: "Tutorial: Export form Hydroman to Solid Works". "Quick Start" is
+# ambiguous (HydroSym or HydroMan); say which. "Tutorial: Getting started" is read as the
+# HydroSym article (G42); say if the HydroMan one was meant.
+
+questions:
+  - id: G01
+    question: "Some elements in my schematic ended up off the grid after I switched snap off. How do I get them back on it?"
+    product: hydrosym
+    form: procedure
+    basis: "Keep your designs neat and precise: grid, snap and ortho (916 views, the most viewed article)"
+    expect:
+      - https://hydrosym.paro.nl/article/469-grid-snap-and-ortho
+      - https://www.youtube.com/watch?v=QFhxj3JQTMA
+    required_facts:
+      - "use the align function"
+      - "select the reference port that is on the grid first, then the port that is out of line"
+      - "right click and choose Align Y (shortcut Y) for the Y axis"
+    review: open
+
+  - id: G02
+    question: "Can HydroSym make a PDF of the drawing by itself when I close it?"
+    product: hydrosym
+    form: procedure
+    basis: "Automatically generate PDFs (416 views)"
+    expect:
+      - https://hydrosym.paro.nl/article/460-automatically-generate-pdfs
+    required_facts:
+      - "Tools > Preferences, Misc tab, enable 'Autosave .pdf when closing diagram files'"
+      - "restart HydroSym afterwards"
+      - "the PDF is saved in the same folder under the same name as the diagram"
+      - "closing the file takes longer because the PDF is generated"
+    review: open
+
+  - id: G03
+    question: "Our PLM system keeps the part attributes in XML. How does HydroSym pick them up?"
+    product: hydrosym
+    form: factual
+    basis: "Project attribute exchange through XML (397 views)"
+    expect:
+      - https://hydrosym.paro.nl/article/461-project-attribute-exchange-through-xml
+    required_facts:
+      - "by default HydroSym looks for an XML file with the same name in the same folder as the diagram"
+      - "a fixed path for the XML file can be configured"
+      - "the node in the XML tree that holds the attributes can be set"
+      - "HydroSym attribute names can be mapped to the PDM/PLM attribute names"
+    review: open
+
+  - id: G04
+    question: "Can HydroSym be connected to our PDM or PLM workflow, and where do I start?"
+    product: hydrosym
+    form: factual
+    basis: "Integrating with other software (363 views) and the integration article it links to"
+    expect:
+      - https://hydrosym.paro.nl/article/374-integrating-with-other-software-hydrosym-documentation-paro-software
+      - https://hydrosym.paro.nl/article/359-how-do-i-set-up-an-integration
+    required_facts:
+      - "generic methods exist: shared configuration, automatic generation of drawing PDFs, project attribute exchange"
+      - "custom integrations are also done for customers"
+      - "contact info@paro.nl; a call to understand the setup comes first"
+    review: open
+
+  - id: G05
+    question: "How do I make a cavity in HydroMan so that the steps nobody should change are locked?"
+    product: hydroman
+    form: procedure
+    basis: "Tutorial: How to create a cavity in Hydroman (360 views, up 17,900%)"
+    expect:
+      - https://hydroman.paro.nl/article/279-tutorialsusagecreating-cavities
+    required_facts:
+      - "select the cavity, press A and select the steps to hide in the drilling list, then check 'Hidden'"
+      - "hidden steps cannot be changed while creating a manifold; they are greyed out in the Change Hole(s) menu"
+      - "they can still be changed by unchecking 'Lock Hidden Diameters', with extreme caution"
+      - "the cavity must match the manufacturer's detail drawing"
+    review: open
+
+  - id: G06
+    question: "A cavity has a locating shoulder. Where do I mark it and what does it mean?"
+    product: hydroman
+    form: factual
+    basis: "Tutorial: How to create a cavity in Hydroman (360 views)"
+    expect:
+      - https://hydroman.paro.nl/article/279-tutorialsusagecreating-cavities
+    required_facts:
+      - "check the step that is the locating shoulder (LS) in the Hole Attributes menu"
+      - "it is the step the cavity is dimensioned from (zero depth in the datasheet), usually the top spotface"
+      - "if it is hidden in the drilling list, a remark like 'LS=0,8' is added to the shown step"
+    review: open
+
+  - id: G07
+    question: "The hole numbers and item numbers overlap in my drawing. How do I move them?"
+    product: hydroman
+    form: procedure
+    basis: "Tutorial: How to move text, itemnumbers of a hole or cavity (314 views, up 31,300%)"
+    expect:
+      - https://hydroman.paro.nl/article/272-tutorialsusagemoving-text-from-holes-and-cavities
+    required_facts:
+      - "hole text: right click and Drag Hole Text (shortcut H); the spacebar rotates the text"
+      - "item number: Drag Item Number (shortcut U)"
+      - "hole number position: Move Hole Number Position (shortcut J), after giving a fixed height"
+    review: open
+
+  - id: G08
+    question: "How do I engrave the item number of a cavity?"
+    product: hydroman
+    form: procedure
+    basis: "Tutorial: How to move text, itemnumbers of a hole or cavity (314 views)"
+    expect:
+      - https://hydroman.paro.nl/article/272-tutorialsusagemoving-text-from-holes-and-cavities
+    required_facts:
+      - "select the hole or cavity and choose Engrave number (Shift+U)"
+      - "mark the box in front of the text and press OK"
+      - "size and type of the engraving are formatted under Assist; the default equals the hole text settings"
+    review: open
+
+  - id: G09
+    question: "How do I make an undercut in a hole in HydroMan?"
+    product: hydroman
+    form: procedure
+    basis: "Tutorial: How to make an undercut in Hydroman (305 views, up 15,150%)"
+    expect:
+      - https://hydroman.paro.nl/article/271-tutorialsusagemaking-an-undercut
+    required_facts:
+      - "add two steps to the hole and give them the wanted diameter and depth"
+      - "select the hole, press A, select steps 1.2 and 1.3 (Ctrl for several) and mark 'Spotfaced'"
+      - "a cross section in the Y axis shows what changes"
+    review: open
+
+  - id: G10
+    question: "What does the HydroMan release with the chamfered faces change?"
+    product: hydroman
+    form: factual
+    basis: "HydroMan Build 50 Chamfered face enhancements, trimming fixes, and drawing stability (300 views, up 9,900%)"
+    expect:
+      - https://hydroman.paro.nl/article/223-hydroman-build-50-chamfered-face-enhancements-trimming-fixes-and-drawing-stability
+    required_facts:
+      - "holes on chamfered faces can now be connected and trimmed"
+      - "a new align function for holes on chamfered faces"
+      - "fixes: trimming to cursor on chamfered surfaces, object scales resetting in the drawing view"
+    review: open
+
+  - id: G11
+    question: "Can HydroCam export engraving code for our machining centre?"
+    product: hydrocam
+    form: factual
+    basis: "Does HydroCam support engraving? (310 views)"
+    expect:
+      - https://hydrocam.paro.nl/article/482-does-hydrocam-support-engraving
+    required_facts:
+      - "yes, HydroCam can export code for engraving"
+      - "some customisation may be needed depending on the machining center and requirements"
+    review: open
+
+  - id: G12
+    question: "What is HydroCam for, and where do I start with it?"
+    product: hydrocam
+    form: factual
+    basis: "Hydrocam Introduction (329 views)"
+    expect:
+      - https://hydrocam.paro.nl/article/489-hydrocam-introduction
+      - https://www.youtube.com/watch?v=I8AzqgoWZds
+    required_facts:
+      - "HydroCam is Paro's CNC manifold production software"
+    review: open
+
+  - id: G13
+    question: "HydroSym says the license is invalid, and I can't deactivate it normally. What can I do?"
+    product: hydrosym
+    form: procedure
+    basis: "Deactivate HydroSym License (301 views)"
+    expect:
+      - https://hydrosym.paro.nl/article/442-deactivate-hydrosym-license-hydrosym-documentation-paro-software
+    required_facts:
+      - "run LicenseTool.exe deactivate -e"
+      - "the -e parameter forcefully deletes the activation associated with the license"
+    review: open
+
+  - id: G14
+    question: "The computer has no internet access. How do I activate HydroSym?"
+    product: hydrosym
+    form: procedure
+    basis: "Offline activation (320 views)"
+    expect:
+      - https://hydrosym.paro.nl/article/440-offline-activation-hydrosym-documentation-paro-software
+    required_facts:
+      - "a file based activation in two parts: create an Activation Request and mail it to PARO"
+      - "activate with the Activation Response file received from PARO, using TurboActivate.exe > Other options > Manually activate offline"
+      - "for a license server: generate ActivationRequest.xml with TurboFloatServer.exe and place the response in the license server folder"
+    review: open
+
+  - id: G15
+    question: "After an update the HydroSym text and icons are tiny and don't scale. How do I fix it?"
+    product: hydrosym
+    form: procedure
+    basis: "The font size is too big and the icons too small (312 views, up 5,100%)"
+    expect:
+      - https://hydrosym.paro.nl/article/429-the-font-size-is-too-big-and-the-icons-too-small-hydrosym-documentation-paro-software
+    required_facts:
+      - "right click the HydroSym icon > Properties > Compatibility tab > Change high DPI settings"
+      - "mark 'Override high DPI scaling behavior' and select 'System (Enhanced)'"
+      - "restart HydroSym; the cause can be an update or a changed monitor"
+    review: open
+
+  - id: G16
+    question: "A customer wants to run HydroSym on a Mac. Is that possible and what about the license?"
+    product: hydrosym
+    form: factual
+    basis: "Running HydroSym on a Mac (104 views, listed near the top of the report)"
+    expect:
+      - https://hydrosym.paro.nl/article/433-running-hydrosym-on-a-mac
+    required_facts:
+      - "use a Windows virtual machine such as Parallels (Windows 11 ARM on Apple Silicon)"
+      - "at least 4 GB RAM and 2 CPU cores for the VM"
+      - "node-locked licenses do not run in a VM; a floating Anywhere License is needed"
+    review: open
+
+  - id: G17
+    question: "multiple sheets"
+    product: hydrosym
+    form: keyword
+    basis: "Popular search 'multiple sheets' (12 searches, 17 results)"
+    expect:
+      - https://hydrosym.paro.nl/article/523-tutorial-using-multiple-sheets
+      - https://youtu.be/qAeq5nJLgtg
+    required_facts: []   # a bare search term: the check is that the right source ranks, not an answer
+    review: open
+
+  - id: G18
+    question: "drawing header"
+    product: hydrosym
+    form: keyword
+    basis: "Popular search 'drawing header' (10 searches, up 900%)"
+    expect:
+      - https://www.youtube.com/watch?v=oBxuJSyWepU
+    required_facts: []
+    review: open
+
+  - id: G19
+    question: "How do I draw connection lines and let HydroSym suggest them?"
+    product: hydrosym
+    form: procedure
+    basis: "Video: drawing & auto-suggesting connection lines (318 views)"
+    expect:
+      - https://hydrosym.paro.nl/article/490-video-drawing-auto-suggesting-connection-lines
+      - https://www.youtube.com/watch?v=RSOUsEIJzSE
+    required_facts: []   # the article is one sentence; facts must come from the video transcript. Review needed.
+    review: open
+
+  # Questions the knowledge base is expected NOT to answer. Unchecked: confirm by reading
+  # the retrieved sources before relying on these.
+  - id: G20
+    question: "What does a HydroSym license cost?"
+    product: hydrosym
+    form: not_in_kb
+    basis: "None from the report; the answer should say the sources do not cover it"
+    expect: []
+    required_facts: []
+    review: open
+
+  - id: G21
+    question: "Does HydroSym run natively on Linux?"
+    product: hydrosym
+    form: not_in_kb
+    basis: "None from the report; the answer should say the sources do not cover it"
+    expect: []
+    required_facts: []
+    review: open
+
+  # The three canaries of the retrieval gate (config/canaries.yaml), word for word. Their
+  # expected sources are the same; the facts below come from the stored article text and
+  # the video transcripts. They have been the only real-question evidence until now.
+  - id: G22
+    question: "How can I zoom out in my schematic?"
+    product: hydrosym
+    form: procedure
+    basis: "Canary 1 (config/canaries.yaml)"
+    expect:
+      - https://hydrosym.paro.nl/article/372-navigating-in-hydrosym
+      - https://hydrosym.paro.nl/article/376-hydrosym-quick-start-hydrosym-documentation-paro-software
+    required_facts:
+      - "the scroll wheel zooms in and out"
+      - "'Zoom all' (shortcut Home) shows the entire schematic again"
+    review: open
+
+  - id: G23
+    question: "How can I best separate multiple oilflows in my schematic?"
+    product: hydrosym
+    form: procedure
+    basis: "Canary 2 (config/canaries.yaml); video-only answer"
+    expect:
+      - https://www.youtube.com/watch?v=ZPBbfCn2FMg
+    required_facts:
+      - "use group colors, which clarify the various oil flows"
+      - "set Group Color Visibility in the bottom menu to Main Groups or Subgroups (not No Groups)"
+      - "assign a color to an existing connection line: select it, right click, Select Main Groups or Select Subgroups"
+      - "to draw new lines in a group color, select the group color first"
+    review: open
+
+  - id: G24
+    question: "What advantages are there to import my HydroSym schematic in HydroMan and how do I do it?"
+    product: hydroman
+    form: procedure
+    basis: "Canary 3 (config/canaries.yaml); the answer is split between an article and a video"
+    expect:
+      - https://youtu.be/Pvg8F7xPm_o
+      - https://hydroman.paro.nl/article/294-do-i-have-to-create-schematics-in-hydrosym
+    required_facts:
+      - "advantage: the relevant data is exported to HydroMan automatically when a manifold is designed from a HydroSym schematic, and HydroSym checks the schematic for issues first"
+      - "use an iBorder, use components (not symbols) and assign main and subgroup colors"
+      - "select the iBorder, right click, iBorder > Create HydroMan File, or use the HydroMan icon"
+      - "the icon needs Tools > Preferences > Miscellaneous > 'HydroMan is available on this PC', then a restart"
+    review: open
+
+  # Video questions, from the descriptions on paro.nl/tutorials. The required facts follow
+  # what the stored video transcripts say (the ground truth for retrieval); the paro.nl
+  # pages for Multiple Sheets and Electrical Diagrams are generic and do not describe what
+  # those two videos show, so they were not used for facts. Note that the stored
+  # transcripts of the older videos spell "HydroSim" and "eye border" for HydroSym and
+  # I-Border (Voxtral), so a question that says "I-Border" has to match "eye border".
+  - id: G25
+    question: "My schematic has outgrown the page. How do I continue on a second sheet?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Explainer: Multiple Sheets"
+    video: https://youtu.be/qAeq5nJLgtg
+    expect:
+      - https://youtu.be/qAeq5nJLgtg
+      - https://hydrosym.paro.nl/article/523-tutorial-using-multiple-sheets
+    required_facts:
+      - "multiple sheets need a predefined paper size in the drawing area, not the free drawing space"
+      - "choose a new sheet in the paper size selection, preferably the same size as the first sheet"
+      - "answer Yes to 'Do you wish to create a multi-sheet diagram?'"
+    review: open
+
+  - id: G26
+    question: "A connection line has to continue from sheet 1 to sheet 2. How do I link them?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Explainer: Multiple Sheets"
+    video: https://youtu.be/qAeq5nJLgtg
+    expect:
+      - https://youtu.be/qAeq5nJLgtg
+      - https://hydrosym.paro.nl/article/523-tutorial-using-multiple-sheets
+    required_facts:
+      - "select the connection line, right click and choose Insert Connection Line Break"
+      - "without the break the connection is not properly displayed in the drawing output"
+      - "the Layout Drawing view shows how the sheets are connected; click Fit"
+    review: open
+
+  - id: G27
+    question: "Can I connect a hydraulic symbol to an electrical symbol in HydroSym?"
+    product: hydrosym
+    form: factual
+    basis: "paro.nl: HydroSym Explainer: Electrical Diagrams"
+    video: https://youtu.be/9vlY7cY3om0
+    expect:
+      - https://youtu.be/9vlY7cY3om0
+    required_facts:
+      - "not by default"
+      - "whether a symbol is hydraulic or electrical is set at port level, with the option 'Is an electrical port?' in the port properties"
+      - "the behaviour can be changed by modifying the port properties"
+    review: open
+
+  - id: G28
+    question: "How do I put our own company address and logo in the drawing header?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: Drawing Header; popular search 'drawing header' (10)"
+    video: https://www.youtube.com/watch?v=oBxuJSyWepU
+    expect:
+      - https://www.youtube.com/watch?v=oBxuJSyWepU
+      - https://hydrosym.paro.nl/article/501-video-how-to-set-up-and-customize-drawing-headers
+      - https://hydrosym.paro.nl/article/447-tutorial-making-or-changing-your-drawing-header-hydrosym-documentation-paro-software
+    required_facts:
+      - "open Drawing Header Setup under Tools and fill in the address and logo"
+      - "all predefined headers in new projects then carry the company name and logo"
+      - "there are five predefined headers: three in the Layout Drawing menu, two in the Bill of Materials print menu"
+    review: open
+
+  - id: G29
+    question: "I changed the drawing header setup, but my existing project still shows the old address. Why?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: Drawing Header"
+    video: https://www.youtube.com/watch?v=oBxuJSyWepU
+    expect:
+      - https://www.youtube.com/watch?v=oBxuJSyWepU
+      - https://hydrosym.paro.nl/article/501-video-how-to-set-up-and-customize-drawing-headers
+      - https://hydrosym.paro.nl/article/447-tutorial-making-or-changing-your-drawing-header-hydrosym-documentation-paro-software
+    required_facts:
+      - "the setup only applies automatically to new projects"
+      - "in an existing project: in Layout Drawing select the header, right click for Options and choose Update Address"
+    review: open
+
+  - id: G30
+    question: "How can I list multiple componenents as one item in the BOM"
+    product: hydrosym
+    form: procedure
+    basis: "Written by the maintainer; paro.nl: HydroSym Tutorials: Component Joining"
+    video: https://www.youtube.com/watch?v=AO8rMvBMTUc
+    expect:
+      - https://www.youtube.com/watch?v=AO8rMvBMTUc
+      - https://hydrosym.paro.nl/article/502-video-how-to-join-symbols-for-cleaner-schematics
+      - https://hydrosym.paro.nl/article/492-video-smart-design-in-hydrosym-snap-ports-lock-boundaries-and-integrate-bom-with-i-borders
+    required_facts:
+      - "quick option: hide one of the joined components (select it, right click, deselect 'Show in Bill of Materials')"
+      - "better option: draw an I-Border around the joined symbols, fill in its properties, then deselect 'Show in Bill of Materials' on both components"
+      - "the BOM then shows the I-Border item and the components under 'Hidden Components'"
+      - "'Hide in output' keeps the I-Border out of the prints"
+    review: open
+
+  - id: G31
+    question: "What is the difference between joining and grouping symbols?"
+    product: hydrosym
+    form: factual
+    basis: "paro.nl: HydroSym Tutorials: Component Joining"
+    video: https://www.youtube.com/watch?v=AO8rMvBMTUc
+    expect:
+      - https://www.youtube.com/watch?v=AO8rMvBMTUc
+      - https://hydrosym.paro.nl/article/497-video-understanding-the-difference-between-joining-and-grouping-in-hydrosym
+    required_facts:
+      - "joining is a graphic help: the symbols move as one but keep their own component identity in the BOM"
+      - "grouping creates a whole new symbol and all previous data is lost"
+      - "after grouping components cannot be replaced by comparable ones; with joining they can"
+    review: open
+
+  - id: G32
+    question: "How do I swap one of two joined components for a similar one?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: Component Joining"
+    video: https://www.youtube.com/watch?v=AO8rMvBMTUc
+    expect:
+      - https://www.youtube.com/watch?v=AO8rMvBMTUc
+      - https://hydrosym.paro.nl/article/502-video-how-to-join-symbols-for-cleaner-schematics
+    required_facts:
+      - "select the symbol, right click, Replace > 'List of Components using this Symbol', pick the replacement"
+      - "the BOM shows the new component and the join is not affected"
+    review: open
+
+  - id: G33
+    question: "How do I resize an I-Border?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: I-Border"
+    video: https://www.youtube.com/watch?v=5huoQMS7SS0
+    expect:
+      - https://www.youtube.com/watch?v=5huoQMS7SS0
+      - https://hydrosym.paro.nl/article/492-video-smart-design-in-hydrosym-snap-ports-lock-boundaries-and-integrate-bom-with-i-borders
+    required_facts:
+      - "left click anywhere on its line to select it"
+      - "wait, then click again to lock it to the cursor"
+      - "resize, and click once more to finalise"
+    review: open
+
+  - id: G34
+    question: "Two I-Borders moved together and now I can't move one of them alone. How do I separate them?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: I-Border"
+    video: https://www.youtube.com/watch?v=5huoQMS7SS0
+    expect:
+      - https://www.youtube.com/watch?v=5huoQMS7SS0
+      - https://hydrosym.paro.nl/article/492-video-smart-design-in-hydrosym-snap-ports-lock-boundaries-and-integrate-bom-with-i-borders
+    required_facts:
+      - "I-Borders lock together automatically when one is moved onto another, and then move and resize as one"
+      - "select one, choose 'Release I-Border from other I-Border', drag it to its new position and left click"
+    review: open
+
+  - id: G35
+    question: "How do I keep an I-Border from showing up in my prints?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: I-Border"
+    video: https://www.youtube.com/watch?v=5huoQMS7SS0
+    expect:
+      - https://www.youtube.com/watch?v=5huoQMS7SS0
+      - https://hydrosym.paro.nl/article/492-video-smart-design-in-hydrosym-snap-ports-lock-boundaries-and-integrate-bom-with-i-borders
+    required_facts:
+      - "double click the I-Border to open its properties"
+      - "select 'Hide in output'"
+    review: open
+
+  - id: G36
+    question: "How do I stretch one edge of a non-rectangular outline made of I-lines?"
+    product: hydrosym
+    form: procedure
+    basis: "paro.nl: HydroSym Tutorials: I-Border"
+    video: https://www.youtube.com/watch?v=5huoQMS7SS0
+    expect:
+      - https://www.youtube.com/watch?v=5huoQMS7SS0
+    required_facts:
+      - "drag a box from right to left to select the edge"
+      - "right click the edge and choose Stretch, or press Shift+S"
+      - "click the edge again, drag it to its new position and left click"
+      - "group the I-lines first if the whole shape should move together"
+    review: open
+
+  # From the second Help Scout report (2026-06-01 to 2026-11-26).
+  - id: G37
+    question: "How do I install HydroSym on a new PC and start it for the first time?"
+    product: hydrosym
+    form: procedure
+    basis: "How to install HydroSym on your computer (191 views, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/388-how-to-install-hydrosym-on-your-computer-hydrosym-documentation-paro-software
+    required_facts:
+      - "download the installer from the link in the email from Paro, run it and follow the wizard (accept the agreement, choose the folder)"
+      - "on first start choose the language, then the license type and enter the details from the email"
+      - "HydroSym opens with an empty diagram"
+    review: open
+
+  - id: G38
+    question: "How do I stack a sandwich valve on a standard block in HydroSym?"
+    product: hydrosym
+    form: procedure
+    basis: "Tutorial: How to use modular valves on blocks (162 views, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/446-tutorial-how-to-use-modular-valves-on-blocks-hydrosym-documentation-paro-software
+    required_facts:
+      - "switch on Join and DV Bottom (buttons at the bottom of the window)"
+      - "Join attaches the components; DV Bottom places them with the underlined and non-underlined port pointing at each other"
+      - "drag the sandwich valve from the library close to the opposite port and release"
+      - "for a component already in the schematic: select one port, select the opposite port with the same name and press J"
+    review: open
+
+  - id: G39
+    question: "How do I export my schematic to PDF with the right line weights for the paper size?"
+    product: hydrosym
+    form: procedure
+    basis: "Tutorial: Export your schematic (142 views, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/463-tutorial-export-your-schematic-hydrosym-documentation-paro-software
+    required_facts:
+      - "File > Export > Export to PDF"
+      - "check the filename, select a color under Colors and the line weights for the paper size, then OK"
+      - "line weights exist for sheet sizes A4 to A0; larger sheets use heavier lines"
+    review: open
+
+  - id: G40
+    question: "How can I get a picture of my schematic at a different size?"
+    product: hydrosym
+    form: procedure
+    basis: "Tutorial: Export your schematic (142 views, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/463-tutorial-export-your-schematic-hydrosym-documentation-paro-software
+    required_facts:
+      - "File > Export > Export to PNG (or the JPG or BMP option)"
+      - "check Width and Height and use Scale to change the output size, then OK"
+    review: open
+
+  - id: G41
+    question: "A customer sent a DXF file with symbols. How do I bring it into HydroSym?"
+    product: hydrosym
+    form: procedure
+    basis: "Tutorial: How to import a DXF or DWG file in to Hydrosym (128 views, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/445-tutorial-how-to-import-a-dxf-or-dwg-file-in-to-hydrosym-hydrosym-documentation-paro-software
+    required_facts:
+      - "browse to the saved DXF file and check that the symbols have the same size as the example symbol"
+      - "if not, use scale to change the size"
+      - "use Save as to store the imported file; it can be used as a schematic or made into a component"
+    review: open
+
+  - id: G42
+    question: "How do I insert the first component from the library into a new schematic?"
+    product: hydrosym
+    form: procedure
+    basis: "Tutorial: Getting started (178 views, 2nd report); read as the HydroSym article"
+    expect:
+      - https://hydrosym.paro.nl/article/444-tutorial-getting-started-hydrosym-documentation-paro-software
+    required_facts:
+      - "select the Components tab of the library and browse by manufacturer, or use the Find function for a known name"
+      - "double click the component to insert it; a pop-up asks for an item number (cancel for now)"
+      - "left click in the diagram window to place it; right click or Esc quits the insert function"
+    review: open
+
+  - id: G43
+    question: "What is the difference between a component and a symbol in the HydroSym library?"
+    product: hydrosym
+    form: factual
+    basis: "Library Structure (133 views, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/380-library-structure-hydrosym-documentation-paro-software
+    required_facts:
+      - "the library has three parts: Components, Components+ and Symbols"
+      - "a component holds the product data (manufacturer, product code, ordering code, specifications, dimensions) and the symbol that represents it"
+      - "a symbol is only a file with the coordinates of lines, arrows and dots"
+      - "use components in schematics, since they carry the product information (and are needed for HydroMan)"
+    review: open
+
+  - id: G44
+    question: "import"
+    product: hydrosym
+    form: keyword
+    basis: "Popular search 'import' (4 searches, 14 results, 2nd report)"
+    expect:
+      - https://hydrosym.paro.nl/article/445-tutorial-how-to-import-a-dxf-or-dwg-file-in-to-hydrosym-hydrosym-documentation-paro-software
+      - https://www.youtube.com/watch?v=fnUHNYG4l6c
+      - https://youtu.be/Pvg8F7xPm_o
+    required_facts: []   # a bare, ambiguous term: three different imports; any of them is a hit
+    review: open
+
+  - id: G45
+    question: "header"
+    product: hydrosym
+    form: keyword
+    basis: "Popular search 'header' (5 searches, 12 results, 2nd report)"
+    video: https://www.youtube.com/watch?v=oBxuJSyWepU
+    expect:
+      - https://www.youtube.com/watch?v=oBxuJSyWepU
+      - https://hydrosym.paro.nl/article/447-tutorial-making-or-changing-your-drawing-header-hydrosym-documentation-paro-software
+      - https://hydrosym.paro.nl/article/501-video-how-to-set-up-and-customize-drawing-headers
+    required_facts: []
+    review: open
+
+  # Added at the maintainer's request: missing components. The sources give two answers
+  # to "what do I do": ask Paro to add it, or create your own in the local library.
+  - id: G46
+    question: "A component I need is not in the HydroSym library. What can I do?"
+    product: hydrosym
+    form: factual
+    basis: "Maintainer's request; article 'Which components are available' and the 'Creating Symbols and Components' video"
+    video: https://www.youtube.com/watch?v=TIx_2ldbHQI
+    expect:
+      - https://www.youtube.com/watch?v=TIx_2ldbHQI
+      - https://hydrosym.paro.nl/article/367-which-components-are-available-in-the-paro-component-library
+    required_facts:
+      - "contact Paro: in most situations the component is added to the online library, so others benefit too"
+      - "Paro can also create the component or symbol on request"
+      - "if it should not go into the online library, create your own and save it in the local library"
+    review: open
+
+  - id: G47
+    question: "How do I create my own component and add it to my local library?"
+    product: hydrosym
+    form: procedure
+    basis: "Maintainer's request; article 'Adding a new drawn symbol/component' and the 'Creating Symbols and Components' video"
+    video: https://www.youtube.com/watch?v=TIx_2ldbHQI
+    expect:
+      - https://www.youtube.com/watch?v=TIx_2ldbHQI
+      - https://hydrosym.paro.nl/article/448-tutorial-adding-a-new-drawn-symbol-component-from-your-open-schematic-to-the-library-hydrosym-documentation-paro-software
+    required_facts:
+      - "start from an existing symbol or component that resembles the new one; edit the symbol with right click > Edit Symbol (E), then Update and Return"
+      - "change the component properties, for example manufacturer and type"
+      - "select the object and choose Add to Library to start the wizard"
+      - "choose whether to save a symbol file, a component file or both, name them and choose the library folder"
+      - "extra data such as a datasheet or weight goes under Component Data; check the summary and press Execute"
+    review: open
+
+  - id: G48
+    question: "How do I change the article code of a component from the library?"
+    product: hydrosym
+    form: procedure
+    basis: "Maintainer's request; video 'Import components to your Local Library'"
+    video: https://www.youtube.com/watch?v=fnUHNYG4l6c
+    expect:
+      - https://www.youtube.com/watch?v=fnUHNYG4l6c
+    required_facts:
+      - "select the component in the online library, right click and choose Import to Local Library"
+      - "choose 'Edit component data before importing', then change the value (article code and type are the most common)"
+      - "click Import and confirm Yes to refresh the library so the local component shows up"
+      - "the component is saved in the local library in the same file structure as the online library"
+    review: open
+
+  # HydroCam questions from the maintainer's list (wording as given, which is the title of each
+  # HydroCam FAQ article). Because the question equals the article title they are the easy
+  # case for retrieval; they say whether the HydroCam pages are found at all, and a
+  # paraphrase set would say more. Product: hydrocam.
+
+  - id: G49
+    question: "Does HydroCam support engraving?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 482 (Same source as G11, which asks it in other words: this is the exact wording of the article)"
+    expect:
+      - https://hydrocam.paro.nl/article/482-does-hydrocam-support-engraving
+    required_facts:
+      - "yes, HydroCam can export code for engraving"
+      - "some customisation may be needed depending on the machining center and requirements"
+    review: open
+
+  - id: G50
+    question: "Do you provide training for using the HydroCam software?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 480 (The HydroMan article 'Do you provide training' answers the same words for the other product and must not stand in for it)"
+    expect:
+      - https://hydrocam.paro.nl/article/480-do-you-provide-training-for-using-the-hydrocam-software
+    required_facts:
+      - "yes: online training sessions led by Paro's engineers"
+      - "in-person training can be arranged at the customer's location or at the headquarters in The Netherlands"
+    review: open
+
+  - id: G51
+    question: "Does HydroCam include simulation?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 484"
+    expect:
+      - https://hydrocam.paro.nl/article/484-does-hydrocam-include-simulation
+    required_facts:
+      - "limited simulation: a visual representation of the machining sequence"
+      - "a rough estimate of time and cost is coming"
+      - "it does not check for spindle collisions; use a dedicated simulation tool for full simulation"
+    review: open
+
+  - id: G52
+    question: "Does HydroCam include post-processors?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 479"
+    expect:
+      - https://hydrocam.paro.nl/article/479-does-hydrocam-include-post-processors
+    required_facts:
+      - "yes, it includes what is needed to export machine code in the language of the CNC machine"
+      - "currently Mazak machines with Mazatrol machine language"
+      - "support for other machines is under development"
+    review: open
+
+  - id: G53
+    question: "What CNC machines work with HydroCam?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 478"
+    expect:
+      - https://hydrocam.paro.nl/article/478-what-cnc-machines-work-with-hydrocam
+    required_facts:
+      - "developed for a wide range of CNC machines"
+      - "the first licenses are for Mazak with Mazatrol controls"
+      - "other machines and controls are being implemented; contact Paro for other machines"
+    review: open
+
+  - id: G54
+    question: "What's the key difference between HydroCam and conventional CAM software?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 476"
+    expect:
+      - https://hydrocam.paro.nl/article/476-whats-the-key-difference-between-hydrocam-and-conventional-cam-software
+    required_facts:
+      - "purpose-built for hydraulic manifolds, which have complex internal shapes"
+      - "automatic feed and speed reduction for cross-drilling and eccentric holes"
+      - "machining of predefined shapes (the specified cavities)"
+    review: open
+
+  - id: G55
+    question: "How fast can HydroCam generate machine code?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 487"
+    expect:
+      - https://hydrocam.paro.nl/article/487-how-fast-can-hydrocam-generate-machine-code
+    required_facts:
+      - "instantly, if all machining operations are found in its library"
+      - "a missing machining operation triggers a warning so the missing machining unit can be added"
+    review: open
+
+  - id: G56
+    question: "Does HydroCam have an internal database that generates the machine code?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 481"
+    expect:
+      - https://hydrocam.paro.nl/article/481-does-hydrocam-have-an-internal-database-that-generates-the-machine-code
+    required_facts:
+      - "yes, an internal machining library generates the machine code"
+      - "you can create and manage your own library"
+    review: open
+
+  - id: G57
+    question: "How does HydroCam communicate with the machining center?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 483"
+    expect:
+      - https://hydrocam.paro.nl/article/483-how-does-hydrocam-communicate-with-the-machining-center
+    required_facts:
+      - "it exports the machine code as a text file in the language of the CNC machine"
+      - "the file is imported into the machining center through its own interface"
+      - "the import is handled outside HydroCam"
+    review: open
+
+  - id: G58
+    question: "Is there a limit to program length in HydroCam?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 477"
+    expect:
+      - https://hydrocam.paro.nl/article/477-is-there-a-limit-to-program-length-in-hydrocam
+    required_facts:
+      - "no limit to the length of the generated program"
+      - "the code may need to be split into (sub-)programs to fit the limits of the machining center"
+    review: open
+
+  - id: G59
+    question: "Does HydroCam support 4- and 5-axis machining centers?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 486"
+    expect:
+      - https://hydrocam.paro.nl/article/486-does-hydrocam-support-4--and-5-axis-machining-centers
+    required_facts:
+      - "yes: 3-, 4- and 5-axis machines are supported"
+      - "on a 4-axis machine it also helps find the best clamping sequence from the angled holes, to minimise re-clamping"
+    review: open
+
+  - id: G60
+    question: "Can the HydroCam library be used and saved in a shared location?"
+    product: hydrocam
+    form: factual
+    basis: "Maintainer's HydroCam list; FAQ article 485"
+    expect:
+      - https://hydrocam.paro.nl/article/485-can-the-hydrocam-library-be-used-and-saved-in-a-shared-location
+    required_facts:
+      - "yes, the library can be saved anywhere on the network"
+      - "it can be shared among multiple HydroCam installations"
+      - "no extra software is needed for a shared library"
+    review: open
+
+  # HydroMan tips and tricks, from the maintainer's list: Navigating the HydroMan UI, Using key
+  # functions, Creating cross-sections, Resize the manifold, Preventing and fixing possible
+  # pitfalls. Facts follow the article text and the video transcripts. The stored transcript
+  # of the navigation video says 'Phase 6' and 'attach the 3D viewer' where the article says
+  # 'Face 6' and 'detach' (Voxtral), so G62 also tests that mismatch.
+
+  - id: G61
+    question: "How do I look at just one face of the manifold in HydroMan?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Navigating the HydroMan UI (video)"
+    video: https://youtu.be/A2a_9cv6CrY
+    expect:
+      - https://youtu.be/A2a_9cv6CrY
+      - https://hydroman.paro.nl/article/301-navigating-the-hydroman-ui
+      - https://hydroman.paro.nl/article/307-navigating-the-hydroman-interface
+    required_facts:
+      - "press 1 to 6 to isolate a face of the manifold block"
+      - "press 0 to return to the overview"
+      - "the 2D view on the left shows the six faces, the 3D viewer on the right shows the block"
+    review: open
+
+  - id: G62
+    question: "Can I switch HydroMan to third-angle projection and put face 6 on the right?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Navigating the HydroMan UI (video)"
+    video: https://youtu.be/A2a_9cv6CrY
+    expect:
+      - https://youtu.be/A2a_9cv6CrY
+      - https://hydroman.paro.nl/article/301-navigating-the-hydroman-ui
+      - https://hydroman.paro.nl/article/307-navigating-the-hydroman-interface
+    required_facts:
+      - "the 2D viewer supports first-angle and third-angle projection"
+      - "face 6 can be shown at the bottom or on the right"
+    review: open
+
+  - id: G63
+    question: "How do I make a cross-section of a hole in HydroMan?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Creating cross-sections"
+    video: https://youtu.be/A2a_9cv6CrY
+    expect:
+      - https://hydroman.paro.nl/article/312-creating-cross-sections
+      - https://youtu.be/A2a_9cv6CrY
+      - https://hydroman.paro.nl/article/301-navigating-the-hydroman-ui
+    required_facts:
+      - "a cross-section can only be made when exactly one hole is selected"
+      - "press the letter of the axis (X, Y or Z) or press C; C once opens the one available cross-section and again the other"
+      - "the selected hole is highlighted in both the 2D and 3D viewers"
+    review: open
+
+  - id: G64
+    question: "How do I get a cross-section onto the production drawing?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Adding a cross-section to the drawing (article 274; not in the maintainer's list, added as a neighbour)"
+    expect:
+      - https://hydroman.paro.nl/article/274-tutorialsusageadding-cross-section-to-drawing
+    required_facts:
+      - "make the cross-section, right click in it and choose Cross to Production Drawing, then Yes and OK"
+      - "in the production drawing's settings mark Show Cross Sections"
+      - "the cross-section can then be moved to the wanted position with the mouse"
+    review: open
+
+  - id: G65
+    question: "How do I change the size of the manifold block in HydroMan?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Resize the manifold"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/313-resize-the-manifold
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "right click the manifold in the 2D view, hover over Dimensions and enter new values for X, Y and Z"
+      - "the 'Change at X/Y/Z' options adjust the size at the click position"
+      - "Ctrl + arrow keys change it in 1 mm steps"
+    review: open
+
+  - id: G66
+    question: "How do I connect two holes in HydroMan?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Using key functions in your HydroMan manifold design (video)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://hydroman.paro.nl/article/305-connect-holes
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select at least two holes"
+      - "C changes the depth of both holes to connect them fully"
+      - "T trims or extends the depth toward the first hole without moving it"
+      - "M aligns and connects automatically using C or T; if straight holes cannot connect, HydroMan suggests an angled hole"
+    review: open
+
+  - id: G67
+    question: "How do I align several holes to the same coordinate?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Using key functions in your HydroMan manifold design (video)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://hydroman.paro.nl/article/309-align-holes
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select at least two holes and press N; the first selected hole is the reference"
+      - "holes on adjacent faces align in the common direction, on opposite faces in both directions, on the same face you specify the offset"
+      - "the X, Y or Z buttons align in a single direction"
+    review: open
+
+  - id: G68
+    question: "How do I connect a hole to a cartridge port with the right diameter?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Using key functions in your HydroMan manifold design (video)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://hydroman.paro.nl/article/305-connect-holes
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "click inside the port, select the hole and press Shift+M"
+      - "the hole moves and connects automatically"
+    review: open
+
+  - id: G69
+    question: "How do I line up the text of several holes?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Using key functions in your HydroMan manifold design (video)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://hydroman.paro.nl/article/306-manage-hole-texts
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select a hole with text and press H to lock the text to the cursor; Space rotates it 90 degrees; left click to place it"
+      - "then select that hole again, choose the others and press Q to align their text positions"
+    review: open
+
+  - id: G70
+    question: "HydroMan shows a wall thickness warning. What does it mean, and do I have to fix it?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Preventing and fixing possible pitfalls in your design (video)"
+    video: https://youtu.be/U5b3_e9U280
+    expect:
+      - https://hydroman.paro.nl/article/304-preventing-and-fixing-possible-pitfalls-in-your-design
+      - https://youtu.be/U5b3_e9U280
+    required_facts:
+      - "the wall thickness is below a critical value, 5 mm by default"
+      - "a warning does not always demand action, only attention"
+      - "to overrule a warning check it off as reviewed and accepted; with several users you can see who accepted it"
+    review: open
+
+  - id: G71
+    question: "What does 'Area not max' mean in the HydroMan checklist?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Preventing and fixing possible pitfalls in your design (video)"
+    video: https://youtu.be/U5b3_e9U280
+    expect:
+      - https://hydroman.paro.nl/article/304-preventing-and-fixing-possible-pitfalls-in-your-design
+      - https://youtu.be/U5b3_e9U280
+    required_facts:
+      - "two components are not fully connected"
+      - "this risks a high pressure drop"
+    review: open
+
+  - id: G72
+    question: "How do I know my HydroMan manifold design is finished?"
+    product: hydroman
+    form: procedure
+    basis: "Tips and tricks list: Preventing and fixing possible pitfalls in your design (video)"
+    video: https://youtu.be/U5b3_e9U280
+    expect:
+      - https://hydroman.paro.nl/article/304-preventing-and-fixing-possible-pitfalls-in-your-design
+      - https://youtu.be/U5b3_e9U280
+    required_facts:
+      - "all colors are connected and the checklist shows no issues"
+      - "the manifold then aligns with the schematic"
+      - "HydroMan generates the production drawing and drilling list automatically"
+    review: open
+
+  # HydroMan hole subjects from the maintainer's list: Move and rotate holes, Modify hole
+  # depth, Connect holes, Manage hole texts, Align holes (articles 305, 306, 308, 309, 310).
+  # G66 to G69 above cover the same subjects in combined form and now list these articles too.
+
+  - id: G73
+    question: "How do I rotate a hole by 90 degrees while I move it?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Move and rotate holes (article 308)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/308-move-and-rotate-holes
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select the hole and press Space to attach it to the cursor"
+      - "press Space again while moving to rotate it 90 degrees"
+      - "click to place it"
+    review: open
+
+  - id: G74
+    question: "How do I type in the exact coordinates of a hole?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Move and rotate holes (article 308)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/308-move-and-rotate-holes
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select the hole and press Shift+Enter to set absolute coordinates"
+    review: open
+
+  - id: G75
+    question: "How do I stop a hole from moving diagonally when I drag it?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Move and rotate holes (article 308)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/308-move-and-rotate-holes
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "use the Orthogonal Move toggle at the bottom of the screen to constrain the movement"
+    review: open
+
+  - id: G76
+    question: "How do I change how deep one step of a hole goes?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Modify hole depth (article 310)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/310-modify-hole-depth
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select a step inside the hole, right click and choose Modify depth, or press D"
+      - "in a cross-section view the arrow keys adjust the depth"
+    review: open
+
+  - id: G77
+    question: "How do I make a hole go all the way through the block?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Modify hole depth (article 310)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/310-modify-hole-depth
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select the hole and press Ctrl+T"
+    review: open
+
+  - id: G78
+    question: "HydroMan can't connect two holes with straight holes. What does it do?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Connect holes (article 305)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/305-connect-holes
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "it suggests an angled connection"
+    review: open
+
+  - id: G79
+    question: "Which hole is the reference when I align holes in HydroMan?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Align holes (article 309)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/309-align-holes
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "the first selected hole is the reference point"
+    review: open
+
+  - id: G80
+    question: "How do I align holes that sit on opposite faces of the block?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Align holes (article 309)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/309-align-holes
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select two or more holes and press N"
+      - "holes on opposite faces are aligned in both directions"
+    review: open
+
+  - id: G81
+    question: "How do I move and rotate the label of a hole?"
+    product: hydroman
+    form: procedure
+    basis: "Maintainer's subject list: Manage hole texts (article 306)"
+    video: https://youtu.be/8SzYjz20O_M
+    expect:
+      - https://hydroman.paro.nl/article/306-manage-hole-texts
+      - https://hydroman.paro.nl/article/302-using-key-functions-in-your-hydroman-manifold-design
+      - https://youtu.be/8SzYjz20O_M
+    required_facts:
+      - "select the hole and press H to move its text"
+      - "press Space to rotate the text 90 degrees"
+      - "click to place it"
+    review: open
