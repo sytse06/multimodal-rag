@@ -1,12 +1,16 @@
 """Source configuration models for ingestion pipeline."""
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import AliasChoices, BaseModel, Field, HttpUrl
 
 
 class YouTubeSource(BaseModel):
     url: HttpUrl
     name: str
-    skip_voxtral: bool = False
+    # A silent screen recording: no transcript, one frame described every 5 seconds.
+    # `skip_voxtral` is the old name, still accepted: bucket registries use it.
+    silent: bool = Field(
+        default=False, validation_alias=AliasChoices("silent", "skip_voxtral")
+    )
 
 
 class KnowledgeBaseSource(BaseModel):

@@ -20,7 +20,6 @@ def _make_settings(vision_model: str = "") -> MagicMock:
     settings.firecrawl_api_key = "fake"
     settings.weaviate_url = "http://localhost:8080"
     settings.weaviate_mode = "local"
-    settings.mistral_api_key = ""
     settings.vision_model = vision_model
     settings.youtube_cookies_file = ""
     settings.youtube_cookies_secret = ""
@@ -283,7 +282,7 @@ class TestRun:
     @patch("multimodal_rag.ingest.videos.fetch_fused_chunks")
     @patch("multimodal_rag.ingest.__main__.load_sources")
     @patch("multimodal_rag.ingest.__main__.AppSettings")
-    def test_skip_voxtral_uses_vision_only_path(
+    def test_silent_uses_vision_only_path(
         self,
         mock_settings_cls: MagicMock,
         mock_load: MagicMock,
@@ -294,7 +293,6 @@ class TestRun:
         mock_fetch_frames: MagicMock,
     ) -> None:
         settings = _make_settings(vision_model="google/gemini-flash-1.5")
-        settings.mistral_api_key = "real-key"
         mock_settings_cls.return_value = settings
         mock_create_emb.return_value = MagicMock()
         mock_create_vision.return_value = MagicMock()
@@ -306,7 +304,7 @@ class TestRun:
                 YouTubeSource(
                     url="https://www.youtube.com/watch?v=abc",
                     name="Silent Video",
-                    skip_voxtral=True,
+                    silent=True,
                 )
             ]
         )
@@ -317,7 +315,7 @@ class TestRun:
 
         run()
 
-        # skip_voxtral uses the vision-only path: no transcript, no fused windows
+        # a silent video uses the vision-only path: no transcript, no fused windows
         mock_yt.assert_not_called()
         mock_fetch_frames.assert_called_once()
 
@@ -372,7 +370,6 @@ class TestRun:
         mock_fetch_fused: MagicMock,
     ) -> None:
         settings = _make_settings(vision_model="google/gemini-flash-1.5")
-        settings.mistral_api_key = "real-key"
         mock_settings_cls.return_value = settings
         mock_create_emb.return_value = MagicMock()
         mock_create_vision.return_value = MagicMock()

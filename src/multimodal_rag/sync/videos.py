@@ -78,7 +78,7 @@ def estimate(
     def frames(interval: int) -> int:
         return seconds // interval + 1 if seconds is not None and sampled else 0
 
-    if video.skip_voxtral:
+    if video.silent:
         calls = frames(FRAME_SECONDS)
         return Estimate(video.name, "frames", "none", seconds, calls, 0.0)
     transcript = "captions" if manual_captions else "gemini"

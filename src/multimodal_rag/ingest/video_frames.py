@@ -26,7 +26,7 @@ def download_video(
     """Download best available video from a YouTube URL to output_dir.
 
     Set include_audio=True to download a merged video+audio stream
-    (required when the file will be passed to Voxtral for transcription).
+    (for a file whose audio is needed).
     Returns the path to the downloaded file.
     Raises yt_dlp.utils.DownloadError on failure.
     """

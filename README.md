@@ -56,7 +56,7 @@ maintaining the collection yourself (see [Maintainer: ingestion
 workflow](#maintainer-ingestion-workflow)), or if you're smoke-testing a Cloud Run
 image build locally.
 
-Video/web ingestion additionally requires Firecrawl, Mistral Voxtral, YouTube access,
+Video/web ingestion additionally requires Firecrawl, YouTube access,
 and `ffmpeg`; those dependencies are not needed for ordinary inference.
 
 ### Install the fixed embedding model
@@ -247,12 +247,12 @@ make docker-down
 
 ```bash
 cp .env.example .env
-# configure Firecrawl, Mistral, YouTube, embedding, and Weaviate settings
+# configure Firecrawl, YouTube, embedding, and Weaviate settings
 edit config/sources.yaml
 make ingest
 ```
 
-The ingestion pipeline handles YouTube transcripts with Voxtral fallback, optional visual
+The ingestion pipeline handles YouTube transcripts (manual captions, else Gemini), optional visual
 grounding, web crawling, chunking, embedding, and Weaviate writes. Keep source credentials
 and generated logs outside version control.
 
