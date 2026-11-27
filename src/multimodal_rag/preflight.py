@@ -353,6 +353,31 @@ def compare_collections(local: dict[str, str], hosted: dict[str, str]) -> Check:
     )
 
 
+def check_hosted_cluster(settings: AppSettings, timeout: float = 10.0) -> Check:
+    """Whether the hosted cluster answers: the free plan pauses it after idle days."""
+    url = settings.weaviate_hosted_url
+    if not url:
+        return Check("hosted cluster", Status.FAIL, "WEAVIATE_HOSTED_URL is not set")
+    base = url if "://" in url else f"https://{url}"
+    try:
+        with urllib.request.urlopen(  # noqa: S310
+            f"{base.rstrip('/')}/v1/.well-known/ready", timeout=timeout
+        ):
+            return Check("hosted cluster", Status.OK, "awake")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 503:
+            return Check(
+                "hosted cluster",
+                Status.FAIL,
+                "paused or down (HTTP 503): the free plan pauses after about 7 idle"
+                " days; wake it in the Weaviate Cloud console, the app cannot read"
+                " its data until then",
+            )
+        return Check("hosted cluster", Status.FAIL, f"HTTP {exc.code}")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return Check("hosted cluster", Status.FAIL, f"unreachable: {exc}")
+
+
 def _connect_hosted(settings: AppSettings) -> Any:
     key = settings.weaviate_viewer_api_key
     if not _has(key):
@@ -416,15 +441,27 @@ def run_preflight(settings: AppSettings, *, local_only: bool = False) -> list[Ch
         ("config", lambda: check_config(settings)),
         ("embeddings", lambda: check_embeddings(settings)),
     ]
+    cluster: list[Check] = []
     if not local_only:
+        cluster = _safe("hosted cluster", lambda: check_hosted_cluster(settings))
         steps += [
             ("gemini key", lambda: check_gemini(settings)),
             ("youtube cookies", lambda: check_cookies(settings)),
             ("registry", lambda: check_registry(settings)),
             ("latest backup", lambda: check_backup(settings)),
-            ("weaviate", lambda: check_weaviate(settings)),
         ]
-    checks = [c for name, run in steps for c in _safe(name, run)]
+        if all(c.status is not Status.FAIL for c in cluster):
+            steps.append(("weaviate", lambda: check_weaviate(settings)))
+    checks = cluster + [c for name, run in steps for c in _safe(name, run)]
+    if any(c.status is Status.FAIL for c in cluster):
+        checks.append(
+            Check(
+                "weaviate",
+                Status.FAIL,
+                "skipped: the hosted cluster is not awake, so versions, the"
+                " local-versus-hosted comparison and hosted vectors were not checked",
+            )
+        )
     checks.append(
         Check(
             "gemini quota and spend cap",
