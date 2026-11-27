@@ -2312,11 +2312,53 @@ checks only that three questions keep their rank; it says nothing about the answ
   at the production temperature, and reports per question: distinct sources cited, repeated
   citations, required facts present, answer form, and the spread between runs. Output goes
   to `runs/` and is not part of `make test`
+- Name the measures after the standard RAG-evaluation set where one applies, so results
+  are comparable and readable by anyone who knows it: **faithfulness** (is each claim
+  supported by the retrieved context; QUAL-006), **contextual precision** (how much of the
+  retrieved context is relevant; QUAL-004), **contextual recall** (is what the answer needs
+  retrieved at all; the required-facts list) and **answer relevancy** (QUAL-005). The
+  deterministic checks above stay: repeated citations, source count, answer form and link
+  correctness are product-specific and no framework measures them
 - Record the baseline before any change in this epic. A change is kept only if it improves
   the measures it targets and makes none of the others worse
 
 **Scope:** a new module under `src/multimodal_rag/`, `config/`, tests for the scoring only
 (the model calls are not tested)
+
+#### QUAL-001b — LLM-Judge Spike with DeepEval
+
+**Branch:** `feature/QUAL-001b-judge-spike`
+
+Decide whether an off-the-shelf judge (DeepEval, chosen by the maintainer over ragas after
+reading both) is worth adopting beside QUAL-001's deterministic checks. A spike with a
+verdict, not a dependency.
+
+- **Install in isolation** (`uv run --with deepeval`), not in `pyproject.toml`, until there
+  is a verdict. Check first that it installs on Python 3.14 beside `langchain-core>=1.2`; if
+  its pins conflict, run it from a separate tool environment. Before the first run, confirm
+  from its documentation that its telemetry and its hosted-platform tracing are off: the
+  package depends on `confident-trace`, and the questions and answers here are support
+  content that must not leave for a third-party service
+- **A pinned judge model**, through a custom judge wrapper if it should be Gemini like the
+  app (its default is OpenAI). The model id is recorded in every run, and the same judge is
+  used for the baseline and every later comparison, or scores cannot be compared
+- **Metrics to try** (as DeepEval names them; check its 4.x documentation): faithfulness,
+  contextual precision, contextual recall and answer relevancy, plus two custom criteria
+  with its G-Eval metric: "gives an ordered procedure" and "each step is supported by the
+  chunk it cites and does not mix two functions"
+- **Judge it against the maintainer.** Before running, the maintainer labels a set as good
+  or bad: the two angled-connection answers of 2026-11-24 (the pilot-lines step credited to
+  angled connections), the reducing-valve question, and two questions the knowledge base
+  cannot answer. The judge passes the spike if it flags what is labelled bad and passes
+  what is labelled good
+- **Measure the judge itself:** run each judged case 3 times; the same input should give
+  nearly the same score. Record the judge calls and the spend per question
+- **Verdict** written into this epic: adopt as a development-only dependency group (the
+  Cloud Run image must not carry it), adopt only some metrics, or drop it and keep the
+  deterministic checks and a hand-written faithfulness check
+
+**Scope:** documentation and an exploratory script; if adopted, a development dependency
+group in `pyproject.toml` and the QUAL-001 module
 
 #### QUAL-002 — Temperature and Setting Parity
 
@@ -2421,10 +2463,11 @@ Some of what hurts an answer is stored, so a prompt cannot fix it.
 | Order | Story | Why here |
 |---|---|---|
 | 1 | QUAL-001 | Everything else is judged against it |
-| 2 | QUAL-002 | The baseline and every later run need the production setting |
-| 3 | QUAL-003, QUAL-004 | Retrieval-side, cheap, and they change what the prompt sees |
-| 4 | QUAL-005, QUAL-006 | Prompt work, judged after the sources are clean |
-| 5 | QUAL-007 | Needs the measurement; may produce a sync ticket |
+| 2 | QUAL-001b | A time-boxed spike beside the baseline; its verdict decides whether a judge joins the measures |
+| 3 | QUAL-002 | The baseline and every later run need the production setting |
+| 4 | QUAL-003, QUAL-004 | Retrieval-side, cheap, and they change what the prompt sees |
+| 5 | QUAL-005, QUAL-006 | Prompt work, judged after the sources are clean |
+| 6 | QUAL-007 | Needs the measurement; may produce a sync ticket |
 
 Deploy once at the end of a batch that passed the calibration set, not per story.
 
@@ -2432,6 +2475,7 @@ Deploy once at the end of a batch that passed the calibration set, not per story
 
 - A calibration set and a command that scores answers exist, and a baseline from before
   any change is recorded
+- The DeepEval spike (QUAL-001b) has a recorded verdict, adopted or dropped
 - Local and hosted use the same answer temperature, and the preflight warns when they differ
 - A window's narration and description, and an article's chunks, appear as one source
 - The angled-connection question gives an ordered answer with one citation per group of
@@ -2460,8 +2504,8 @@ automated answer evaluation in production.
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
 | 11 — Observability, Hosted Content Sync and Production Hardening | 21 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos) and 012 part 1 done; SYNC-013, SYNC-009, SYNC-010 and OPS-001 to 008 open) | ~148 |
-| 12 — Answer and Source Quality Calibration | 7 | planned (not started) | TBD |
-| **Total** | **66** | **10 completed, 1 in progress, 1 planned** | **395 current** |
+| 12 — Answer and Source Quality Calibration | 8 | planned (not started) | TBD |
+| **Total** | **67** | **10 completed, 1 in progress, 1 planned** | **395 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
 The total is the current non-integration test count, not the sum of the rows.
