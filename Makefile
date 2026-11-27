@@ -1,4 +1,4 @@
-.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push sources-diff snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy release
+.PHONY: help install test test-integration quality quality-fix clean pre-commit ingest ingest-report ollama-up sync-reembed sync-preflight sync-inventory sync-preview sync-plan sync-apply sync-convert sync-videos sync-split-videos promote-plan promote promote-rollback rehearsal-up rehearsal-seed rehearsal-down weaviate-compat sync-gate sources-pull sources-push sources-diff snapshot-export snapshot-backup snapshot-restore snapshot-bootstrap-cloud purge purge-source purge-video purge-web dev git-status docker-up docker-down deploy release
 
 SHELL := /bin/bash
 
@@ -51,6 +51,7 @@ help:
 	@echo "                                   CONFIRM_REMOVALS='<urls>', CONFIRM_SOURCE='<hosts>')"
 	@echo "  make sync-convert          - Give stored chunks their identity fields, LOCAL, metadata only (DRY=1)"
 	@echo "  make sync-videos           - Ingest only registry videos with no stored chunks, LOCAL (DRY=1, ROLLBACK=runs/<id>)"
+	@echo "  make sync-split-videos     - Cut the old hybrid video chunks down to their narration (local; DRY=1)"
 	@echo "  make promote-plan [TARGET=hosted|rehearsal] - Read-only plan to copy local to the target"
 	@echo "  make promote RUN=runs/<id> [CANARY_ONLY=1] - Write that plan to its target (asks first)"
 	@echo "  make promote-rollback SNAPSHOT_DIR=<dir> TARGET=<t> - Put the target back as a snapshot had it"
@@ -246,6 +247,9 @@ sync-apply:
 
 sync-convert:
 	@uv run python -m multimodal_rag.sync.convert_cli $(if $(DRY),--dry,) $(if $(YES),--yes,) $(if $(BREAK_LOCK),--break-lock,)
+
+sync-split-videos:
+	@uv run python -m multimodal_rag.sync.split_videos_cli $(if $(DRY),--dry,) $(if $(YES),--yes,) $(if $(BREAK_LOCK),--break-lock,)
 
 sync-videos:
 	@if [ -n "$(ROLLBACK)" ]; then uv run python -m multimodal_rag.sync.videos_cli --rollback $(ROLLBACK) $(if $(YES),--yes,); else uv run python -m multimodal_rag.sync.videos_cli $(if $(DRY),--dry,) $(if $(YES),--yes,) $(if $(ALLOW_NO_VISION),--allow-no-vision,) $(if $(BREAK_LOCK),--break-lock,); fi
