@@ -2596,6 +2596,69 @@ Some of what hurts an answer is stored, so a prompt cannot fix it.
 
 **Scope:** documentation and a measurement; the fix belongs to Epic 11
 
+#### QUAL-008 — Hybrid Search: Keyword and Meaning Together
+
+**Branch:** `feature/QUAL-008-hybrid-search`
+
+**Status (2026-11-27):** not started; a question, not a finding. Nothing here is measured.
+
+**What is true today.** Search is pure meaning: `WeaviateStore.search` calls `near_vector`
+and nothing else, so a query is ranked only by the distance between its embedding and the
+stored vectors. The keyword (BM25) index exists and is unused: `text`, `source_name` and
+`section_heading` are searchable with word tokenization and Weaviate's default BM25 settings
+(`b` 0.75, `k1` 1.2), and a direct keyword query returns the right video on local. Not yet
+checked on hosted (OPS-007 quiet period until 2026-12-06).
+
+**Why it might help, and why it might not** (hypotheses to test, not results):
+
+- *Might help:* short keyword searches, which are what colleagues type into the Help
+  Scout search ("header", "import", "multiple sheets"); exact names such as part numbers
+  (`D3MW001E`) and shortcut keys (Shift+M), which vectors blur
+- *Will not help:* a misspelling. The maintainer's own BOM question with the typo
+  "componenents" ranked the right video 16th instead of 4th, and a keyword index finds
+  nothing for a misspelled word, so only the vector side carries it
+- *Could hurt:* the 25 older videos' transcripts say "eye border" and "HydroSim" where
+  users type "I-Border" and "HydroSym", so the keyword side adds nothing there and a
+  heavy weight could push those chunks down; and the March knowledge-base chunks still
+  carry the footer widget text ("Did this answer your question?", QUAL-007), which keyword
+  matching rewards
+
+**Work**
+
+- **A hybrid arm in the QUAL-001 runner**, retrieval tier only (no model call, free):
+  vector only (today, `alpha` 1.0), `alpha` 0.75, 0.5, and keyword only as a reference.
+  Record the fusion method used (Weaviate's default; try the other if the result changes).
+  The query is embedded once as today and the vector is passed to the hybrid query, so
+  there is no second embedding call
+- **Report by group, not only overall:** keyword-form questions, procedure questions,
+  questions where a video is the thing under test, web-only questions, and a new group of
+  about 8 questions with a misspelling, a different term for the same thing, a part
+  number, or a shortcut key (the BOM question in four wordings is the first). The overall
+  score alone would hide a gain on one group paid for by a loss on another
+- **The relevance score.** `retrieve()` turns a vector distance into `relevance_score`,
+  which the source list shows and which QUAL-004's floor would cut on. A hybrid query
+  returns a fused score on another scale. Decide in this ticket how to keep a meaningful
+  relevance score, for example by using hybrid only to choose the candidate pool and
+  keeping the vector distance for the score. This is why QUAL-008 comes before QUAL-004
+- **The video guarantee** (at least half the results are video chunks, taken from a pool
+  of `top_k` x 4) must still hold with the hybrid pool
+- **Hosted:** check that the hosted collection has the same keyword index settings before
+  any deploy (the preflight can read the schema); no stored data changes and no promotion
+  is involved
+
+**Judge:** by QUAL-001, retrieval tier first. Adopt only if top-1 and top-3 improve on the
+keyword and variant groups and no question whose expected source was in the top 3 leaves
+it. With 100 questions a 5-point difference is noise (QUAL-001). If it is adopted, the
+answer tier then confirms that answers did not get worse.
+
+**If adopted:** a setting for the `alpha` weight with 1.0 meaning today's behaviour, so a
+rollback is a Cloud Run environment change and not a deploy. It is query-side only and
+ships with the batch deploy at the end of the epic.
+
+**Scope:** `store/weaviate.py` (search), `query/retriever.py`, `models/config.py` (the
+weight), the QUAL-001 runner; tests for the scoring and the pool merge only (the Weaviate
+calls are not tested)
+
 ### Order of work
 
 | Order | Story | Why here |
@@ -2603,7 +2666,7 @@ Some of what hurts an answer is stored, so a prompt cannot fix it.
 | 1 | QUAL-001 | Everything else is judged against it |
 | 2 | QUAL-001b | A time-boxed spike beside the baseline; its verdict decides whether a judge joins the measures |
 | 3 | QUAL-002 | The baseline and every later run need the production setting |
-| 4 | QUAL-003, QUAL-004 | Retrieval-side, cheap, and they change what the prompt sees |
+| 4 | QUAL-003, QUAL-008, QUAL-004 | Retrieval-side, cheap, and they change what the prompt sees. QUAL-008 comes before QUAL-004 because it decides what the relevance score means, and the floor cuts on it |
 | 5 | QUAL-005, QUAL-006 | Prompt work, judged after the sources are clean |
 | 6 | QUAL-007 | Needs the measurement; may produce a sync ticket |
 
@@ -2616,6 +2679,7 @@ Deploy once at the end of a batch that passed the calibration set, not per story
 - The DeepEval spike (QUAL-001b) has a recorded verdict, adopted or dropped
 - Local and hosted use the same answer temperature, and the preflight warns when they differ
 - A window's narration and description, and an article's chunks, appear as one source
+- Hybrid search (QUAL-008) is measured against meaning-only search on the calibration set and is adopted or dropped
 - The angled-connection question gives an ordered answer with one citation per group of
   steps, or says plainly that the sources show a demonstration and no procedure
 - No change is kept that makes any question in the calibration set worse
@@ -2642,7 +2706,7 @@ automated answer evaluation in production.
 | 9 — Shareable Weaviate Inference Storage | 6 | completed | 241+ |
 | 10 — Query-Only Ollama Embedding and Cloud Deployment | 1 | completed | TBD |
 | 11 — Observability, Hosted Content Sync and Production Hardening | 22 | in progress (OBS-001 to 003, SYNC-000 to 004, 007, 008, 011 (new videos) and 012 part 1 done; SYNC-013, SYNC-009a and OPS-001 to 008 open; SYNC-009b, SYNC-010 deferred) | ~148 |
-| 12 — Answer and Source Quality Calibration | 8 | planned (not started) | TBD |
+| 12 — Answer and Source Quality Calibration | 9 | planned (not started) | TBD |
 | **Total** | **68** | **10 completed, 1 in progress, 1 planned** | **395 current** |
 
 Per-epic test counts are approximate and overlap where later epics extend earlier modules.
